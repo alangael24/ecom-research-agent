@@ -105,6 +105,7 @@ const categoryMap = [
 
 function init() {
   renderEmptyState();
+  form.accessKey.value = localStorage.getItem("ecomResearchAccessKey") || "";
   form.addEventListener("submit", handleSubmit);
   document.querySelector("#downloadBrief").addEventListener("click", downloadBrief);
   document.querySelector("#copySummary").addEventListener("click", copySummary);
@@ -112,15 +113,31 @@ function init() {
   lucide.createIcons();
 }
 
-function handleSubmit(event) {
+async function handleSubmit(event) {
   event.preventDefault();
   const data = readForm();
   const report = buildReport(data);
+  setLoading(true);
+
+  try {
+    const backend = await requestBackendReport(data);
+    if (backend?.ok && backend.report) {
+      report.ai = backend.report;
+      report.backendMode = "codex-harness";
+      report.diagnostics = backend.diagnostics || null;
+    } else if (backend?.message) {
+      report.backendError = backend.message;
+    }
+  } catch (error) {
+    report.backendError = "Modo guiado activo. El harness privado no respondio.";
+  }
+
   state.latest = report;
   renderReport(report);
   activateTab("brief");
   saveState(report);
-  showToast("Research generado");
+  setLoading(false);
+  showToast(report.ai ? "Research generado con Codex" : "Research guiado generado");
 }
 
 function readForm() {
@@ -134,6 +151,7 @@ function readForm() {
     language: form.language.value,
     depth: form.depth.value,
     sources: selectedSources.length ? selectedSources : ["meta", "amazon", "tiktok"],
+    accessKey: form.accessKey.value.trim(),
   };
 }
 
@@ -157,6 +175,31 @@ function buildReport(data) {
       timeStyle: "short",
     }),
   };
+}
+
+async function requestBackendReport(data) {
+  if (data.accessKey) {
+    localStorage.setItem("ecomResearchAccessKey", data.accessKey);
+  }
+
+  const headers = {
+    "content-type": "application/json",
+  };
+  if (data.accessKey) {
+    headers["x-app-password"] = data.accessKey;
+  }
+
+  const response = await fetch("./api/research", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ ...data, accessKey: undefined }),
+  });
+
+  if (response.status === 404) {
+    throw new Error("Backend not deployed");
+  }
+
+  return response.json();
 }
 
 function genericCategory(problem) {
@@ -269,25 +312,51 @@ function renderEmptyState() {
 
 function renderReport(report) {
   const sourceLabels = report.sources.map((key) => sourceConfig[key].label).join(", ");
+  const ai = report.ai || null;
+  const decisionText =
+    ai?.executiveBrief?.decision ||
+    "No tomar esto como validacion final todavia. Primero hay que confirmar si el problema aparece en al menos dos fuentes: reviews/comentarios organicos y senales comerciales en anuncios. Si solo aparece en anuncios, es hype; si solo aparece en quejas, falta probar disposicion a pagar.";
+  const problemPains = ai?.problemAvatarMap?.painLanguage?.length
+    ? ai.problemAvatarMap.painLanguage
+    : report.category.pains;
+  const evidenceRows = ai?.evidenceMatrix?.length
+    ? ai.evidenceMatrix.map((row) => ({
+        confidence: row.confidence,
+        insight: row.insight,
+        decision: row.businessDecision,
+      }))
+    : report.rows;
+  const backendNotice = report.backendError
+    ? `<article class="report-card full-span notice-card">
+        <h3>Backend privado</h3>
+        <p>${escapeHtml(report.backendError)}</p>
+      </article>`
+    : "";
+
   document.querySelector("#brief").innerHTML = `
     <div class="metric-row">
       <article class="metric-card"><strong>${report.sources.length}</strong><p>fuentes activas</p></article>
-      <article class="metric-card"><strong>${report.depth === "profundo" ? "12+" : "6+"}</strong><p>senales a validar</p></article>
+      <article class="metric-card"><strong>${ai ? "IA" : report.depth === "profundo" ? "12+" : "6+"}</strong><p>${ai ? "codex harness" : "senales a validar"}</p></article>
       <article class="metric-card"><strong>${report.market}</strong><p>mercado objetivo</p></article>
     </div>
     <div class="report-grid">
       <article class="report-card full-span">
         <h3>Decision inicial</h3>
-        <p>No tomar esto como validacion final todavia. Primero hay que confirmar si el problema aparece en al menos dos fuentes: reviews/comentarios organicos y senales comerciales en anuncios. Si solo aparece en anuncios, es hype; si solo aparece en quejas, falta probar disposicion a pagar.</p>
+        <p>${escapeHtml(decisionText)}</p>
         <div class="pill-row">
           <span class="pill"><i data-lucide="target"></i>${escapeHtml(report.category.category)}</span>
           <span class="pill"><i data-lucide="map-pin"></i>${escapeHtml(report.market)}</span>
           <span class="pill"><i data-lucide="database"></i>${escapeHtml(sourceLabels)}</span>
+          ${ai ? '<span class="pill"><i data-lucide="cpu"></i>Codex harness</span>' : ""}
         </div>
       </article>
+      ${ai?.executiveBrief?.opportunity ? `<article class="report-card full-span">
+        <h3>Oportunidad</h3>
+        <p>${escapeHtml(ai.executiveBrief.opportunity)}</p>
+      </article>` : ""}
       <article class="report-card">
         <h3>Problema a validar</h3>
-        <ul>${report.category.pains.map((pain) => `<li>${escapeHtml(pain)}</li>`).join("")}</ul>
+        <ul>${problemPains.map((pain) => `<li>${escapeHtml(pain)}</li>`).join("")}</ul>
       </article>
       <article class="report-card">
         <h3>Criterios anti-ruido</h3>
@@ -298,9 +367,13 @@ function renderReport(report) {
           <li>Guardar fuente, URL, fecha y motivo de inclusion.</li>
         </ul>
       </article>
+      ${ai?.executiveBrief?.bestAvatar ? `<article class="report-card full-span">
+        <h3>Mejor avatar</h3>
+        <p>${escapeHtml(ai.executiveBrief.bestAvatar)}</p>
+      </article>` : ""}
       <article class="report-card full-span">
         <h3>Matriz de evidencia</h3>
-        <ul>${report.rows
+        <ul>${evidenceRows
           .map(
             (row) =>
               `<li><strong>${escapeHtml(row.confidence.toUpperCase())}</strong> - ${escapeHtml(
@@ -309,6 +382,7 @@ function renderReport(report) {
           )
           .join("")}</ul>
       </article>
+      ${backendNotice}
     </div>`;
 
   document.querySelector("#sources").innerHTML = `
@@ -341,43 +415,68 @@ function renderReport(report) {
             .join("")}
         </ul>
       </article>
+      ${ai?.sourcePlan ? `<article class="report-card">
+        <h3>Plan del harness</h3>
+        ${renderCompactSections([
+          ["Meta Ads", ai.sourcePlan.metaAds],
+          ["Amazon Reviews", ai.sourcePlan.amazonReviews],
+          ["TikTok organico", ai.sourcePlan.tiktokOrganic],
+          ["Queries", ai.sourcePlan.searchQueries],
+        ])}
+      </article>` : ""}
     </div>`;
 
+  const hookTests = ai?.offerHookTests?.length ? ai.offerHookTests : null;
   document.querySelector("#hooks").innerHTML = `
     <div class="report-grid">
-      ${report.category.hooks
+      ${(hookTests || report.category.hooks)
         .map(
           (hook, index) => `<article class="report-card">
           <h3>Hook ${index + 1}</h3>
-          <p>${escapeHtml(hook)}</p>
+          <p>${escapeHtml(typeof hook === "string" ? hook : hook.hook)}</p>
+          ${typeof hook === "string" ? "" : `<p>${escapeHtml(hook.sourceEvidence)}</p>`}
           <div class="pill-row">
-            <span class="pill"><i data-lucide="megaphone"></i>Ad test</span>
-            <span class="pill"><i data-lucide="clipboard-check"></i>Validar evidencia</span>
+            <span class="pill"><i data-lucide="megaphone"></i>${escapeHtml(typeof hook === "string" ? "Ad test" : hook.offerMechanic)}</span>
+            <span class="pill"><i data-lucide="clipboard-check"></i>${escapeHtml(typeof hook === "string" ? "Validar evidencia" : hook.confidence)}</span>
           </div>
         </article>`,
         )
         .join("")}
       <article class="report-card full-span">
         <h3>Oferta inicial</h3>
-        <p>Probar una promesa especifica, una garantia de bajo riesgo y una landing page que compare problemas reales encontrados en reviews. Evitar descuentos agresivos hasta saber que dolor mueve la compra.</p>
+        <p>${escapeHtml(ai?.executiveBrief?.whatToBuildTest?.join(" ") || "Probar una promesa especifica, una garantia de bajo riesgo y una landing page que compare problemas reales encontrados en reviews. Evitar descuentos agresivos hasta saber que dolor mueve la compra.")}</p>
       </article>
     </div>`;
 
+  const product = ai?.productRequirements || null;
   document.querySelector("#product").innerHTML = `
     <div class="report-grid">
       <article class="report-card">
         <h3>Requisitos del producto</h3>
-        <ul>${report.category.requirements.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        <ul>${(product?.mustHave?.length ? product.mustHave : report.category.requirements).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       </article>
       <article class="report-card">
         <h3>Preguntas para proveedor</h3>
-        <ul>
-          <li>Que evidencia tecnica respalda el beneficio principal?</li>
-          <li>Que fallas aparecen con devoluciones o reviews negativas?</li>
-          <li>Como se mantiene calidad lote a lote?</li>
-          <li>Que claims NO deberiamos usar?</li>
-        </ul>
+        <ul>${(product?.supplierQuestions?.length
+          ? product.supplierQuestions
+          : [
+              "Que evidencia tecnica respalda el beneficio principal?",
+              "Que fallas aparecen con devoluciones o reviews negativas?",
+              "Como se mantiene calidad lote a lote?",
+              "Que claims NO deberiamos usar?",
+            ]
+        )
+          .map((item) => `<li>${escapeHtml(item)}</li>`)
+          .join("")}</ul>
       </article>
+      ${product ? `<article class="report-card full-span">
+        <h3>Claims y riesgos</h3>
+        ${renderCompactSections([
+          ["Evitar", product.mustAvoid],
+          ["Prueba necesaria", product.qualityProofNeeded],
+          ["Limites de claim", product.claimSafetyBoundaries],
+        ])}
+      </article>` : ""}
       <article class="report-card full-span">
         <h3>Prompt para research profundo</h3>
         <p>${escapeHtml(buildPrompt(report))}</p>
@@ -392,12 +491,36 @@ function activateTab(name) {
   panels.forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === name));
 }
 
+function renderCompactSections(sections) {
+  return sections
+    .filter(([, items]) => Array.isArray(items) && items.length)
+    .map(
+      ([title, items]) => `<div class="compact-section">
+        <h4>${escapeHtml(title)}</h4>
+        <ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </div>`,
+    )
+    .join("");
+}
+
+function setLoading(isLoading) {
+  const button = form.querySelector("button[type='submit']");
+  button.disabled = isLoading;
+  button.innerHTML = isLoading
+    ? '<i data-lucide="loader-circle"></i>Generando...'
+    : '<i data-lucide="sparkles"></i>Generar research';
+  lucide.createIcons();
+}
+
 function buildPrompt(report) {
   return `Investiga una oportunidad ecommerce basada en ${report.reference}. Problema: ${report.problem}. Mercado: ${report.market}. Categoria inferida: ${report.category.category}. Usa Meta Ads para ofertas/hooks, Amazon Reviews para quejas y requisitos de producto, y TikTok organico para lenguaje real del cliente. Separa ruido, evidencia e hipotesis. Entrega avatar, dolores, objeciones, hooks, requisitos del producto, claims riesgosos y siguientes tests.`;
 }
 
 function buildMarkdown(report) {
   if (!report) return "";
+  if (report.ai) {
+    return buildAiMarkdown(report);
+  }
   return `# Ecom Research Brief
 
 Fecha: ${report.createdAt}
@@ -429,6 +552,56 @@ ${report.category.requirements.map((item) => `- ${item}`).join("\n")}
 ## Prompt profundo
 
 ${buildPrompt(report)}
+`;
+}
+
+function buildAiMarkdown(report) {
+  const ai = report.ai;
+  return `# Ecom Research Brief
+
+Fecha: ${report.createdAt}
+Referencia: ${report.reference}
+Problema: ${report.problem}
+Mercado: ${report.market}
+Modo: Codex harness
+
+## Decision
+
+${ai.executiveBrief.decision}
+
+## Oportunidad
+
+${ai.executiveBrief.opportunity}
+
+## Mejor avatar
+
+${ai.executiveBrief.bestAvatar}
+
+## Problema y lenguaje
+
+${ai.problemAvatarMap.painLanguage.map((item) => `- ${item}`).join("\n")}
+
+## Hooks y ofertas
+
+${ai.offerHookTests
+  .map((item) => `- ${item.hook} | ${item.offerMechanic} | ${item.confidence}`)
+  .join("\n")}
+
+## Requisitos de producto
+
+${ai.productRequirements.mustHave.map((item) => `- ${item}`).join("\n")}
+
+## Claims y riesgos
+
+${ai.productRequirements.claimSafetyBoundaries.map((item) => `- ${item}`).join("\n")}
+
+## Limitaciones
+
+${ai.limitations.map((item) => `- ${item}`).join("\n")}
+
+## Siguientes pasos
+
+${ai.nextSteps.map((item) => `- ${item}`).join("\n")}
 `;
 }
 

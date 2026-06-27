@@ -298,6 +298,12 @@ textarea:focus {
   background: var(--teal-dark);
 }
 
+.primary-button:disabled {
+  background: #8ba79f;
+  border-color: #8ba79f;
+  cursor: wait;
+}
+
 .result-panel {
   min-height: calc(100vh - 148px);
   overflow: hidden;
@@ -370,6 +376,25 @@ textarea:focus {
 
 .report-card p {
   margin: 0;
+}
+
+.notice-card {
+  background: #fff8ed;
+}
+
+.compact-section {
+  border-top: 1px solid var(--line);
+  padding: 12px 0 0;
+}
+
+.compact-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.compact-section h4 {
+  font-size: 14px;
+  margin: 0 0 8px;
 }
 
 .report-card ul,

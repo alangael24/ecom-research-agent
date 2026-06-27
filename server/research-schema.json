@@ -1,0 +1,121 @@
+{
+  "type": "object",
+  "properties": {
+    "executiveBrief": {
+      "type": "object",
+      "properties": {
+        "decision": { "type": "string" },
+        "opportunity": { "type": "string" },
+        "bestAvatar": { "type": "string" },
+        "whatToBuildTest": { "type": "array", "items": { "type": "string" } },
+        "whatToAvoid": { "type": "array", "items": { "type": "string" } },
+        "confidence": { "type": "string" }
+      },
+      "required": ["decision", "opportunity", "bestAvatar", "whatToBuildTest", "whatToAvoid", "confidence"],
+      "additionalProperties": false
+    },
+    "problemAvatarMap": {
+      "type": "object",
+      "properties": {
+        "avatars": { "type": "array", "items": { "type": "string" } },
+        "painLanguage": { "type": "array", "items": { "type": "string" } },
+        "purchaseTriggers": { "type": "array", "items": { "type": "string" } },
+        "objections": { "type": "array", "items": { "type": "string" } },
+        "currentAlternatives": { "type": "array", "items": { "type": "string" } },
+        "desiredOutcomes": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["avatars", "painLanguage", "purchaseTriggers", "objections", "currentAlternatives", "desiredOutcomes"],
+      "additionalProperties": false
+    },
+    "sourcePlan": {
+      "type": "object",
+      "properties": {
+        "metaAds": { "type": "array", "items": { "type": "string" } },
+        "amazonReviews": { "type": "array", "items": { "type": "string" } },
+        "tiktokOrganic": { "type": "array", "items": { "type": "string" } },
+        "searchQueries": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["metaAds", "amazonReviews", "tiktokOrganic", "searchQueries"],
+      "additionalProperties": false
+    },
+    "evidenceMatrix": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "insight": { "type": "string" },
+          "businessDecision": { "type": "string" },
+          "sourceType": { "type": "string" },
+          "evidenceSummary": { "type": "string" },
+          "confidence": { "type": "string", "enum": ["alta", "media", "baja", "ruido"] },
+          "noiseRisk": { "type": "string" },
+          "claimSafetyNote": { "type": "string" },
+          "recommendedAction": { "type": "string" }
+        },
+        "required": [
+          "insight",
+          "businessDecision",
+          "sourceType",
+          "evidenceSummary",
+          "confidence",
+          "noiseRisk",
+          "claimSafetyNote",
+          "recommendedAction"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "offerHookTests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "hook": { "type": "string" },
+          "targetAvatar": { "type": "string" },
+          "sourceEvidence": { "type": "string" },
+          "offerMechanic": { "type": "string" },
+          "landingPageSection": { "type": "string" },
+          "riskNote": { "type": "string" },
+          "confidence": { "type": "string" }
+        },
+        "required": ["hook", "targetAvatar", "sourceEvidence", "offerMechanic", "landingPageSection", "riskNote", "confidence"],
+        "additionalProperties": false
+      }
+    },
+    "productRequirements": {
+      "type": "object",
+      "properties": {
+        "mustHave": { "type": "array", "items": { "type": "string" } },
+        "mustAvoid": { "type": "array", "items": { "type": "string" } },
+        "sensoryPreferences": { "type": "array", "items": { "type": "string" } },
+        "packagingShipping": { "type": "array", "items": { "type": "string" } },
+        "qualityProofNeeded": { "type": "array", "items": { "type": "string" } },
+        "claimSafetyBoundaries": { "type": "array", "items": { "type": "string" } },
+        "supplierQuestions": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": [
+        "mustHave",
+        "mustAvoid",
+        "sensoryPreferences",
+        "packagingShipping",
+        "qualityProofNeeded",
+        "claimSafetyBoundaries",
+        "supplierQuestions"
+      ],
+      "additionalProperties": false
+    },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "nextSteps": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": [
+    "executiveBrief",
+    "problemAvatarMap",
+    "sourcePlan",
+    "evidenceMatrix",
+    "offerHookTests",
+    "productRequirements",
+    "limitations",
+    "nextSteps"
+  ],
+  "additionalProperties": false
+}
