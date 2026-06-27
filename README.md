@@ -43,7 +43,10 @@ pnpm dlx wrangler pages secret put APP_PASSWORD --project-name ecom-research-age
 Deploy:
 
 ```bash
-pnpm dlx wrangler pages deploy . --project-name ecom-research-agent
+rm -rf dist
+mkdir -p dist
+cp index.html app.js styles.css .nojekyll dist/
+pnpm dlx wrangler pages deploy dist --project-name ecom-research-agent
 ```
 
 Give the public Pages URL and `APP_PASSWORD` to the intended user.
