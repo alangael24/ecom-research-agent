@@ -1,4 +1,5 @@
 work/
 outputs/
 dist/
+.wrangler/
 .DS_Store
