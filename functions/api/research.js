@@ -76,7 +76,7 @@ export async function onRequestPost(context) {
 }
 
 export async function onRequestGet() {
-  return json({ ok: true, service: "ecom-research-cloudflare-proxy" });
+  return json({ ok: true, service: "alibaba-sourcing-cloudflare-proxy" });
 }
 
 export async function onRequestOptions() {
@@ -88,9 +88,11 @@ export async function onRequestOptions() {
 
 function validatePayload(payload) {
   if (!payload || typeof payload !== "object") return "Missing payload.";
-  if (!stringField(payload.reference, 500)) return "Missing or invalid reference.";
-  if (!stringField(payload.problem, 2000)) return "Missing or invalid problem.";
-  if (!Array.isArray(payload.sources) || payload.sources.length === 0) return "Select at least one source.";
+  if (!stringField(payload.naturalRequest, 3000)) return "Missing or invalid request.";
+  if (payload.product && !stringField(payload.product, 500)) return "Invalid product.";
+  if (payload.productDetails && !stringField(payload.productDetails, 2000)) return "Invalid product details.";
+  if (payload.goals && !Array.isArray(payload.goals)) return "Invalid goals.";
+  if (payload.destination && typeof payload.destination !== "string") return "Invalid destination.";
   return "";
 }
 
@@ -113,6 +115,6 @@ function corsHeaders() {
   return {
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type,authorization",
+    "access-control-allow-headers": "content-type,authorization,x-app-password",
   };
 }

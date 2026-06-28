@@ -1,11 +1,21 @@
-# Ecom Research Agent
+# Agent Genia Research
 
-Static web app for guided ecommerce opportunity research. It helps a non-technical user turn a competitor URL, brand idea, or customer problem into a structured research brief across Meta Ads, Amazon Reviews, and TikTok organic signals.
+Static web app for Agent Genia ecommerce research. The user writes one natural-language request on the main page; the agent infers intent and calls internal tools such as Alibaba sourcing, Meta/Amazon/TikTok research, negotiation drafting, DDP checks, and quality checks without sending the user into a separate flow.
 
 The app can run in two modes:
 
-- Guided static mode: works in any static host and creates a structured research brief in the browser.
-- Codex harness mode: Cloudflare Pages calls `/api/research`, which proxies to a private harness server that runs `codex exec` with the local Codex authentication on a trusted machine.
+- Guided static mode: works in any static host and shows the same main-page cockpit with inferred tool routing.
+- Codex harness mode: Cloudflare Pages calls `/api/research`, which proxies to a private harness server that runs `codex exec` with the local Codex authentication and the local `$alibaba-sourcing-agent` skill. This is the production mode where Agent Genia decides whether to call Alibaba sourcing as an internal tool and returns results to the main page.
+
+## Local skill
+
+This machine has the production sourcing skill installed at:
+
+```bash
+~/.codex/skills/alibaba-sourcing-agent
+```
+
+The harness prompt invokes `$alibaba-sourcing-agent`. If the harness runs on another machine, install or copy that skill there first.
 
 ## Local harness
 

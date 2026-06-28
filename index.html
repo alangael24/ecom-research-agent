@@ -5,24 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Research guiado para validar oportunidades ecommerce con Meta Ads, Amazon Reviews y TikTok."
+      content="Agent Genia convierte una solicitud natural de ecommerce en research, sourcing, negociacion y siguientes pasos."
     />
-    <title>Ecom Research Agent</title>
+    <title>Agent Genia Research</title>
     <link rel="preconnect" href="https://unpkg.com" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div class="brand">
+        <a class="brand" href="/" aria-label="Agent Genia">
           <div class="brand-mark" aria-hidden="true">
-            <i data-lucide="radar"></i>
+            <i data-lucide="wand-sparkles"></i>
           </div>
           <div>
-            <h1>Ecom Research</h1>
-            <p>Meta Ads + Amazon + TikTok</p>
+            <h1>Agent Genia</h1>
+            <p>Research ecom</p>
           </div>
-        </div>
+        </a>
         <div class="top-actions">
           <button class="icon-button" id="copySummary" type="button" title="Copiar resumen">
             <i data-lucide="copy"></i>
@@ -33,115 +33,51 @@
         </div>
       </header>
 
-      <main class="workspace">
-        <form class="control-panel" id="researchForm">
-          <div class="panel-heading">
-            <span class="eyebrow">Nuevo research</span>
-            <h2>Validar una idea ecom</h2>
-          </div>
+      <main class="main-page">
+        <section class="hero">
+          <h2>¿Qué quieres investigar hoy?</h2>
 
-          <label>
-            Marca o URL de referencia
-            <input
-              id="reference"
-              name="reference"
-              type="text"
-              placeholder="https://jolieskinco.com"
-              autocomplete="off"
-            />
-          </label>
-
-          <label>
-            Problema o producto
-            <textarea
-              id="problem"
-              name="problem"
-              rows="4"
-              placeholder="Quiero empezar una marca parecida para skincare / belleza"
-            ></textarea>
-          </label>
-
-          <div class="field-grid">
-            <label>
-              Mercado
-              <select id="market" name="market">
-                <option value="US">Estados Unidos</option>
-                <option value="MX">Mexico</option>
-                <option value="LATAM">Latam</option>
-                <option value="GLOBAL">Global</option>
-              </select>
-            </label>
-            <label>
-              Idioma
-              <select id="language" name="language">
-                <option value="es">Espanol</option>
-                <option value="en">English</option>
-                <option value="both">Bilingue</option>
-              </select>
-            </label>
-          </div>
-
-          <label>
-            Clave de acceso
-            <input
-              id="accessKey"
-              name="accessKey"
-              type="password"
-              placeholder="Solo si el backend la pide"
-              autocomplete="current-password"
-            />
-          </label>
-
-          <fieldset>
-            <legend>Fuentes</legend>
-            <div class="source-switches">
-              <label class="switch-card">
-                <input type="checkbox" name="source" value="meta" checked />
-                <span><i data-lucide="megaphone"></i>Meta Ads</span>
-              </label>
-              <label class="switch-card">
-                <input type="checkbox" name="source" value="amazon" checked />
-                <span><i data-lucide="star"></i>Amazon</span>
-              </label>
-              <label class="switch-card">
-                <input type="checkbox" name="source" value="tiktok" checked />
-                <span><i data-lucide="message-circle"></i>TikTok</span>
-              </label>
+          <form class="command-panel" id="researchForm">
+            <input id="accessKey" name="accessKey" type="hidden" />
+            <div class="prompt-row">
+              <button class="plus-button" type="button" title="Agregar contexto">
+                <i data-lucide="plus"></i>
+              </button>
+              <textarea
+                id="naturalRequest"
+                name="naturalRequest"
+                rows="1"
+                placeholder="Pide research, producto o proveedor..."
+                autocomplete="off"
+              ></textarea>
+              <div class="input-actions">
+                <button class="mic-button" type="button" title="Dictar">
+                  <i data-lucide="mic"></i>
+                </button>
+                <button class="send-button" type="submit" title="Ejecutar agente">
+                  <i data-lucide="arrow-up"></i>
+                </button>
+              </div>
             </div>
-          </fieldset>
+          </form>
+        </section>
 
-          <fieldset>
-            <legend>Profundidad</legend>
-            <div class="segmented" role="radiogroup" aria-label="Profundidad">
-              <label>
-                <input type="radio" name="depth" value="rapido" checked />
-                <span>Rapido</span>
-              </label>
-              <label>
-                <input type="radio" name="depth" value="profundo" />
-                <span>Profundo</span>
-              </label>
-            </div>
-          </fieldset>
-
-          <button class="primary-button" type="submit">
-            <i data-lucide="sparkles"></i>
-            Generar research
-          </button>
-        </form>
-
-        <section class="result-panel" aria-live="polite">
+        <section class="result-panel" aria-live="polite" hidden>
           <nav class="tabs" aria-label="Secciones del reporte">
-            <button class="tab active" type="button" data-tab="brief">Brief</button>
-            <button class="tab" type="button" data-tab="sources">Fuentes</button>
-            <button class="tab" type="button" data-tab="hooks">Hooks</button>
-            <button class="tab" type="button" data-tab="product">Producto</button>
+            <button class="tab active" type="button" data-tab="brief">Resumen</button>
+            <button class="tab" type="button" data-tab="tools">Herramientas</button>
+            <button class="tab" type="button" data-tab="suppliers">Proveedores</button>
+            <button class="tab" type="button" data-tab="negotiation">Negociacion</button>
+            <button class="tab" type="button" data-tab="ddp">DDP</button>
+            <button class="tab" type="button" data-tab="quality">Calidad</button>
           </nav>
 
           <div class="report active" id="brief" data-panel="brief"></div>
-          <div class="report" id="sources" data-panel="sources"></div>
-          <div class="report" id="hooks" data-panel="hooks"></div>
-          <div class="report" id="product" data-panel="product"></div>
+          <div class="report" id="tools" data-panel="tools"></div>
+          <div class="report" id="suppliers" data-panel="suppliers"></div>
+          <div class="report" id="negotiation" data-panel="negotiation"></div>
+          <div class="report" id="ddp" data-panel="ddp"></div>
+          <div class="report" id="quality" data-panel="quality"></div>
         </section>
       </main>
     </div>
@@ -152,10 +88,11 @@
           <span><i data-lucide="megaphone"></i> Ads</span>
           <span><i data-lucide="star"></i> Reviews</span>
           <span><i data-lucide="message-circle"></i> Social</span>
+          <span><i data-lucide="package-search"></i> Alibaba</span>
         </div>
-        <h2>Empieza con una marca, URL o problema.</h2>
+        <h2>La caja principal controla todo.</h2>
         <p>
-          El reporte separa anuncios, reviews y voz organica para que las decisiones no salgan de ruido.
+          Si pides proveedores, el agente llama sourcing de Alibaba como herramienta interna.
         </p>
       </div>
     </template>

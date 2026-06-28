@@ -5,117 +5,143 @@
       "type": "object",
       "properties": {
         "decision": { "type": "string" },
-        "opportunity": { "type": "string" },
-        "bestAvatar": { "type": "string" },
-        "whatToBuildTest": { "type": "array", "items": { "type": "string" } },
-        "whatToAvoid": { "type": "array", "items": { "type": "string" } },
+        "product": { "type": "string" },
+        "targetMarket": { "type": "string" },
+        "recommendedPath": { "type": "string" },
+        "budgetFit": { "type": "string" },
+        "topRisks": { "type": "array", "items": { "type": "string" } },
         "confidence": { "type": "string" }
       },
-      "required": ["decision", "opportunity", "bestAvatar", "whatToBuildTest", "whatToAvoid", "confidence"],
+      "required": ["decision", "product", "targetMarket", "recommendedPath", "budgetFit", "topRisks", "confidence"],
       "additionalProperties": false
     },
-    "problemAvatarMap": {
+    "supplierSearchPlan": {
       "type": "object",
       "properties": {
-        "avatars": { "type": "array", "items": { "type": "string" } },
-        "painLanguage": { "type": "array", "items": { "type": "string" } },
-        "purchaseTriggers": { "type": "array", "items": { "type": "string" } },
-        "objections": { "type": "array", "items": { "type": "string" } },
-        "currentAlternatives": { "type": "array", "items": { "type": "string" } },
-        "desiredOutcomes": { "type": "array", "items": { "type": "string" } }
+        "alibabaQueries": { "type": "array", "items": { "type": "string" } },
+        "filters": { "type": "array", "items": { "type": "string" } },
+        "dataToCapture": { "type": "array", "items": { "type": "string" } },
+        "rejectRules": { "type": "array", "items": { "type": "string" } }
       },
-      "required": ["avatars", "painLanguage", "purchaseTriggers", "objections", "currentAlternatives", "desiredOutcomes"],
+      "required": ["alibabaQueries", "filters", "dataToCapture", "rejectRules"],
       "additionalProperties": false
     },
-    "sourcePlan": {
-      "type": "object",
-      "properties": {
-        "metaAds": { "type": "array", "items": { "type": "string" } },
-        "amazonReviews": { "type": "array", "items": { "type": "string" } },
-        "tiktokOrganic": { "type": "array", "items": { "type": "string" } },
-        "searchQueries": { "type": "array", "items": { "type": "string" } }
-      },
-      "required": ["metaAds", "amazonReviews", "tiktokOrganic", "searchQueries"],
-      "additionalProperties": false
-    },
-    "evidenceMatrix": {
+    "agentWorkLog": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "insight": { "type": "string" },
-          "businessDecision": { "type": "string" },
-          "sourceType": { "type": "string" },
-          "evidenceSummary": { "type": "string" },
-          "confidence": { "type": "string", "enum": ["alta", "media", "baja", "ruido"] },
-          "noiseRisk": { "type": "string" },
-          "claimSafetyNote": { "type": "string" },
-          "recommendedAction": { "type": "string" }
+          "key": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "type": "string" },
+          "result": { "type": "string" },
+          "nextAction": { "type": "string" }
+        },
+        "required": ["key", "title", "status", "result", "nextAction"],
+        "additionalProperties": false
+      }
+    },
+    "supplierShortlist": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "supplierName": { "type": "string" },
+          "alibabaUrl": { "type": "string" },
+          "productMatch": { "type": "string" },
+          "moq": { "type": "string" },
+          "unitPrice": { "type": "string" },
+          "sampleTerms": { "type": "string" },
+          "ddpStatus": { "type": "string" },
+          "qualityProof": { "type": "string" },
+          "certifications": { "type": "string" },
+          "score": { "type": "number" },
+          "redFlags": { "type": "array", "items": { "type": "string" } },
+          "nextAsk": { "type": "string" }
         },
         "required": [
-          "insight",
-          "businessDecision",
-          "sourceType",
-          "evidenceSummary",
-          "confidence",
-          "noiseRisk",
-          "claimSafetyNote",
-          "recommendedAction"
+          "supplierName",
+          "alibabaUrl",
+          "productMatch",
+          "moq",
+          "unitPrice",
+          "sampleTerms",
+          "ddpStatus",
+          "qualityProof",
+          "certifications",
+          "score",
+          "redFlags",
+          "nextAsk"
         ],
         "additionalProperties": false
       }
     },
-    "offerHookTests": {
+    "negotiationPlan": {
+      "type": "object",
+      "properties": {
+        "rfqMessage": { "type": "string" },
+        "priceNegotiationMessage": { "type": "string" },
+        "moqMessage": { "type": "string" },
+        "sampleMessage": { "type": "string" },
+        "termsToConfirm": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["rfqMessage", "priceNegotiationMessage", "moqMessage", "sampleMessage", "termsToConfirm"],
+      "additionalProperties": false
+    },
+    "supplierOutreachQueue": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "hook": { "type": "string" },
-          "targetAvatar": { "type": "string" },
-          "sourceEvidence": { "type": "string" },
-          "offerMechanic": { "type": "string" },
-          "landingPageSection": { "type": "string" },
-          "riskNote": { "type": "string" },
-          "confidence": { "type": "string" }
+          "supplierName": { "type": "string" },
+          "status": { "type": "string" },
+          "messageType": { "type": "string" },
+          "message": { "type": "string" },
+          "waitingFor": { "type": "string" },
+          "needsUserApproval": { "type": "boolean" }
         },
-        "required": ["hook", "targetAvatar", "sourceEvidence", "offerMechanic", "landingPageSection", "riskNote", "confidence"],
+        "required": ["supplierName", "status", "messageType", "message", "waitingFor", "needsUserApproval"],
         "additionalProperties": false
       }
     },
-    "productRequirements": {
+    "ddpPlan": {
       "type": "object",
       "properties": {
-        "mustHave": { "type": "array", "items": { "type": "string" } },
-        "mustAvoid": { "type": "array", "items": { "type": "string" } },
-        "sensoryPreferences": { "type": "array", "items": { "type": "string" } },
-        "packagingShipping": { "type": "array", "items": { "type": "string" } },
-        "qualityProofNeeded": { "type": "array", "items": { "type": "string" } },
-        "claimSafetyBoundaries": { "type": "array", "items": { "type": "string" } },
-        "supplierQuestions": { "type": "array", "items": { "type": "string" } }
+        "destination": { "type": "string" },
+        "ddpQuestions": { "type": "array", "items": { "type": "string" } },
+        "includedChecklist": { "type": "array", "items": { "type": "string" } },
+        "redFlags": { "type": "array", "items": { "type": "string" } },
+        "fallbackIncoterm": { "type": "string" }
       },
-      "required": [
-        "mustHave",
-        "mustAvoid",
-        "sensoryPreferences",
-        "packagingShipping",
-        "qualityProofNeeded",
-        "claimSafetyBoundaries",
-        "supplierQuestions"
-      ],
+      "required": ["destination", "ddpQuestions", "includedChecklist", "redFlags", "fallbackIncoterm"],
       "additionalProperties": false
     },
-    "limitations": { "type": "array", "items": { "type": "string" } },
-    "nextSteps": { "type": "array", "items": { "type": "string" } }
+    "qualityPlan": {
+      "type": "object",
+      "properties": {
+        "sampleChecklist": { "type": "array", "items": { "type": "string" } },
+        "certificationChecks": { "type": "array", "items": { "type": "string" } },
+        "inspectionPlan": { "type": "array", "items": { "type": "string" } },
+        "packagingChecks": { "type": "array", "items": { "type": "string" } },
+        "noGoDefects": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["sampleChecklist", "certificationChecks", "inspectionPlan", "packagingChecks", "noGoDefects"],
+      "additionalProperties": false
+    },
+    "beginnerNextSteps": { "type": "array", "items": { "type": "string" } },
+    "limitations": { "type": "array", "items": { "type": "string" } }
   },
   "required": [
     "executiveBrief",
-    "problemAvatarMap",
-    "sourcePlan",
-    "evidenceMatrix",
-    "offerHookTests",
-    "productRequirements",
-    "limitations",
-    "nextSteps"
+    "supplierSearchPlan",
+    "agentWorkLog",
+    "supplierShortlist",
+    "negotiationPlan",
+    "supplierOutreachQueue",
+    "ddpPlan",
+    "qualityPlan",
+    "beginnerNextSteps",
+    "limitations"
   ],
   "additionalProperties": false
 }

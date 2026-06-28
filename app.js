@@ -7,105 +7,152 @@ const panels = [...document.querySelectorAll("[data-panel]")];
 const tabs = [...document.querySelectorAll("[data-tab]")];
 const emptyState = document.querySelector("#emptyState");
 
-const sourceConfig = {
-  meta: {
-    label: "Meta Ads",
-    icon: "megaphone",
-    className: "meta",
+const goalConfig = {
+  interpret: {
+    label: "Interpretar solicitud",
+    icon: "sparkles",
+    className: "interpret",
   },
-  amazon: {
-    label: "Amazon Reviews",
-    icon: "star",
-    className: "amazon",
+  search: {
+    label: "Buscar proveedores",
+    icon: "search",
+    className: "alibaba",
   },
-  tiktok: {
-    label: "TikTok organico",
-    icon: "message-circle",
-    className: "tiktok",
+  negotiate: {
+    label: "Negociar precio/MOQ",
+    icon: "message-square",
+    className: "negotiate",
+  },
+  ddp: {
+    label: "Resolver DDP",
+    icon: "truck",
+    className: "ddp",
+  },
+  quality: {
+    label: "Calidad maxima",
+    icon: "shield-check",
+    className: "quality",
   },
 };
 
-const categoryMap = [
+const productProfiles = [
   {
-    match: ["skin", "skincare", "piel", "beauty", "belleza", "acne", "jolie", "serum"],
-    category: "skincare / belleza",
-    pains: [
-      "piel irritada o sensible",
-      "resultados visibles sin rutina complicada",
-      "desconfianza por claims exagerados",
-      "textura, olor, residuo o empaque que arruina la experiencia",
+    match: ["bottle", "botella", "tumbler", "termo", "thermo", "vaso", "flask", "drinkware"],
+    category: "botellas termicas / drinkware",
+    searchTerms: [
+      "custom stainless steel tumbler manufacturer",
+      "vacuum insulated bottle custom logo",
+      "stainless steel water bottle private label",
+      "insulated tumbler ddp usa",
     ],
-    hooks: [
-      "Rutina simple para piel sensible",
-      "Antes de comprar otro serum: revisa esto",
-      "Lo que nadie dice de los productos virales de skincare",
+    mustHave: [
+      "acero inoxidable 304 o 316 especificado",
+      "prueba de fuga y retencion de temperatura",
+      "opcion de muestra con logo o muestra neutra",
+      "empaque individual resistente para ecom",
     ],
-    searches: {
-      amazon: ["sensitive skin serum", "skincare for sensitive skin", "hydrating face serum"],
-      tiktok: ["sensitive skin routine", "skincare irritated skin", "serum did not work"],
-    },
-    requirements: [
-      "claims conservadores y comprobables",
-      "ingredientes faciles de entender",
-      "pruebas sociales con contexto real",
-      "empaque que se vea premium sin prometer resultados medicos",
+    certifications: ["LFGB", "FDA food contact", "BPA free"],
+    sampleChecks: [
+      "llenar con agua y revisar fugas 24 horas",
+      "medir retencion frio/calor contra lo prometido",
+      "revisar olor metalico, pintura y rayones",
+      "probar tapa, popote, rosca y empaque",
+    ],
+    ddpRisks: [
+      "peso volumetrico puede cambiar mucho el costo aterrizado",
+      "confirmar si la cotizacion incluye duties y entrega final",
+      "pedir carton size y gross weight antes de aceptar DDP",
     ],
   },
   {
-    match: ["hair", "cabello", "pelo", "shampoo", "scalp", "cuero"],
-    category: "haircare",
-    pains: [
-      "caida o quiebre percibido",
-      "picazon, resequedad o cuero cabelludo sensible",
-      "malos resultados con productos caros",
-      "miedo a ingredientes agresivos",
+    match: ["skin", "skincare", "piel", "beauty", "belleza", "serum", "cosmetic", "cosmetico"],
+    category: "skincare / cosmeticos",
+    searchTerms: [
+      "private label skincare manufacturer low moq",
+      "custom face serum manufacturer",
+      "cosmetic manufacturer private label ddp",
+      "skincare sample private label supplier",
     ],
-    hooks: [
-      "Tu problema no es solo shampoo",
-      "La rutina de cabello que evita residuos pesados",
-      "Clientes comparan esto despues de 30 dias",
+    mustHave: [
+      "formula, INCI y lote claramente documentados",
+      "muestras antes de cualquier produccion",
+      "GMP/ISO o documentos equivalentes visibles",
+      "claims conservadores y revisables",
     ],
-    searches: {
-      amazon: ["hair growth shampoo", "scalp serum sensitive scalp", "hair repair treatment"],
-      tiktok: ["hair falling out shampoo", "sensitive scalp routine", "hair product did not work"],
-    },
-    requirements: [
-      "evitar promesas de crecimiento garantizado",
-      "pruebas de compatibilidad por tipo de cabello",
-      "instrucciones claras de uso",
-      "packaging resistente a fugas",
+    certifications: ["GMP", "ISO 22716", "MSDS"],
+    sampleChecks: [
+      "revisar textura, olor, irritacion percibida y estabilidad basica",
+      "comparar etiqueta, INCI y claims permitidos",
+      "pedir COA/MSDS y fecha de caducidad",
+      "verificar compatibilidad de envase con la formula",
+    ],
+    ddpRisks: [
+      "cosmeticos pueden requerir documentacion especifica por pais",
+      "DDP no elimina responsabilidad de claims o etiquetado",
+      "evitar proveedores que prometen efectos medicos",
     ],
   },
   {
-    match: ["filter", "water", "agua", "ducha", "shower", "hard"],
-    category: "filtros / agua",
-    pains: [
-      "agua dura en ducha",
-      "piel seca despues de banarse",
-      "cabello opaco o con residuo",
-      "duda sobre si el filtro realmente funciona",
+    match: ["led", "charger", "cargador", "electronics", "electronico", "battery", "bateria", "usb"],
+    category: "electronicos / accesorios",
+    searchTerms: [
+      "consumer electronics manufacturer low moq",
+      "custom usb charger supplier certification",
+      "private label electronics manufacturer ddp",
+      "electronic accessory factory trade assurance",
     ],
-    hooks: [
-      "Si te mudaste a USA y tu piel cambio",
-      "La prueba simple para sospechar agua dura",
-      "Antes de culpar a tu shampoo",
+    mustHave: [
+      "certificaciones para el mercado destino",
+      "prueba funcional de muestra y cableado",
+      "manual, etiquetas y advertencias correctas",
+      "empaque que proteja en transporte",
     ],
-    searches: {
-      amazon: ["shower filter hard water", "water filter for shower skin hair", "hard water shower head"],
-      tiktok: ["hard water hair usa", "shower filter skin", "water in usa hair loss"],
-    },
-    requirements: [
-      "explicar reemplazo de cartuchos",
-      "compatibilidad con regaderas comunes",
-      "no prometer curas dermatologicas",
-      "mostrar evidencia de filtracion o certificaciones",
+    certifications: ["CE", "FCC", "RoHS"],
+    sampleChecks: [
+      "probar funcionamiento continuo",
+      "revisar calentamiento, conectores y materiales",
+      "verificar que el cargador/cable sea el prometido",
+      "pedir test reports emitidos a la fabrica o producto",
+    ],
+    ddpRisks: [
+      "baterias y electronicos pueden tener restricciones de transporte",
+      "certificaciones falsas son un riesgo alto",
+      "DDP debe explicar aduanas y documentos de importacion",
+    ],
+  },
+  {
+    match: ["pet", "dog", "cat", "perro", "gato", "mascota"],
+    category: "productos para mascotas",
+    searchTerms: [
+      "pet product manufacturer custom logo",
+      "dog accessory supplier low moq",
+      "cat toy manufacturer private label",
+      "pet product ddp usa supplier",
+    ],
+    mustHave: [
+      "material seguro y sin olor fuerte",
+      "costuras o piezas pequenas resistentes",
+      "empaque claro para uso del producto",
+      "muestra para prueba de durabilidad",
+    ],
+    certifications: ["CPSIA", "EN71"],
+    sampleChecks: [
+      "jalar costuras, broches y piezas pequenas",
+      "revisar olor, bordes filosos y desprendimientos",
+      "probar tamano real con el tipo de mascota objetivo",
+      "confirmar instrucciones y advertencias de uso",
+    ],
+    ddpRisks: [
+      "productos grandes pueden inflar costo por volumen",
+      "juguetes o productos para mordida necesitan prueba de seguridad",
+      "confirmar duties y final delivery por escrito",
     ],
   },
 ];
 
 function init() {
   renderEmptyState();
-  form.accessKey.value = localStorage.getItem("ecomResearchAccessKey") || "";
+  form.accessKey.value = localStorage.getItem("alibabaSourcingAccessKey") || "";
   form.addEventListener("submit", handleSubmit);
   document.querySelector("#downloadBrief").addEventListener("click", downloadBrief);
   document.querySelector("#copySummary").addEventListener("click", copySummary);
@@ -129,47 +176,88 @@ async function handleSubmit(event) {
       report.backendError = backend.message;
     }
   } catch (error) {
-    report.backendError = "Modo guiado activo. El harness privado no respondio.";
+    report.backendError =
+      "Preview local sin harness conectado. En produccion, el agente ejecuta busqueda, comparacion y cola de negociacion desde esta misma pagina.";
   }
 
   state.latest = report;
+  document.body.classList.add("report-ready");
+  document.querySelector(".result-panel").hidden = false;
   renderReport(report);
   activateTab("brief");
   saveState(report);
   setLoading(false);
-  showToast(report.ai ? "Research generado con Codex" : "Research guiado generado");
+  showToast(report.ai ? "Sourcing generado con Codex" : "Plan guiado generado");
 }
 
 function readForm() {
-  const selectedSources = [...form.querySelectorAll("input[name='source']:checked")].map(
-    (input) => input.value,
-  );
+  const naturalRequest = form.naturalRequest.value.trim() || "Quiero investigar una oportunidad ecommerce y necesito siguientes pasos claros.";
+  const inferred = inferRequest(naturalRequest);
   return {
-    reference: form.reference.value.trim() || "marca de referencia",
-    problem: form.problem.value.trim() || "validar una nueva marca ecommerce",
-    market: form.market.value,
-    language: form.language.value,
-    depth: form.depth.value,
-    sources: selectedSources.length ? selectedSources : ["meta", "amazon", "tiktok"],
+    naturalRequest,
+    ...inferred,
     accessKey: form.accessKey.value.trim(),
   };
 }
 
+function inferRequest(naturalRequest) {
+  const text = naturalRequest.toLowerCase();
+  const sourcingIntent = hasAny(text, [
+    "alibaba",
+    "proveedor",
+    "proveedores",
+    "supplier",
+    "factory",
+    "fabricante",
+    "ddp",
+    "moq",
+    "negociar",
+    "cotizar",
+    "sourcing",
+  ]);
+  const market = text.includes("mexico") || text.includes("méxico") ? "MX" : text.includes("latam") ? "LATAM" : "US";
+  const destination = inferDestination(text, market);
+  const budget = inferMoney(text, ["presupuesto", "budget", "tengo", "invertir"]);
+  const targetCost = inferMoney(text, ["costo", "cost", "unidad", "unit"], true);
+  const orderQuantity = inferQuantity(text) || 100;
+  const qualityLevel = text.includes("premium") || text.includes("calidad") ? "premium" : text.includes("barato") || text.includes("precio bajo") ? "lowest-price" : text.includes("moq") ? "low-moq" : "balanced";
+  const product = inferProduct(naturalRequest);
+
+  return {
+    product,
+    productDetails: naturalRequest,
+    market,
+    destination,
+    budget,
+    targetCost,
+    orderQuantity,
+    qualityLevel,
+    depth: text.includes("profundo") || text.includes("completo") ? "profundo" : "rapido",
+    goals: sourcingIntent ? ["interpret", "search", "negotiate", "ddp", "quality"] : ["interpret"],
+    selectedInternalTool: sourcingIntent ? "alibaba-sourcing-agent" : "ecom-research-agent",
+  };
+}
+
 function buildReport(data) {
-  const text = `${data.reference} ${data.problem}`.toLowerCase();
+  const text = `${data.product} ${data.productDetails}`.toLowerCase();
   const category =
-    categoryMap.find((item) => item.match.some((word) => text.includes(word))) ||
-    genericCategory(data.problem);
-  const query = cleanQuery(data.reference, data.problem, category.category);
-  const sourceLinks = buildSourceLinks(query, data.market, data.sources, category);
-  const rows = buildEvidenceRows(data, category);
+    productProfiles.find((item) => item.match.some((word) => text.includes(word))) ||
+    genericProfile(data.product);
+  const query = cleanQuery(data.product, category.category);
+  const targetUnitCost =
+    data.targetCost || (data.budget && data.orderQuantity ? data.budget / data.orderQuantity : 0);
+  const agentTasks = buildAgentTasks(query, data, category);
+  const evidenceLinks = buildEvidenceLinks(query, data, category);
+  const supplierProfiles = buildGuidedSupplierProfiles(data, category, targetUnitCost);
 
   return {
     ...data,
     category,
     query,
-    sourceLinks,
-    rows,
+    targetUnitCost,
+    agentTasks,
+    evidenceLinks,
+    supplierProfiles,
     createdAt: new Date().toLocaleString("es-US", {
       dateStyle: "medium",
       timeStyle: "short",
@@ -179,7 +267,7 @@ function buildReport(data) {
 
 async function requestBackendReport(data) {
   if (data.accessKey) {
-    localStorage.setItem("ecomResearchAccessKey", data.accessKey);
+    localStorage.setItem("alibabaSourcingAccessKey", data.accessKey);
   }
 
   const headers = {
@@ -202,105 +290,226 @@ async function requestBackendReport(data) {
   return response.json();
 }
 
-function genericCategory(problem) {
-  const base = problem.split(/\s+/).slice(0, 4).join(" ") || "producto ecommerce";
+function defaultDestination(market) {
+  if (market === "MX") return "Ciudad de Mexico, Mexico";
+  if (market === "LATAM") return "pais y ciudad destino";
+  if (market === "GLOBAL") return "destino final";
+  return "Miami, FL 33166, USA";
+}
+
+function inferDestination(text, market) {
+  if (text.includes("miami")) return "Miami, FL, USA";
+  if (text.includes("mexico") || text.includes("méxico")) return "Ciudad de Mexico, Mexico";
+  const cityMatch = text.match(/\b(?:a|en|para)\s+([a-záéíóúñ\s]+,\s*[a-z]{2,})\b/i);
+  if (cityMatch) return normalizeDestination(cityMatch[1]);
+  return defaultDestination(market);
+}
+
+function inferProduct(value) {
+  const directMatch = value.match(/(?:vender|buscar|encontrar|cotizar|comprar)\s+(.+?)(?:\s+para\s+|\s+y\s+|\s+con\s+|\s+en\s+alibaba|\.|$)/i);
+  if (directMatch?.[1]) return directMatch[1].trim().slice(0, 90);
+  const cleaned = value
+    .replace(/quiero|necesito|busco|encontrar|proveedores?|fabricantes?|alibaba|ddp|moq|negociar|cotizar/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = cleaned.split(/\s+/).slice(0, 8).join(" ");
+  return words || "producto ecommerce";
+}
+
+function inferMoney(text, nearbyWords, requireNearby = false) {
+  const moneyMatches = [...text.matchAll(/\$?\s*(\d+(?:[.,]\d+)?)\s*(k|mil|usd|dolares|dólares)?/gi)];
+  if (!moneyMatches.length) return 0;
+  const scored = moneyMatches
+    .map((match) => {
+      const index = match.index || 0;
+      const windowText = text.slice(Math.max(0, index - 35), index + 35);
+      const score = nearbyWords.some((word) => windowText.includes(word)) ? 2 : 1;
+      let value = Number(match[1].replace(",", "."));
+      if (match[2] && ["k", "mil"].includes(match[2].toLowerCase())) value *= 1000;
+      return { value, score };
+    })
+    .filter((item) => !requireNearby || item.score > 1)
+    .sort((a, b) => b.score - a.score);
+  return scored[0]?.value || 0;
+}
+
+function inferQuantity(text) {
+  const quantityMatch = text.match(/(\d+)\s*(unidades|piezas|pcs|units|botellas|productos)/i);
+  return quantityMatch ? Number(quantityMatch[1]) : 0;
+}
+
+function hasAny(text, words) {
+  return words.some((word) => text.includes(word));
+}
+
+function normalizeDestination(value) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => (part.length <= 3 ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
+    .join(" ");
+}
+
+function genericProfile(product) {
+  const base = product.split(/\s+/).slice(0, 5).join(" ") || "producto ecommerce";
   return {
     category: base,
-    pains: [
-      "dolor repetido con soluciones actuales",
-      "objeciones antes de comprar",
-      "decepcion despues de usar productos similares",
-      "falta de confianza en claims de marcas",
+    searchTerms: [
+      `${base} manufacturer low moq`,
+      `${base} private label supplier`,
+      `${base} trade assurance ddp`,
+      `${base} custom packaging manufacturer`,
     ],
-    hooks: [
-      "Antes de comprar otra solucion, revisa esto",
-      "El problema que las marcas no explican bien",
-      "La version simple para resolver el dolor principal",
+    mustHave: [
+      "muestra disponible antes de comprar inventario",
+      "MOQ compatible con presupuesto inicial",
+      "Trade Assurance y terminos escritos",
+      "especificaciones claras de producto y empaque",
     ],
-    searches: {
-      amazon: [`${base} reviews`, `${base} best seller`, `${base} complaints`],
-      tiktok: [`${base} problem`, `${base} review`, `${base} did not work`],
-    },
-    requirements: [
-      "beneficio central facil de comprobar",
-      "calidad consistente",
-      "prueba social especifica",
-      "garantia o reduccion de riesgo",
+    certifications: ["certificacion relevante al mercado destino"],
+    sampleChecks: [
+      "comparar muestra contra fotos y especificaciones",
+      "revisar materiales, acabados, olor, defectos y empaque",
+      "medir dimensiones/peso reales",
+      "probar uso normal del producto por varios dias",
+    ],
+    ddpRisks: [
+      "DDP debe explicar duties, taxes, customs clearance y entrega final",
+      "cotizar con direccion destino real",
+      "pedir carton size y gross weight antes de comparar flete",
     ],
   };
 }
 
-function cleanQuery(reference, problem, category) {
-  let value = reference.replace(/^https?:\/\//, "").replace(/^www\./, "");
-  value = value.split(/[/?#]/)[0].replace(/\.(com|co|net|io|store)$/i, "");
-  value = value.replace(/[-_]/g, " ").trim();
-  if (!value || value === "marca de referencia") {
-    value = `${category} ${problem}`.trim();
-  }
-  return value.replace(/\s+/g, " ").slice(0, 80);
+function cleanQuery(product, category) {
+  const value = `${product} ${category}`.replace(/\s+/g, " ").trim();
+  return value.slice(0, 90);
 }
 
-function buildSourceLinks(query, market, sources, category) {
-  const country = market === "MX" ? "MX" : "US";
-  const metaQuery = encodeURIComponent(query);
-  const amazonQuery = encodeURIComponent(category.searches.amazon[0]);
-  const tiktokQuery = encodeURIComponent(category.searches.tiktok[0]);
-  const links = [];
-  if (sources.includes("meta")) {
-    links.push({
-      key: "meta",
-      title: "Buscar anuncios activos",
-      note: "Mirar copy, landing page, oferta, fechas, creativos y claims repetidos.",
-      query,
-      href: `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${country}&q=${metaQuery}&search_type=keyword_unordered&media_type=all`,
-    });
+function buildAgentTasks(query, data, category) {
+  const quantity = data.orderQuantity || 100;
+  const firstStep = [
+    {
+      key: "interpret",
+      title: "Interpretar lenguaje natural",
+      status: "completado",
+      result: `El agente leyo la solicitud y selecciono ${toolLabel(data.selectedInternalTool)} como herramienta interna.`,
+      nextAction: "No se pidieron formularios extra al usuario.",
+    },
+  ];
+  if (data.selectedInternalTool !== "alibaba-sourcing-agent") {
+    return firstStep.concat([
+      {
+        key: "search",
+        title: "Research de oportunidad",
+        status: "listo para backend",
+        result: "El agente preparara research ecom con señales de mercado, problemas, objeciones y siguientes pasos.",
+        nextAction: "Si detecta necesidad de proveedores, puede llamar Alibaba sourcing internamente.",
+      },
+    ]);
   }
-  if (sources.includes("amazon")) {
-    links.push({
-      key: "amazon",
-      title: "Buscar productos y reviews",
-      note: "Separar ratings globales de reviews escritas. Priorizar 1 a 3 estrellas para problemas reales.",
-      query: category.searches.amazon[0],
-      href: `https://www.amazon.com/s?k=${amazonQuery}`,
-    });
-  }
-  if (sources.includes("tiktok")) {
-    links.push({
-      key: "tiktok",
-      title: "Buscar voz organica",
-      note: "Separar contenido organico de afiliados, tiendas y TikTok Shop.",
-      query: category.searches.tiktok[0],
-      href: `https://www.tiktok.com/search?q=${tiktokQuery}`,
-    });
-  }
-  return links;
+  return firstStep.concat([
+    {
+      key: "search",
+      title: "Buscar y filtrar proveedores",
+      status: "listo para backend",
+      result: `El agente buscara fabricantes para "${query}" y filtrara Verified Supplier, Trade Assurance, MOQ bajo y muestra disponible.`,
+      nextAction: "Con backend conectado, esta busqueda se ejecuta desde la main page.",
+    },
+    {
+      key: "quality",
+      title: "Comparar calidad y certificaciones",
+      status: "listo para backend",
+      result: `Se revisaran requisitos como ${category.mustHave.slice(0, 2).join(", ")} y certificados ${category.certifications.join(", ")}.`,
+      nextAction: "El agente separara proveedores serios de listings baratos con poca prueba.",
+    },
+    {
+      key: "negotiate",
+      title: "Preparar negociacion",
+      status: "listo para outreach",
+      result: `El agente pedira precio por ${quantity} unidades, muestra, MOQ de prueba, tiers de recompra y Trade Assurance.`,
+      nextAction: "Los mensajes quedan en la cola de negociacion dentro de esta pagina.",
+    },
+    {
+      key: "ddp",
+      title: "Resolver DDP",
+      status: "requiere confirmacion escrita",
+      result: `Se validara DDP a ${data.destination}: duties, taxes, customs clearance, importer of record y entrega final.`,
+      nextAction: "No se recomendara compra si DDP queda ambiguo.",
+    },
+  ]);
 }
 
-function buildEvidenceRows(data, category) {
+function buildEvidenceLinks(query, data, category) {
+  const terms = [query, ...category.searchTerms].slice(0, data.depth === "profundo" ? 5 : 3);
+  return terms.map((term, index) => ({
+    key: index === 0 ? "search" : "quality",
+    title: index === 0 ? "Query principal" : `Query alternativa ${index}`,
+    note: index === 0
+      ? "El agente usa esta busqueda como punto de partida cuando el harness esta conectado."
+      : "Query secundaria para encontrar fabricantes similares y evitar depender de un solo resultado.",
+    query: term,
+    href: `https://www.alibaba.com/trade/search?SearchText=${encodeURIComponent(term)}`,
+  })).concat([
+    {
+      key: "ddp",
+      title: "Buscar opciones con DDP",
+      note: "No aceptar DDP sin confirmar duties, taxes, customs clearance y door delivery.",
+      query: `${query} ddp ${data.market}`,
+      href: `https://www.alibaba.com/trade/search?SearchText=${encodeURIComponent(`${query} ddp ${data.market}`)}`,
+    },
+  ]);
+}
+
+function buildGuidedSupplierProfiles(data, category, targetUnitCost) {
+  const quantity = data.orderQuantity || 100;
+  const target = targetUnitCost ? formatMoney(targetUnitCost) : "definir costo objetivo";
+  const qualityBoost = data.qualityLevel === "premium" ? 5 : 0;
+  const priceBoost = data.qualityLevel === "lowest-price" ? 5 : 0;
+  const moqBoost = data.qualityLevel === "low-moq" ? 5 : 0;
+
   return [
     {
-      insight: `El research debe validar si "${category.pains[0]}" aparece fuera de anuncios.`,
-      decision: "No comprar inventario hasta ver dolor repetido en reviews o comentarios organicos.",
-      source: "TikTok + Amazon",
-      confidence: "media",
+      supplierName: "Perfil A: fabricante verificado",
+      alibabaUrl: "",
+      productMatch: "Mejor balance para un principiante si tiene muestra, Trade Assurance y specs claras.",
+      moq: `ideal <= ${quantity}`,
+      unitPrice: target,
+      sampleTerms: "muestra pagada, idealmente reembolsable contra orden",
+      ddpStatus: "pedir EXW/FOB/DDP y detalle por escrito",
+      qualityProof: category.mustHave.slice(0, 2).join("; "),
+      certifications: category.certifications.join(", "),
+      score: 84 + qualityBoost,
+      redFlags: [],
+      nextAsk: "Enviar RFQ completo y pedir videos reales de producto.",
     },
     {
-      insight: "Los anuncios sirven para detectar ofertas y hooks, no para probar que el dolor existe.",
-      decision: "Usar Meta para copiar estructura de tests, no claims sin substanciacion.",
-      source: "Meta Ads",
-      confidence: "alta",
+      supplierName: "Perfil B: MOQ bajo para test",
+      alibabaUrl: "",
+      productMatch: "Sirve para probar mercado con menos riesgo, aunque la unidad salga mas cara.",
+      moq: `trial order de ${Math.max(25, Math.round(quantity / 2))}-${quantity}`,
+      unitPrice: "puede ser mayor en primer pedido",
+      sampleTerms: "confirmar muestra exacta de produccion",
+      ddpStatus: "validar si acepta DDP a destino pequeno",
+      qualityProof: "confirmar que no bajan material por MOQ bajo",
+      certifications: category.certifications.join(", "),
+      score: 76 + moqBoost,
+      redFlags: ["precio de prueba puede no representar reorden"],
+      nextAsk: "Negociar MOQ bajo y precio de recompra por volumen.",
     },
     {
-      insight: `Las reviews negativas deben convertirse en requisitos del producto: ${category.requirements[0]}.`,
-      decision: "Crear checklist de calidad antes de elegir proveedor.",
-      source: "Amazon Reviews",
-      confidence: "alta",
-    },
-    {
-      insight: "Si la categoria toca piel, cabello o cuerpo, los claims deben ser conservadores.",
-      decision: "Evitar promesas medicas, curas o resultados garantizados.",
-      source: "Claim safety",
-      confidence: "alta",
+      supplierName: "Perfil C: proveedor con DDP fuerte",
+      alibabaUrl: "",
+      productMatch: "Prioridad si el usuario no entiende importacion y necesita entrega puerta a puerta.",
+      moq: "flexible segun flete",
+      unitPrice: "comparar costo aterrizado, no solo unit price",
+      sampleTerms: "sample + shipping separados",
+      ddpStatus: `DDP a ${data.destination} con duties/taxes/customs claros`,
+      qualityProof: "carton size, gross weight, HS code y proforma",
+      certifications: category.certifications.join(", "),
+      score: 78 + priceBoost,
+      redFlags: ["rechazar si DDP no explica duties/taxes"],
+      nextAsk: "Pedir desglose DDP exacto e importer-of-record.",
     },
   ];
 }
@@ -311,21 +520,17 @@ function renderEmptyState() {
 }
 
 function renderReport(report) {
-  const sourceLabels = report.sources.map((key) => sourceConfig[key].label).join(", ");
   const ai = report.ai || null;
-  const decisionText =
-    ai?.executiveBrief?.decision ||
-    "No tomar esto como validacion final todavia. Primero hay que confirmar si el problema aparece en al menos dos fuentes: reviews/comentarios organicos y senales comerciales en anuncios. Si solo aparece en anuncios, es hype; si solo aparece en quejas, falta probar disposicion a pagar.";
-  const problemPains = ai?.problemAvatarMap?.painLanguage?.length
-    ? ai.problemAvatarMap.painLanguage
-    : report.category.pains;
-  const evidenceRows = ai?.evidenceMatrix?.length
-    ? ai.evidenceMatrix.map((row) => ({
-        confidence: row.confidence,
-        insight: row.insight,
-        decision: row.businessDecision,
-      }))
-    : report.rows;
+  const supplierShortlist = ai?.supplierShortlist?.length ? ai.supplierShortlist : report.supplierProfiles;
+  const agentWorkLog = ai?.agentWorkLog?.length ? ai.agentWorkLog : report.agentTasks;
+  const topRisks = ai?.executiveBrief?.topRisks?.length
+    ? ai.executiveBrief.topRisks
+    : [
+        "comprar inventario sin muestra aprobada",
+        "comparar solo precio sin costo DDP aterrizado",
+        "aceptar certificaciones o DDP sin documentos",
+      ];
+  const goals = report.goals.map((key) => goalConfig[key]?.label || key).join(", ");
   const backendNotice = report.backendError
     ? `<article class="report-card full-span notice-card">
         <h3>Backend privado</h3>
@@ -335,155 +540,338 @@ function renderReport(report) {
 
   document.querySelector("#brief").innerHTML = `
     <div class="metric-row">
-      <article class="metric-card"><strong>${report.sources.length}</strong><p>fuentes activas</p></article>
-      <article class="metric-card"><strong>${ai ? "IA" : report.depth === "profundo" ? "12+" : "6+"}</strong><p>${ai ? "codex harness" : "senales a validar"}</p></article>
-      <article class="metric-card"><strong>${report.market}</strong><p>mercado objetivo</p></article>
+      <article class="metric-card"><strong>${supplierShortlist.length}</strong><p>${ai ? "proveedores" : "candidatos meta"}</p></article>
+      <article class="metric-card"><strong>${report.targetUnitCost ? formatMoney(report.targetUnitCost) : "--"}</strong><p>costo objetivo</p></article>
+      <article class="metric-card"><strong>${escapeHtml(toolLabel(report.selectedInternalTool))}</strong><p>herramienta interna</p></article>
     </div>
     <div class="report-grid">
       <article class="report-card full-span">
-        <h3>Decision inicial</h3>
-        <p>${escapeHtml(decisionText)}</p>
+        <h3>Decision</h3>
+        <p>${escapeHtml(ai?.executiveBrief?.decision || "El agente interpreto tu solicitud y preparo el flujo interno. Si la intencion es sourcing, usara Alibaba como herramienta interna y devolvera shortlist, negociacion, DDP y calidad aqui mismo.")}</p>
         <div class="pill-row">
-          <span class="pill"><i data-lucide="target"></i>${escapeHtml(report.category.category)}</span>
-          <span class="pill"><i data-lucide="map-pin"></i>${escapeHtml(report.market)}</span>
-          <span class="pill"><i data-lucide="database"></i>${escapeHtml(sourceLabels)}</span>
+          <span class="pill"><i data-lucide="message-square-text"></i>${escapeHtml(report.naturalRequest)}</span>
+          <span class="pill"><i data-lucide="package"></i>${escapeHtml(report.product)}</span>
+          <span class="pill"><i data-lucide="map-pin"></i>${escapeHtml(report.destination)}</span>
+          <span class="pill"><i data-lucide="wrench"></i>${escapeHtml(toolLabel(report.selectedInternalTool))}</span>
           ${ai ? '<span class="pill"><i data-lucide="cpu"></i>Codex harness</span>' : ""}
         </div>
       </article>
-      ${ai?.executiveBrief?.opportunity ? `<article class="report-card full-span">
-        <h3>Oportunidad</h3>
-        <p>${escapeHtml(ai.executiveBrief.opportunity)}</p>
-      </article>` : ""}
       <article class="report-card">
-        <h3>Problema a validar</h3>
-        <ul>${problemPains.map((pain) => `<li>${escapeHtml(pain)}</li>`).join("")}</ul>
+        <h3>Ruta recomendada</h3>
+        <p>${escapeHtml(ai?.executiveBrief?.recommendedPath || "Conectar el backend de produccion para que el agente busque proveedores, compare candidatos, prepare outreach y devuelva todo dentro de esta pagina.")}</p>
       </article>
       <article class="report-card">
-        <h3>Criterios anti-ruido</h3>
-        <ul>
-          <li>Separar afiliados, tiendas y anuncios de voz organica.</li>
-          <li>No mezclar ratings globales con reviews escritas.</li>
-          <li>No convertir claims de competidores en hechos.</li>
-          <li>Guardar fuente, URL, fecha y motivo de inclusion.</li>
-        </ul>
+        <h3>Riesgos principales</h3>
+        <ul>${topRisks.map((risk) => `<li>${escapeHtml(risk)}</li>`).join("")}</ul>
       </article>
-      ${ai?.executiveBrief?.bestAvatar ? `<article class="report-card full-span">
-        <h3>Mejor avatar</h3>
-        <p>${escapeHtml(ai.executiveBrief.bestAvatar)}</p>
-      </article>` : ""}
       <article class="report-card full-span">
-        <h3>Matriz de evidencia</h3>
-        <ul>${evidenceRows
-          .map(
-            (row) =>
-              `<li><strong>${escapeHtml(row.confidence.toUpperCase())}</strong> - ${escapeHtml(
-                row.insight,
-              )} <span>${escapeHtml(row.decision)}</span></li>`,
-          )
-          .join("")}</ul>
+        <h3>Herramientas activas</h3>
+        <p>${escapeHtml(goals)}</p>
+      </article>
+      <article class="report-card full-span">
+        <h3>Trabajo del agente</h3>
+        ${renderAgentWorkLog(agentWorkLog)}
       </article>
       ${backendNotice}
     </div>`;
 
-  document.querySelector("#sources").innerHTML = `
-    <div class="source-list">
-      ${report.sourceLinks
-        .map((source) => {
-          const config = sourceConfig[source.key];
-          return `<article class="source-item">
-            <div class="source-icon ${config.className}"><i data-lucide="${config.icon}"></i></div>
-            <div>
-              <h3>${escapeHtml(source.title)}</h3>
-              <p>${escapeHtml(source.note)}</p>
-              <div class="pill-row"><span class="pill"><i data-lucide="search"></i>${escapeHtml(
-                source.query,
-              )}</span></div>
-            </div>
-            <a href="${source.href}" target="_blank" rel="noreferrer">Abrir</a>
-          </article>`;
-        })
-        .join("")}
+  document.querySelector("#tools").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Tool routing</h3>
+        <p>${escapeHtml(ai?.executiveBrief?.recommendedPath || `Solicitud recibida en lenguaje natural. Tool seleccionada: ${toolLabel(report.selectedInternalTool)}.`)}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="sparkles"></i>Entrada natural</span>
+          <span class="pill"><i data-lucide="wrench"></i>${escapeHtml(toolLabel(report.selectedInternalTool))}</span>
+          <span class="pill"><i data-lucide="undo-2"></i>Resultado en main page</span>
+        </div>
+      </article>
+      <article class="report-card full-span">
+        <h3>Llamadas internas</h3>
+        ${renderAgentWorkLog(agentWorkLog)}
+      </article>
       <article class="report-card">
-        <h3>Queries sugeridas</h3>
+        <h3>Inferido por el agente</h3>
         <ul>
-          <li>${escapeHtml(report.query)} reviews problemas</li>
-          ${report.category.searches.amazon
-            .map((item) => `<li>Amazon: ${escapeHtml(item)}</li>`)
-            .join("")}
-          ${report.category.searches.tiktok
-            .map((item) => `<li>TikTok: ${escapeHtml(item)}</li>`)
-            .join("")}
+          <li>Producto: ${escapeHtml(report.product)}</li>
+          <li>Mercado: ${escapeHtml(report.market)}</li>
+          <li>Destino: ${escapeHtml(report.destination)}</li>
+          <li>Prioridad: ${escapeHtml(report.qualityLevel)}</li>
         </ul>
       </article>
-      ${ai?.sourcePlan ? `<article class="report-card">
-        <h3>Plan del harness</h3>
-        ${renderCompactSections([
-          ["Meta Ads", ai.sourcePlan.metaAds],
-          ["Amazon Reviews", ai.sourcePlan.amazonReviews],
-          ["TikTok organico", ai.sourcePlan.tiktokOrganic],
-          ["Queries", ai.sourcePlan.searchQueries],
-        ])}
-      </article>` : ""}
-    </div>`;
-
-  const hookTests = ai?.offerHookTests?.length ? ai.offerHookTests : null;
-  document.querySelector("#hooks").innerHTML = `
-    <div class="report-grid">
-      ${(hookTests || report.category.hooks)
-        .map(
-          (hook, index) => `<article class="report-card">
-          <h3>Hook ${index + 1}</h3>
-          <p>${escapeHtml(typeof hook === "string" ? hook : hook.hook)}</p>
-          ${typeof hook === "string" ? "" : `<p>${escapeHtml(hook.sourceEvidence)}</p>`}
-          <div class="pill-row">
-            <span class="pill"><i data-lucide="megaphone"></i>${escapeHtml(typeof hook === "string" ? "Ad test" : hook.offerMechanic)}</span>
-            <span class="pill"><i data-lucide="clipboard-check"></i>${escapeHtml(typeof hook === "string" ? "Validar evidencia" : hook.confidence)}</span>
-          </div>
-        </article>`,
-        )
-        .join("")}
-      <article class="report-card full-span">
-        <h3>Oferta inicial</h3>
-        <p>${escapeHtml(ai?.executiveBrief?.whatToBuildTest?.join(" ") || "Probar una promesa especifica, una garantia de bajo riesgo y una landing page que compare problemas reales encontrados en reviews. Evitar descuentos agresivos hasta saber que dolor mueve la compra.")}</p>
+      <article class="report-card">
+        <h3>Sin formularios extra</h3>
+        <p>Si falta un dato, el agente usa una suposicion conservadora o lo marca como pendiente. El usuario no tiene que aprender Alibaba para arrancar.</p>
       </article>
     </div>`;
 
-  const product = ai?.productRequirements || null;
-  document.querySelector("#product").innerHTML = `
+  document.querySelector("#suppliers").innerHTML = `
+    <div class="source-list">
+      <article class="report-card full-span">
+        <h3>${ai ? "Shortlist de proveedores" : "Shortlist objetivo del agente"}</h3>
+        ${renderSupplierTable(supplierShortlist)}
+      </article>
+      <article class="report-card full-span">
+        <h3>${ai ? "Criterios usados por el agente" : "Criterios que usara el agente"}</h3>
+        ${ai?.supplierSearchPlan ? `
+        ${renderCompactSections([
+          ["Queries", ai.supplierSearchPlan.alibabaQueries],
+          ["Filtros", ai.supplierSearchPlan.filters],
+          ["Datos a capturar", ai.supplierSearchPlan.dataToCapture],
+          ["Reglas de rechazo", ai.supplierSearchPlan.rejectRules],
+        ])}` : renderCompactSections([
+          ["Queries internas", report.evidenceLinks.map((source) => source.query)],
+          ["Filtros", ["Verified Supplier", "Trade Assurance", "sample available", "MOQ compatible", "respuesta clara sobre DDP"]],
+          ["Reglas de rechazo", ["sin muestra", "sin Trade Assurance", "DDP ambiguo", "certificados no verificables", "presion para pagar fuera de Alibaba"]],
+        ])}
+      </article>
+    </div>`;
+
+  const negotiation = ai?.negotiationPlan || buildNegotiationPlan(report);
+  const outreachQueue = ai?.supplierOutreachQueue?.length
+    ? ai.supplierOutreachQueue
+    : buildOutreachQueue(supplierShortlist, negotiation);
+  document.querySelector("#negotiation").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Cola de negociacion</h3>
+        ${renderOutreachQueue(outreachQueue)}
+      </article>
+      ${renderMessageCard("RFQ inicial", negotiation.rfqMessage)}
+      ${renderMessageCard("Negociar precio", negotiation.priceNegotiationMessage)}
+      ${renderMessageCard("Negociar MOQ", negotiation.moqMessage)}
+      ${renderMessageCard("Confirmar muestra", negotiation.sampleMessage)}
+      <article class="report-card full-span">
+        <h3>Terminos a confirmar</h3>
+        <ul>${(negotiation.termsToConfirm || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  const ddp = ai?.ddpPlan || buildDdpPlan(report);
+  document.querySelector("#ddp").innerHTML = `
     <div class="report-grid">
       <article class="report-card">
-        <h3>Requisitos del producto</h3>
-        <ul>${(product?.mustHave?.length ? product.mustHave : report.category.requirements).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        <h3>Destino</h3>
+        <p>${escapeHtml(ddp.destination || report.destination)}</p>
       </article>
       <article class="report-card">
-        <h3>Preguntas para proveedor</h3>
-        <ul>${(product?.supplierQuestions?.length
-          ? product.supplierQuestions
-          : [
-              "Que evidencia tecnica respalda el beneficio principal?",
-              "Que fallas aparecen con devoluciones o reviews negativas?",
-              "Como se mantiene calidad lote a lote?",
-              "Que claims NO deberiamos usar?",
-            ]
-        )
-          .map((item) => `<li>${escapeHtml(item)}</li>`)
-          .join("")}</ul>
+        <h3>Incoterm alternativo</h3>
+        <p>${escapeHtml(ddp.fallbackIncoterm || "FOB + freight forwarder si DDP no queda claro.")}</p>
       </article>
-      ${product ? `<article class="report-card full-span">
-        <h3>Claims y riesgos</h3>
-        ${renderCompactSections([
-          ["Evitar", product.mustAvoid],
-          ["Prueba necesaria", product.qualityProofNeeded],
-          ["Limites de claim", product.claimSafetyBoundaries],
-        ])}
-      </article>` : ""}
+      <article class="report-card">
+        <h3>Preguntas DDP</h3>
+        <ul>${(ddp.ddpQuestions || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card">
+        <h3>Debe incluir</h3>
+        <ul>${(ddp.includedChecklist || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
       <article class="report-card full-span">
-        <h3>Prompt para research profundo</h3>
+        <h3>Red flags DDP</h3>
+        <ul>${(ddp.redFlags || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  const quality = ai?.qualityPlan || buildQualityPlan(report);
+  document.querySelector("#quality").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card">
+        <h3>Checklist de muestra</h3>
+        <ul>${(quality.sampleChecklist || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card">
+        <h3>Certificaciones</h3>
+        <ul>${(quality.certificationChecks || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card">
+        <h3>Inspeccion</h3>
+        <ul>${(quality.inspectionPlan || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card">
+        <h3>Empaque</h3>
+        <ul>${(quality.packagingChecks || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>No-go defects</h3>
+        <ul>${(quality.noGoDefects || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>Prompt profundo</h3>
         <p>${escapeHtml(buildPrompt(report))}</p>
       </article>
     </div>`;
 
   lucide.createIcons();
+}
+
+function renderSupplierTable(rows) {
+  return `<div class="table-wrap"><table class="comparison-table">
+    <thead>
+      <tr>
+        <th>Rank</th>
+        <th>Proveedor</th>
+        <th>MOQ</th>
+        <th>Precio</th>
+        <th>DDP</th>
+        <th>Calidad</th>
+        <th>Score</th>
+        <th>Siguiente pregunta</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows
+        .map(
+          (row, index) => `<tr>
+            <td>${index + 1}</td>
+            <td>${renderSupplierName(row)}</td>
+            <td>${escapeHtml(row.moq || "--")}</td>
+            <td>${escapeHtml(row.unitPrice || row.unit_price || "--")}</td>
+            <td>${escapeHtml(row.ddpStatus || row.ddp_status || "--")}</td>
+            <td>${escapeHtml(row.qualityProof || row.quality_proof || "--")}</td>
+            <td><strong>${escapeHtml(row.score ?? "--")}</strong></td>
+            <td>${escapeHtml(row.nextAsk || row.next_ask || "--")}</td>
+          </tr>`,
+        )
+        .join("")}
+    </tbody>
+  </table></div>`;
+}
+
+function renderAgentWorkLog(items) {
+  return `<div class="agent-work-grid">
+    ${(items || [])
+      .map((item) => {
+        const config = goalConfig[item.key] || goalConfig.search;
+        return `<article class="agent-step">
+          <div class="source-icon ${config.className}"><i data-lucide="${config.icon}"></i></div>
+          <div>
+            <div class="step-head">
+              <h4>${escapeHtml(item.title || item.step || "Tarea")}</h4>
+              <span>${escapeHtml(item.status || "pendiente")}</span>
+            </div>
+            <p>${escapeHtml(item.result || "")}</p>
+            <small>${escapeHtml(item.nextAction || item.next_action || "")}</small>
+          </div>
+        </article>`;
+      })
+      .join("")}
+  </div>`;
+}
+
+function renderOutreachQueue(items) {
+  return `<div class="outreach-list">
+    ${(items || [])
+      .map(
+        (item) => `<article class="outreach-item">
+          <div>
+            <h4>${escapeHtml(item.supplierName || item.supplier_name || "Proveedor")}</h4>
+            <p>${escapeHtml(item.messageType || item.message_type || "Mensaje")}</p>
+          </div>
+          <span>${escapeHtml(item.status || "listo")}</span>
+          <p>${escapeHtml(item.waitingFor || item.waiting_for || "Esperando respuesta del proveedor.")}</p>
+        </article>`,
+      )
+      .join("")}
+  </div>`;
+}
+
+function renderSupplierName(row) {
+  const name = row.supplierName || row.supplier_name || "Proveedor";
+  const url = row.alibabaUrl || row.alibaba_url || "";
+  if (!url) return escapeHtml(name);
+  return `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(name)}</a>`;
+}
+
+function renderMessageCard(title, message) {
+  return `<article class="report-card">
+    <h3>${escapeHtml(title)}</h3>
+    <pre class="message-box">${escapeHtml(message)}</pre>
+  </article>`;
+}
+
+function buildNegotiationPlan(report) {
+  const quantity = report.orderQuantity || 100;
+  const target = report.targetUnitCost ? formatMoney(report.targetUnitCost) : "[TARGET LANDED COST]";
+  return {
+    rfqMessage: `Hello, I am sourcing ${report.product} for ${report.market}. I am comparing suppliers for a first test order of ${quantity} units and possible repeat orders.\n\nPlease quote MOQ, price tiers, sample cost, EXW/FOB/DDP options to ${report.destination}, lead time, packaging details, carton size/gross weight, certifications, customization options, and Alibaba Trade Assurance payment terms.\n\nPlease also share real product photos/videos and any recent inspection or test documents.`,
+    priceNegotiationMessage: `Thank you for the quote. I like the product, but the landed cost is above my target for a first test order.\n\nIf we start with ${quantity} units and reorder if quality is good, can you improve the unit price, MOQ, sample refund, and DDP shipping cost to ${report.destination}?\n\nMy target landed cost is ${target} per unit. Please send your best option without reducing material quality or packaging quality.`,
+    moqMessage: `This is a first market test, so I cannot start with a large MOQ yet. If the sample passes and sales are good, I plan repeat orders.\n\nCan you support a trial order of ${quantity} units with the same product quality? Please quote both the trial price and the reorder price for a larger quantity.`,
+    sampleMessage: `Before bulk order I need to test a sample.\n\nPlease confirm sample price, shipping cost, courier, exact product version/specs, sample lead time, whether sample cost can be deducted from the bulk order, and photos/videos of the exact sample before shipping.`,
+    termsToConfirm: [
+      "MOQ and price tiers",
+      "sample cost and sample shipping",
+      "EXW, FOB and DDP quotes",
+      "carton size, gross weight and HS code",
+      "lead time for sample and bulk order",
+      "Trade Assurance payment terms",
+      "custom logo/packaging cost",
+    ],
+  };
+}
+
+function buildOutreachQueue(suppliers, negotiation) {
+  return (suppliers || []).slice(0, 3).map((supplier, index) => ({
+    supplierName: supplier.supplierName || supplier.supplier_name || `Proveedor ${index + 1}`,
+    status: "listo en la main page",
+    messageType: index === 0 ? "RFQ inicial" : "Follow-up de comparacion",
+    message: index === 0 ? negotiation.rfqMessage : negotiation.priceNegotiationMessage,
+    waitingFor: "MOQ, precio por tier, muestra, DDP, lead time, certificaciones y Trade Assurance.",
+    needsUserApproval: true,
+  }));
+}
+
+function buildDdpPlan(report) {
+  return {
+    destination: report.destination,
+    ddpQuestions: [
+      `Does DDP to ${report.destination} include import duties, taxes, customs clearance and final door delivery?`,
+      "Who is importer of record and what costs are excluded?",
+      "What shipping method, transit time and tracking will be used?",
+      "Can you quote DDP only after confirming carton size and gross weight?",
+    ],
+    includedChecklist: [
+      "international freight",
+      "export handling",
+      "customs clearance",
+      "import duties",
+      "taxes/VAT/sales tax if applicable",
+      "final door delivery",
+      "tracking",
+    ],
+    redFlags: report.category.ddpRisks.concat([
+      "supplier gives DDP price without destination ZIP/city",
+      "supplier asks off-platform payment to avoid duties",
+      "supplier says free shipping but cannot explain customs",
+    ]),
+    fallbackIncoterm: "FOB + freight forwarder if DDP is vague or too risky.",
+  };
+}
+
+function buildQualityPlan(report) {
+  return {
+    sampleChecklist: report.category.sampleChecks,
+    certificationChecks: report.category.certifications.map(
+      (cert) => `Pedir ${cert} o explicar si no aplica para ${report.market}.`,
+    ),
+    inspectionPlan: [
+      "pedir fotos/videos de produccion antes de envio",
+      "definir defectos criticos, mayores y menores",
+      "usar inspeccion de tercero antes de bulk order si el pedido crece",
+      "guardar golden sample para comparar produccion",
+    ],
+    packagingChecks: [
+      "empaque individual resistente",
+      "caja master con medidas y peso confirmados",
+      "logo, barcode, instrucciones y advertencias correctas",
+      "proteccion suficiente para ecom y devoluciones bajas",
+    ],
+    noGoDefects: [
+      "material distinto al prometido",
+      "olor fuerte, fugas, piezas flojas o defectos funcionales",
+      "certificados no verificables",
+      "proveedor no acepta muestra o Trade Assurance",
+    ],
+  };
 }
 
 function activateTab(name) {
@@ -506,14 +894,15 @@ function renderCompactSections(sections) {
 function setLoading(isLoading) {
   const button = form.querySelector("button[type='submit']");
   button.disabled = isLoading;
+  button.title = isLoading ? "Trabajando" : "Ejecutar agente";
   button.innerHTML = isLoading
-    ? '<i data-lucide="loader-circle"></i>Generando...'
-    : '<i data-lucide="sparkles"></i>Generar research';
+    ? '<i data-lucide="loader-circle"></i>'
+    : '<i data-lucide="arrow-up"></i>';
   lucide.createIcons();
 }
 
 function buildPrompt(report) {
-  return `Investiga una oportunidad ecommerce basada en ${report.reference}. Problema: ${report.problem}. Mercado: ${report.market}. Categoria inferida: ${report.category.category}. Usa Meta Ads para ofertas/hooks, Amazon Reviews para quejas y requisitos de producto, y TikTok organico para lenguaje real del cliente. Separa ruido, evidencia e hipotesis. Entrega avatar, dolores, objeciones, hooks, requisitos del producto, claims riesgosos y siguientes tests.`;
+  return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Decide que herramienta interna usar. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
 }
 
 function buildMarkdown(report) {
@@ -521,33 +910,48 @@ function buildMarkdown(report) {
   if (report.ai) {
     return buildAiMarkdown(report);
   }
-  return `# Ecom Research Brief
+  const negotiation = buildNegotiationPlan(report);
+  const ddp = buildDdpPlan(report);
+  const quality = buildQualityPlan(report);
+
+  return `# Agent Genia Brief
 
 Fecha: ${report.createdAt}
-Referencia: ${report.reference}
-Problema: ${report.problem}
+Solicitud: ${report.naturalRequest}
+Herramienta interna: ${toolLabel(report.selectedInternalTool)}
+Producto: ${report.product}
+Detalles: ${report.productDetails}
 Mercado: ${report.market}
-Categoria: ${report.category.category}
+Destino DDP: ${report.destination}
+Presupuesto: ${report.budget || "no definido"}
+Cantidad: ${report.orderQuantity || "no definida"}
+Costo objetivo: ${report.targetUnitCost ? formatMoney(report.targetUnitCost) : "no definido"}
 
-## Decision inicial
+## Decision
 
-No comprar inventario todavia. Validar que el dolor aparece en voz organica o reviews y que Meta Ads muestra senales comerciales aprovechables.
+No compres inventario todavia. Busca proveedores verificados, pide cotizacion completa y ordena muestras primero.
 
-## Problemas a validar
+## Trabajo del agente
 
-${report.category.pains.map((pain) => `- ${pain}`).join("\n")}
+${report.agentTasks.map((task) => `- ${task.title}: ${task.result}`).join("\n")}
 
-## Fuentes
+## Perfiles de proveedor
 
-${report.sourceLinks.map((source) => `- ${source.title}: ${source.href}`).join("\n")}
+${report.supplierProfiles
+  .map((row) => `- ${row.supplierName}: ${row.productMatch} | MOQ: ${row.moq} | DDP: ${row.ddpStatus} | Score: ${row.score}`)
+  .join("\n")}
 
-## Hooks
+## RFQ inicial
 
-${report.category.hooks.map((hook) => `- ${hook}`).join("\n")}
+${negotiation.rfqMessage}
 
-## Requisitos de producto
+## DDP
 
-${report.category.requirements.map((item) => `- ${item}`).join("\n")}
+${ddp.ddpQuestions.map((item) => `- ${item}`).join("\n")}
+
+## Calidad
+
+${quality.sampleChecklist.map((item) => `- ${item}`).join("\n")}
 
 ## Prompt profundo
 
@@ -557,43 +961,46 @@ ${buildPrompt(report)}
 
 function buildAiMarkdown(report) {
   const ai = report.ai;
-  return `# Ecom Research Brief
+  return `# Agent Genia Brief
 
 Fecha: ${report.createdAt}
-Referencia: ${report.reference}
-Problema: ${report.problem}
+Solicitud: ${report.naturalRequest}
+Producto: ${report.product}
 Mercado: ${report.market}
+Destino DDP: ${report.destination}
 Modo: Codex harness
 
 ## Decision
 
 ${ai.executiveBrief.decision}
 
-## Oportunidad
+## Ruta recomendada
 
-${ai.executiveBrief.opportunity}
+${ai.executiveBrief.recommendedPath}
 
-## Mejor avatar
+## Proveedores
 
-${ai.executiveBrief.bestAvatar}
-
-## Problema y lenguaje
-
-${ai.problemAvatarMap.painLanguage.map((item) => `- ${item}`).join("\n")}
-
-## Hooks y ofertas
-
-${ai.offerHookTests
-  .map((item) => `- ${item.hook} | ${item.offerMechanic} | ${item.confidence}`)
+${ai.supplierShortlist
+  .map((item, index) => `${index + 1}. ${item.supplierName} | ${item.alibabaUrl || "sin URL"} | MOQ: ${item.moq} | Precio: ${item.unitPrice} | DDP: ${item.ddpStatus} | Score: ${item.score}`)
   .join("\n")}
 
-## Requisitos de producto
+## RFQ
 
-${ai.productRequirements.mustHave.map((item) => `- ${item}`).join("\n")}
+${ai.negotiationPlan.rfqMessage}
 
-## Claims y riesgos
+## Cola de negociacion
 
-${ai.productRequirements.claimSafetyBoundaries.map((item) => `- ${item}`).join("\n")}
+${(ai.supplierOutreachQueue || [])
+  .map((item) => `- ${item.supplierName}: ${item.status} | ${item.waitingFor}`)
+  .join("\n")}
+
+## DDP
+
+${ai.ddpPlan.ddpQuestions.map((item) => `- ${item}`).join("\n")}
+
+## Calidad
+
+${ai.qualityPlan.sampleChecklist.map((item) => `- ${item}`).join("\n")}
 
 ## Limitaciones
 
@@ -601,27 +1008,27 @@ ${ai.limitations.map((item) => `- ${item}`).join("\n")}
 
 ## Siguientes pasos
 
-${ai.nextSteps.map((item) => `- ${item}`).join("\n")}
+${ai.beginnerNextSteps.map((item) => `- ${item}`).join("\n")}
 `;
 }
 
 function downloadBrief() {
   if (!state.latest) {
-    showToast("Genera un research primero");
+    showToast("Genera un sourcing primero");
     return;
   }
   const blob = new Blob([buildMarkdown(state.latest)], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `ecom-research-${Date.now()}.md`;
+  anchor.download = `alibaba-sourcing-${Date.now()}.md`;
   anchor.click();
   URL.revokeObjectURL(url);
 }
 
 async function copySummary() {
   if (!state.latest) {
-    showToast("Genera un research primero");
+    showToast("Genera un sourcing primero");
     return;
   }
   await navigator.clipboard.writeText(buildMarkdown(state.latest));
@@ -629,7 +1036,21 @@ async function copySummary() {
 }
 
 function saveState(report) {
-  localStorage.setItem("ecomResearchLatest", JSON.stringify(report));
+  localStorage.setItem("alibabaSourcingLatest", JSON.stringify(report));
+}
+
+function numberValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function formatMoney(value) {
+  return `$${Number(value).toFixed(2)}`;
+}
+
+function toolLabel(value) {
+  if (value === "alibaba-sourcing-agent") return "Alibaba sourcing";
+  return "Ecom research";
 }
 
 function showToast(message) {

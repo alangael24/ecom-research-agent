@@ -22,7 +22,7 @@ if (!TOKEN) {
 const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && request.url === "/healthz") {
-      return sendJson(response, 200, { ok: true, service: "ecom-research-harness" });
+      return sendJson(response, 200, { ok: true, service: "alibaba-sourcing-harness" });
     }
 
     if (request.method !== "POST" || request.url !== "/research") {
@@ -51,7 +51,7 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Ecom research harness listening on http://${HOST}:${PORT}`);
+  console.log(`Alibaba sourcing harness listening on http://${HOST}:${PORT}`);
 });
 
 function isAuthorized(request) {
@@ -67,9 +67,10 @@ async function readJson(request) {
 
 function validatePayload(payload) {
   if (!payload || typeof payload !== "object") return "Missing payload.";
-  if (!stringField(payload.reference, 500)) return "Missing or invalid reference.";
-  if (!stringField(payload.problem, 2000)) return "Missing or invalid problem.";
-  if (!Array.isArray(payload.sources) || payload.sources.length === 0) return "Select at least one source.";
+  if (!stringField(payload.naturalRequest, 3000)) return "Missing or invalid request.";
+  if (payload.product && !stringField(payload.product, 500)) return "Invalid product.";
+  if (payload.productDetails && !stringField(payload.productDetails, 2000)) return "Invalid product details.";
+  if (payload.goals && !Array.isArray(payload.goals)) return "Invalid goals.";
   return "";
 }
 
@@ -78,7 +79,7 @@ function stringField(value, maxLength) {
 }
 
 async function runCodexResearch(payload) {
-  const runDir = await mkdtemp(join(tmpdir(), "ecom-research-"));
+  const runDir = await mkdtemp(join(tmpdir(), "alibaba-sourcing-"));
   await mkdir(runDir, { recursive: true });
   await writeFile(join(runDir, "request.json"), JSON.stringify(payload, null, 2));
   await writeFile(join(runDir, "prompt.md"), buildPrompt(payload));
@@ -118,22 +119,38 @@ async function runCodexResearch(payload) {
 }
 
 function buildPrompt(payload) {
-  return `Eres un agente senior de ecommerce research. Tu trabajo es ayudar a una persona no tecnica a decidir si vale la pena empezar una marca ecommerce basada en una referencia, sin llenarla de ruido.
+  return `Eres Agent Genia. El usuario escribe una solicitud natural en la main page y tu trabajo es decidir que herramientas internas usar, como Cursor cuando llama tools durante su flujo.
 
-Referencia o marca: ${payload.reference}
-Problema o producto: ${payload.problem}
-Mercado: ${payload.market || "US"}
-Idioma de salida: ${payload.language || "es"}
-Profundidad: ${payload.depth || "rapido"}
-Fuentes solicitadas: ${(payload.sources || []).join(", ")}
+Solicitud del usuario: ${payload.naturalRequest}
+
+Inferencias del frontend, revisalas y corrigelas si hace falta:
+- Producto inferido: ${payload.product || "no especificado"}
+- Mercado destino: ${payload.market || "US"}
+- Destino DDP: ${payload.destination || "no especificado"}
+- Presupuesto inicial: ${payload.budget || "no especificado"}
+- Cantidad de prueba: ${payload.orderQuantity || "no especificada"}
+- Costo objetivo por unidad: ${payload.targetCost || "no especificado"}
+- Prioridad inferida: ${payload.qualityLevel || "balanced"}
+- Herramienta sugerida: ${payload.selectedInternalTool || "decidir"}
+
+Herramientas internas disponibles:
+- $alibaba-sourcing-agent: usar cuando la solicitud mencione Alibaba, proveedores, fabricantes, sourcing, MOQ, DDP, muestras, precio de proveedor, negociar con proveedor o encontrar productos para vender.
+- ecom research: usar para research de marca, problema, Meta Ads, Amazon reviews, TikTok, avatar, hooks y validacion de oportunidad.
 
 Reglas:
-- Separa Meta Ads, Amazon Reviews y TikTok organico como fuentes distintas.
-- No presentes claims de anuncios como hechos.
-- Si no puedes verificar datos vivos, dilo como limitacion y entrega un plan preciso de busqueda.
-- Para piel, cabello, salud, suplementos o efectos corporales, incluye limites de claims y riesgos de compliance.
-- Da recomendaciones accionables para ecom: avatar, dolor, oferta, hooks, objeciones, requisitos de producto, que evitar y siguientes tests.
-- Prioriza precision y utilidad. Evita volumen sin decision.
+- Si eliges Alibaba sourcing, usa $alibaba-sourcing-agent como herramienta interna. No lo presentes como pagina separada ni pidas al usuario llenar formulario extra.
+- Si la solicitud no es sourcing, conserva el resultado dentro del schema usando secciones compatibles y explica en limitations que no se llamo Alibaba.
+- Busca y compara proveedores/productos de Alibaba si tienes acceso web. Incluye URL de Alibaba por proveedor cuando exista.
+- La main page es el cockpit. No le digas al usuario que abra Alibaba ni que haga busquedas manuales como siguiente paso principal.
+- Devuelve agentWorkLog con lo que hiciste o lo que queda listo para ejecutar desde backend.
+- No inventes proveedores, precios, certificaciones ni DDP. Si no puedes verificar datos vivos, dilo en limitations y entrega criterios/perfiles accionables, usando alibabaUrl como "".
+- Prioriza principiantes: muestra primero, Trade Assurance, terminos escritos, costo aterrizado, DDP claro y calidad verificable antes de inventario.
+- Negocia segun presupuesto, cantidad de prueba, costo objetivo y prioridad del usuario.
+- Devuelve supplierOutreachQueue con mensajes listos por proveedor. Si no existe sesion/API autorizada para enviar mensajes en Alibaba, marca needsUserApproval=true y status como pendiente de aprobacion, no como enviado.
+- No afirmes que contactaste o negociaste con un proveedor a menos que realmente hayas enviado un mensaje autorizado.
+- Para DDP, confirma freight, customs clearance, import duties, taxes, importer of record, final door delivery, tracking y exclusiones. No recomiendes evasion de duties/taxes.
+- Para categorias reguladas o sensibles, agrega certificaciones, documentos y limites de claim.
+- Entrega mensajes listos para enviar al proveedor en ingles, con terminos claros y profesionales.
 - Responde solo en JSON conforme al schema de salida.
 `;
 }
