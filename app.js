@@ -46,10 +46,11 @@ const SHOPIFY_PRODUCTION_ORIGIN = "https://agentgenia.com";
 
 const tabLabelSets = {
   sourcing: ["Resumen", "Herramientas", "Proveedores", "Negociacion", "DDP", "Calidad"],
-  brand: ["Resumen", "Marca", "Oferta", "Crecimiento", "Conversion", "Siguiente"],
+  brand: ["Resumen", "Marca", "Oferta", "Crecimiento", "Web", "Siguiente"],
   shopify: ["Resumen", "Shopify", "Catalogo", "Acciones", "DDP", "Calidad"],
   profitability: ["Resumen", "Numeros", "Alertas", "Siguiente", "Supuestos", "Notas"],
   shipping: ["Resumen", "Tarifas", "Detalles", "Alertas", "Siguiente", "Notas"],
+  retail: ["Resumen", "Costos", "Canal", "Contenido", "Web", "Siguiente"],
 };
 
 const repurchaseLabels = {
@@ -110,6 +111,26 @@ const goalConfig = {
     label: "Auditar marca",
     icon: "store",
     className: "brand",
+  },
+  retail: {
+    label: "Pasar tienda fisica a online",
+    icon: "store",
+    className: "brand",
+  },
+  costs: {
+    label: "Analizar costos",
+    icon: "calculator",
+    className: "quality",
+  },
+  content: {
+    label: "Crear contenido",
+    icon: "video",
+    className: "shopify",
+  },
+  web: {
+    label: "Crear web",
+    icon: "layout-template",
+    className: "alibaba",
   },
 };
 
@@ -799,6 +820,18 @@ async function runResearch(data) {
         showToast("Cotizacion de envio lista");
         return;
       }
+      if (backend.report.type === "retail_to_online") {
+        state.latest = backend.report;
+        document.body.classList.add("report-ready");
+        renderRetailToOnlineReport(backend.report);
+        activateTab("brief");
+        saveState(backend.report);
+        setLoading(false);
+        await loadHistory();
+        resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+        showToast("Ruta online lista");
+        return;
+      }
       report.ai = backend.report;
       report.backendMode = "codex-harness";
       report.diagnostics = backend.diagnostics || null;
@@ -931,9 +964,58 @@ function inferRequest(naturalRequest, businessStage = "starter") {
   ]);
   const shopifyIntent =
     businessStage === "shopify" ||
-    hasAny(text, ["shopify", "tienda", "store", "catalogo", "catálogo", "conversion", "conversiones"]);
+    hasAny(text, ["shopify", "catalogo shopify", "catálogo shopify", "conversion", "conversiones"]);
+  const physicalRetailIntent = hasAny(text, [
+    "tienda fisica",
+    "tienda física",
+    "local",
+    "negocio local",
+    "negocio fisico",
+    "negocio físico",
+    "sucursal",
+    "mostrador",
+    "boutique",
+  ]);
+  const onlineTransitionIntent = hasAny(text, [
+    "vender en internet",
+    "vender online",
+    "vender por internet",
+    "tienda online",
+    "ecommerce",
+    "e-commerce",
+    "crear pagina",
+    "crear página",
+    "pagina web",
+    "página web",
+  ]);
+  const channelPlanningIntent = hasAny(text, [
+    "tiktok organico",
+    "tiktok orgánico",
+    "paid ads",
+    "anuncios pagados",
+    "competencia",
+    "contenido",
+    "ads",
+  ]);
+  const brandCreationIntent = hasAny(text, [
+    "crear marca",
+    "nueva marca",
+    "nombre de marca",
+    "nombre para marca",
+    "naming",
+    "colores",
+    "paleta",
+    "identidad visual",
+    "branding",
+    "logo",
+  ]);
+  const retailToOnlineIntent =
+    physicalRetailIntent ||
+    (onlineTransitionIntent && channelPlanningIntent) ||
+    (onlineTransitionIntent && hasAny(text, ["tienda", "local", "negocio", "producto", "productos"]));
   const brandIntent =
     businessStage === "brand" ||
+    brandCreationIntent ||
     hasAny(text, ["marca", "brand", "negocio", "ventas", "aov", "retencion", "retención", "email", "ads", "roas"]);
   const market = text.includes("mexico") || text.includes("méxico") ? "MX" : text.includes("latam") ? "LATAM" : "US";
   const destination = inferDestination(text, market);
@@ -955,6 +1037,8 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     depth: text.includes("profundo") || text.includes("completo") ? "profundo" : "rapido",
     goals: sourcingIntent
       ? ["interpret", "search", "negotiate", "ddp", "quality"]
+      : retailToOnlineIntent
+        ? ["interpret", "retail", "costs", "content", "web"]
       : brandIntent
         ? ["interpret", "brand", "shopify", "quality"]
       : shopifyIntent
@@ -962,6 +1046,8 @@ function inferRequest(naturalRequest, businessStage = "starter") {
         : ["interpret"],
     selectedInternalTool: sourcingIntent
       ? "alibaba-sourcing-agent"
+      : retailToOnlineIntent
+        ? "retail-to-online-agent"
       : brandIntent
         ? "brand-audit-agent"
       : shopifyIntent
@@ -1144,6 +1230,38 @@ function buildAgentTasks(query, data, category) {
     },
   ];
   if (data.selectedInternalTool !== "alibaba-sourcing-agent") {
+    if (data.selectedInternalTool === "retail-to-online-agent") {
+      return firstStep.concat([
+        {
+          key: "retail",
+          title: "Entender tienda fisica",
+          status: "contexto inicial",
+          result: `El agente tratara "${data.product}" como inventario/servicio existente que necesita canal online.`,
+          nextAction: "Separar producto, margen, ticket promedio, envio/pickup y prueba social antes de recomendar canal.",
+        },
+        {
+          key: "costs",
+          title: "Revisar si los numeros permiten ads",
+          status: "listo para calculo",
+          result: "El agente estimara contribucion por pedido, CAC maximo y ROAS break-even usando datos escritos o supuestos conservadores.",
+          nextAction: "Si el margen no permite pagar CAC, empezar por TikTok organico y contenido local.",
+        },
+        {
+          key: "content",
+          title: "Mapear competencia y contenido",
+          status: "listo para research",
+          result: "Se prepararan queries para TikTok, Meta Ads, Google y competidores locales/directos.",
+          nextAction: "Convertir objeciones y preguntas reales en videos, landing sections y ofertas.",
+        },
+        {
+          key: "web",
+          title: "Diseñar primera web vendible",
+          status: "listo para implementar",
+          result: "Se definira una web simple: producto estrella, prueba social, FAQ, entrega/pickup, pagos y WhatsApp.",
+          nextAction: "No construir catalogo gigante; lanzar con 1-3 productos/ofertas con mejor margen.",
+        },
+      ]);
+    }
     if (data.selectedInternalTool === "brand-audit-agent") {
       return firstStep.concat([
         {
@@ -1587,8 +1705,387 @@ function packageSummary(packageInfo, currency) {
   return `${formatNumber(packageInfo.weightKg || 0)} kg`;
 }
 
+function renderRetailToOnlineReport(report) {
+  const economics = report.economics || {};
+  const currency = economics.currency || "USD";
+  const channel = report.channelRecommendation || {};
+  const product = report.productUnderstanding || {};
+  const database = report.databaseContext || {};
+  const content = report.contentPlan || {};
+  const competitors = report.competitorResearchPlan || {};
+  const website = report.websitePlan || {};
+  const nextSteps = Array.isArray(report.nextSteps) ? report.nextSteps : [];
+  const risks = report.executiveBrief?.topRisks || [];
+  const missingNumbers = economics.missingNumbers || [];
+  const assumptions = economics.assumptions || [];
+
+  resultPanel.hidden = false;
+  setTabLabels(tabLabelSets.retail);
+
+  document.querySelector("#brief").innerHTML = `
+    <div class="metric-row">
+      <article class="metric-card"><strong>${escapeHtml(channel.primaryChannel || "organic-first")}</strong><p>canal inicial</p></article>
+      <article class="metric-card"><strong>${formatMoney(economics.cacTarget || 0, currency)}</strong><p>CAC sano maximo</p></article>
+      <article class="metric-card"><strong>${formatPercent(economics.margin || 0)}</strong><p>margen estimado</p></article>
+    </div>
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Decision</h3>
+        <p>${escapeHtml(report.executiveBrief?.decision || "Empezar online con una oferta simple antes de invertir fuerte.")}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="store"></i>${escapeHtml(product.storeType || "tienda fisica")}</span>
+          <span class="pill"><i data-lucide="package"></i>${escapeHtml(product.product || report.product || "producto")}</span>
+          <span class="pill"><i data-lucide="wrench"></i>${escapeHtml(toolLabel(report.toolUsed))}</span>
+        </div>
+      </article>
+      <article class="report-card">
+        <h3>Ruta recomendada</h3>
+        <p>${escapeHtml(report.executiveBrief?.recommendedPath || channel.path || "")}</p>
+      </article>
+      <article class="report-card">
+        <h3>Producto</h3>
+        <p>${escapeHtml(product.summary || "Elegir producto estrella, no subir todo el inventario al inicio.")}</p>
+      </article>
+      <article class="report-card full-span">
+        <h3>Trabajo del agente</h3>
+        ${renderAgentWorkLog(report.agentWorkLog || [])}
+      </article>
+      ${renderRetailDatabaseCard(database)}
+    </div>`;
+
+  document.querySelector("#tools").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Numeros para decidir canal</h3>
+        <dl class="calculation-list">
+          <div><dt>Ticket promedio</dt><dd>${formatMoney(economics.aov || 0, currency)}</dd></div>
+          <div><dt>Costo producto</dt><dd>${formatMoney(economics.cogs || 0, currency)}</dd></div>
+          <div><dt>Envio/empaque</dt><dd>${formatMoney(economics.shipping || 0, currency)}</dd></div>
+          <div><dt>Fees y pagos</dt><dd>${formatMoney(economics.fees || 0, currency)}</dd></div>
+          <div><dt>Reserva devoluciones</dt><dd>${formatMoney(economics.returnsReserve || 0, currency)}</dd></div>
+          <div><dt>Contribucion por pedido</dt><dd>${formatMoney(economics.contribution || 0, currency)}</dd></div>
+          <div><dt>CAC maximo</dt><dd>${formatMoney(economics.cacMax || 0, currency)}</dd></div>
+          <div><dt>CAC sano</dt><dd>${formatMoney(economics.cacTarget || 0, currency)}</dd></div>
+          <div><dt>ROAS break-even</dt><dd>${economics.breakEvenRoas ? formatRoas(economics.breakEvenRoas) : "pendiente"}</dd></div>
+          <div><dt>ROAS objetivo</dt><dd>${economics.targetRoas ? formatRoas(economics.targetRoas) : "pendiente"}</dd></div>
+        </dl>
+      </article>
+      <article class="report-card full-span ${missingNumbers.length ? "notice-card" : ""}">
+        <h3>Numeros faltantes</h3>
+        <ul>${(missingNumbers.length ? missingNumbers : ["Hay base suficiente para una primera decision; aun asi confirma numeros reales."]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#suppliers").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Canal recomendado</h3>
+        <p>${escapeHtml(channel.summary || "")}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="video"></i>${escapeHtml(channel.primaryChannel || "contenido")}</span>
+          <span class="pill"><i data-lucide="megaphone"></i>${escapeHtml(channel.paidAdsReadiness || "needs_validation")}</span>
+        </div>
+      </article>
+      <article class="report-card full-span">
+        <h3>Primer test</h3>
+        <p>${escapeHtml(channel.firstTest || "Publicar contenido, medir intencion y despues decidir paid ads.")}</p>
+      </article>
+      <article class="report-card full-span notice-card">
+        <h3>Riesgos</h3>
+        <ul>${(risks.length ? risks : ["Gastar en ads antes de confirmar margen y conversion."]).map((risk) => `<li>${escapeHtml(risk)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#negotiation").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Research de competencia</h3>
+        <p>${escapeHtml(competitors.goal || "Entender mensajes, ofertas y formatos antes de crear contenido.")}</p>
+        <div class="source-list">
+          ${(competitors.sources || []).map((source) => `
+            <article class="source-item">
+              <span><i data-lucide="search"></i></span>
+              <div>
+                <strong>${escapeHtml(source.source)}</strong>
+                <p>${escapeHtml(source.query)} · ${escapeHtml(source.useFor)}</p>
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      </article>
+      <article class="report-card full-span">
+        <h3>Contenido inicial</h3>
+        <ul>${(content.firstContentSprint || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card">
+        <h3>Medir</h3>
+        <ul>${(content.measurement || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card">
+        <h3>No hacer todavia</h3>
+        <ul>${(content.doNotDoYet || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#ddp").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Primera web</h3>
+        <p>${escapeHtml(website.recommendation || "Crear una web simple de venta.")}</p>
+        <p>${escapeHtml(website.firstBuild || "")}</p>
+      </article>
+      <article class="report-card">
+        <h3>Stack</h3>
+        <p>${escapeHtml(website.stackSuggestion || "Shopify si necesita catalogo; landing + checkout/WhatsApp si solo validara una oferta.")}</p>
+      </article>
+      <article class="report-card">
+        <h3>Reglas</h3>
+        <ul>${(website.launchGuardrails || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>Secciones necesarias</h3>
+        <ul>${(website.requiredSections || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      ${renderRetailDatabaseCard(database)}
+    </div>`;
+
+  document.querySelector("#quality").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Siguientes pasos</h3>
+        <ul>${(nextSteps.length ? nextSteps : ["Elegir producto estrella, confirmar numeros y lanzar web simple."]).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>Supuestos</h3>
+        <ul>${(assumptions.length ? assumptions : ["Resultado basado en supuestos conservadores."]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  lucide.createIcons();
+}
+
+function renderRetailDatabaseCard(database = {}) {
+  if (!database.hasDatabase) {
+    return `<article class="report-card full-span notice-card">
+      <h3>DB digital</h3>
+      <p>No se subio una base de datos. Si tiene inventario, ventas, clientes o productos en CSV, Excel, JSON, SQL o SQLite, puede subirlo desde el boton +.</p>
+    </article>`;
+  }
+
+  const files = database.files || [];
+  const columns = database.detectedColumns || [];
+  const signals = database.usefulSignals || [];
+  const uses = database.recommendedUses || [];
+
+  return `<article class="report-card full-span">
+    <h3>DB digital subida</h3>
+    <p>${escapeHtml(database.summary || "Base de datos recibida.")}</p>
+    <div class="pill-row">
+      ${files.map((file) => `<span class="pill"><i data-lucide="database"></i>${escapeHtml(file.name)}${file.sizeLabel ? ` · ${escapeHtml(file.sizeLabel)}` : ""}</span>`).join("")}
+    </div>
+    ${columns.length ? `<h4>Columnas detectadas</h4><p>${escapeHtml(columns.slice(0, 16).join(", "))}</p>` : ""}
+    ${signals.length ? `<h4>Señales utiles</h4><ul>${signals.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+    ${uses.length ? `<h4>Como la usara el agente</h4><ul>${uses.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+  </article>`;
+}
+
+function extractBrandPlan(report) {
+  return report?.ai?.brandPlan || report?.brandPlan || null;
+}
+
+function extractWebsitePlan(report) {
+  return report?.ai?.websitePlan || report?.websitePlan || null;
+}
+
+function isBrandStrategyReport(report) {
+  return (
+    report?.businessStage === "brand" ||
+    report?.selectedInternalTool === "brand-audit-agent" ||
+    Boolean(extractBrandPlan(report)) ||
+    Boolean(extractWebsitePlan(report))
+  );
+}
+
+function renderBrandPlanCard(brandPlan) {
+  if (!brandPlan) return "";
+  const selectedName = brandPlan.selectedName || {};
+  const options = Array.isArray(brandPlan.nameOptions) ? brandPlan.nameOptions : [];
+  const taglines = Array.isArray(brandPlan.taglineOptions) ? brandPlan.taglineOptions : [];
+  const nextChecks = Array.isArray(brandPlan.nextChecks) ? brandPlan.nextChecks : [];
+
+  return `<article class="report-card full-span">
+    <h3>Nombre y colores</h3>
+    <p>${escapeHtml(brandPlan.namingBrief || "El agente eligio una direccion de marca desde problema y nicho.")}</p>
+    <div class="brand-plan-hero">
+      <div>
+        <span class="eyebrow">Nombre recomendado</span>
+        <strong>${escapeHtml(selectedName.name || "Nombre pendiente")}</strong>
+        <p>${escapeHtml(selectedName.rationale || selectedName.problemFit || "Revisar ajuste con cliente, nicho y disponibilidad.")}</p>
+      </div>
+      ${renderBrandPalette(brandPlan.colorPalette)}
+    </div>
+    ${options.length ? `<div class="brand-name-options">${options.slice(0, 4).map((option) => `
+      <div>
+        <strong>${escapeHtml(option.name)}</strong>
+        <p>${escapeHtml(option.problemFit || option.rationale || "")}</p>
+      </div>`).join("")}</div>` : ""}
+    ${taglines.length ? `<h4>Taglines</h4><ul>${taglines.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+    ${nextChecks.length ? `<h4>Checks antes de usarlo</h4><ul>${nextChecks.slice(0, 5).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+  </article>`;
+}
+
+function renderBrandPalette(palette = {}) {
+  const tokens = [
+    ["Primary", palette.primary],
+    ["Secondary", palette.secondary],
+    ["Accent", palette.accent],
+    ["Background", palette.background],
+    ["Text", palette.text],
+  ].filter(([, value]) => value);
+
+  if (!tokens.length) return "";
+  return `<div class="brand-palette" aria-label="Paleta de marca">
+    ${tokens.map(([label, value]) => {
+      const color = safeHexColor(value);
+      return `<span class="brand-swatch" title="${escapeHtml(`${label}: ${value}`)}">
+        <span style="background:${color}"></span>
+        <small>${escapeHtml(value)}</small>
+      </span>`;
+    }).join("")}
+  </div>`;
+}
+
+function safeHexColor(value) {
+  const color = String(value || "").trim();
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : "#d9e1dc";
+}
+
+function buildBrandWebsitePlan(report, brandPlan, audit) {
+  const brand = normalizeBrandContext(report);
+  const selectedName = brandPlan?.selectedName?.name || brand.name;
+  const product = report.product || report.ai?.executiveBrief?.product || "producto principal";
+  const problem =
+    brandPlan?.selectedName?.problemFit ||
+    report.problem ||
+    report.productDetails ||
+    report.naturalRequest ||
+    "un problema claro del cliente";
+
+  return {
+    recommendation: "Convertir la direccion de marca en una landing simple antes de construir un sitio grande.",
+    firstBuild: `Primera pagina para ${selectedName}: hero claro, problema, oferta, prueba, FAQ y CTA principal.`,
+    stackSuggestion: "Landing + checkout/WhatsApp para validar; Shopify cuando haya catalogo, pagos e inventario que administrar.",
+    hero: {
+      headline: `${selectedName} ayuda a resolver ${String(problem).slice(0, 80)}`,
+      subheadline: `Presenta ${product} con una promesa concreta, visuales consistentes y una accion facil de tomar.`,
+      primaryCta: "Ver la oferta",
+      secondaryCta: "Como funciona",
+    },
+    brandApplication: [
+      "Usar primary para encabezados, nav y botones principales.",
+      "Usar accent solo en CTA, iconos o detalles que necesiten energia.",
+      "Usar background/text para mantener lectura clara en mobile.",
+    ],
+    requiredSections: [
+      "Hero con promesa y CTA",
+      "Problema del cliente",
+      "Producto u oferta principal",
+      "Beneficios y diferenciadores",
+      "Prueba social o confianza",
+      "FAQ",
+      "CTA final",
+    ],
+    sections: [
+      { name: "Hero", goal: "explicar que vende la marca y para quien es", copyAngle: "nombre + beneficio principal + CTA" },
+      { name: "Problema", goal: "hacer que el visitante se sienta entendido", copyAngle: "dolor cotidiano con lenguaje simple" },
+      { name: "Oferta", goal: "presentar el producto o bundle principal", copyAngle: "beneficios concretos y que incluye" },
+      { name: "Prueba", goal: "crear confianza", copyAngle: "reviews, demos, historia, materiales o garantia" },
+      { name: "FAQ", goal: "reducir dudas", copyAngle: "envio, devoluciones, uso, calidad y tiempos" },
+      { name: "CTA final", goal: "cerrar con una accion", copyAngle: "comprar, reservar, WhatsApp o lista de espera" },
+    ],
+    copyBlocks: audit?.messaging || [
+      "Hook de dolor: lo que el cliente intenta resolver hoy.",
+      "Hook de resultado: como se ve la vida despues de comprar.",
+      "Hook de prueba: evidencia, reviews o comparacion.",
+    ],
+    launchGuardrails: [
+      "No construir catalogo grande antes de validar una oferta.",
+      "No usar claims medicos, financieros o absolutos sin evidencia.",
+      "Medir clics al CTA, conversion, preguntas frecuentes y abandono.",
+    ],
+    nextBuildSteps: [
+      "Escoger una oferta principal y un CTA.",
+      "Reunir fotos/video reales, precio, tiempos de envio y politica de cambios.",
+      "Crear landing mobile-first con la paleta de brandPlan.",
+      "Probar 7-14 dias con contenido organico antes de subir presupuesto.",
+    ],
+  };
+}
+
+function renderWebsitePlanCard(websitePlan, brandPlan, brandNameFallback = "Marca") {
+  if (!websitePlan) return "";
+  const palette = brandPlan?.colorPalette || {};
+  const hero = websitePlan.hero || {};
+  const brandName = brandPlan?.selectedName?.name || brandNameFallback;
+  const sections = normalizeWebsiteSections(websitePlan);
+  const brandApplication = Array.isArray(websitePlan.brandApplication) ? websitePlan.brandApplication : [];
+  const copyBlocks = Array.isArray(websitePlan.copyBlocks) ? websitePlan.copyBlocks : [];
+  const guardrails = Array.isArray(websitePlan.launchGuardrails) ? websitePlan.launchGuardrails : [];
+  const steps = Array.isArray(websitePlan.nextBuildSteps) ? websitePlan.nextBuildSteps : [];
+  const previewStyle = [
+    `--website-primary:${safeHexColor(palette.primary || "#173F3A")}`,
+    `--website-secondary:${safeHexColor(palette.secondary || "#E8DDC7")}`,
+    `--website-accent:${safeHexColor(palette.accent || "#D06C4B")}`,
+    `--website-bg:${safeHexColor(palette.background || "#FBFAF6")}`,
+    `--website-text:${safeHexColor(palette.text || "#121816")}`,
+  ].join(";");
+
+  return `<article class="report-card full-span">
+    <h3>Primera web</h3>
+    <p>${escapeHtml(websitePlan.recommendation || "Crear una landing simple conectada a la direccion de marca.")}</p>
+    <div class="website-plan-grid">
+      <div class="website-preview" style="${previewStyle}">
+        <div class="website-preview-nav">
+          <strong>${escapeHtml(brandName)}</strong>
+          <span></span>
+        </div>
+        <div class="website-preview-hero">
+          <span>${escapeHtml(websitePlan.stackSuggestion || "Landing de validacion")}</span>
+          <h4>${escapeHtml(hero.headline || websitePlan.firstBuild || "Hero pendiente")}</h4>
+          <p>${escapeHtml(hero.subheadline || "Subheadline pendiente.")}</p>
+          <button type="button">${escapeHtml(hero.primaryCta || "Ver oferta")}</button>
+        </div>
+      </div>
+      <div>
+        <h4>Secciones</h4>
+        <div class="website-section-list">
+          ${sections.slice(0, 6).map((section) => `<div>
+            <strong>${escapeHtml(section.name)}</strong>
+            <p>${escapeHtml(section.copyAngle || section.goal || "")}</p>
+          </div>`).join("")}
+        </div>
+      </div>
+    </div>
+    ${brandApplication.length ? `<h4>Aplicacion de marca</h4><ul>${brandApplication.slice(0, 5).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+    ${copyBlocks.length ? `<h4>Copy inicial</h4><ul>${copyBlocks.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+    ${guardrails.length ? `<h4>Reglas de lanzamiento</h4><ul>${guardrails.slice(0, 5).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+    ${steps.length ? `<h4>Siguientes pasos de build</h4><ol>${steps.slice(0, 5).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>` : ""}
+  </article>`;
+}
+
+function normalizeWebsiteSections(websitePlan = {}) {
+  if (Array.isArray(websitePlan.sections) && websitePlan.sections.length) {
+    return websitePlan.sections;
+  }
+  return (websitePlan.requiredSections || []).map((section) => ({
+    name: section,
+    goal: "Seccion necesaria para la primera version.",
+    copyAngle: section,
+  }));
+}
+
 function renderReport(report) {
-  if (report.businessStage === "brand") {
+  if (isBrandStrategyReport(report)) {
     renderBrandReport(report);
     return;
   }
@@ -1596,6 +2093,7 @@ function renderReport(report) {
   const isShopify = report.businessStage === "shopify";
   setTabLabels(isShopify ? tabLabelSets.shopify : tabLabelSets.sourcing);
   const ai = report.ai || null;
+  const brandPlan = extractBrandPlan(report);
   const supplierShortlist = ai?.supplierShortlist?.length ? ai.supplierShortlist : report.supplierProfiles;
   const agentWorkLog = ai?.agentWorkLog?.length ? ai.agentWorkLog : report.agentTasks;
   const topRisks = ai?.executiveBrief?.topRisks?.length
@@ -1645,6 +2143,7 @@ function renderReport(report) {
         <h3>Herramientas activas</h3>
         <p>${escapeHtml(goals)}</p>
       </article>
+      ${renderBrandPlanCard(brandPlan)}
       <article class="report-card full-span">
         <h3>Trabajo del agente</h3>
         ${renderAgentWorkLog(agentWorkLog)}
@@ -1793,6 +2292,8 @@ function renderBrandReport(report) {
 
   const brand = normalizeBrandContext(report);
   const audit = buildBrandAudit(report, brand);
+  const brandPlan = extractBrandPlan(report);
+  const websitePlan = extractWebsitePlan(report) || (brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
   const shopifyOverview = report.shopify?.shop ? renderShopifyOverview(report) : "";
   const backendNotice = report.backendError
     ? `<article class="report-card full-span notice-card">
@@ -1830,6 +2331,7 @@ function renderBrandReport(report) {
         <h3>Trabajo del agente</h3>
         ${renderAgentWorkLog(report.agentTasks)}
       </article>
+      ${renderBrandPlanCard(brandPlan)}
       ${shopifyOverview}
       ${backendNotice}
     </div>`;
@@ -1880,6 +2382,7 @@ function renderBrandReport(report) {
 
   document.querySelector("#ddp").innerHTML = `
     <div class="report-grid">
+      ${renderWebsitePlanCard(websitePlan, brandPlan, brand.name)}
       <article class="report-card full-span">
         <h3>Conversion</h3>
         ${renderCompactSections([
@@ -2416,6 +2919,15 @@ async function handleHistoryClick(event) {
     if (!response.ok || !body.ok) throw new Error(body.message || "No se pudo abrir el research.");
 
     const run = body.run;
+    if (run.result_json?.type) {
+      state.latest = run.result_json;
+      document.body.classList.add("report-ready");
+      renderTypedReport(run.result_json);
+      activateTab("brief");
+      closeHistory();
+      return;
+    }
+
     const input = run.input_json || {};
     const report = buildReport({
       ...input,
@@ -2437,6 +2949,22 @@ async function handleHistoryClick(event) {
   } finally {
     button.disabled = false;
   }
+}
+
+function renderTypedReport(report) {
+  if (report.type === "profitability") {
+    renderProfitabilityReport(report);
+    return;
+  }
+  if (report.type === "shipping_quote") {
+    renderShippingQuoteReport(report);
+    return;
+  }
+  if (report.type === "retail_to_online") {
+    renderRetailToOnlineReport(report);
+    return;
+  }
+  renderReport(report);
 }
 
 function renderCompactSections(sections) {
@@ -2465,11 +2993,14 @@ function setLoading(isLoading) {
 
 function buildPrompt(report) {
   const attachments = attachmentSummary(report.attachments);
+  if (report.selectedInternalTool === "retail-to-online-agent") {
+    return `Actua como Agent Genia. El usuario tiene o describe una tienda fisica/local y escribio: "${report.naturalRequest}". Adjuntos: ${attachments}. Ayudalo a pasar a ecommerce desde la main page: entiende producto/oferta, calcula si los numeros permiten paid ads, recomienda TikTok organico vs paid ads, define primera web, plan de competencia y contenido. Separa datos dados de supuestos y no recomiendes gasto en ads si CAC/ROAS no dan.`;
+  }
   if (report.businessStage === "brand") {
     const brand = normalizeBrandContext(report);
-    return `Actua como Agent Genia. El usuario tiene una marca existente: ${brand.name}. Solicitud: "${report.naturalRequest}". Adjuntos: ${attachments}. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
+    return `Actua como Agent Genia. El usuario tiene o quiere crear una marca: ${brand.name}. Solicitud: "${report.naturalRequest}". Adjuntos: ${attachments}. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si pide naming, colores o identidad visual, crea brandPlan con nombre recomendado, opciones de nombre, paleta hex y checks de disponibilidad. Si pide pagina web/landing o creas brandPlan para marca nueva, crea websitePlan con hero, secciones, copy, aplicacion de colores y pasos de build. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
   }
-  return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Adjuntos: ${attachments}. Decide que herramienta interna usar. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
+  return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Adjuntos: ${attachments}. Decide que herramienta interna usar. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Si hay intencion de crear marca, naming, colores o identidad visual, usa brand strategy helper y devuelve brandPlan. Si hay intencion de pagina web/landing, o brandPlan necesita convertirse en web, devuelve websitePlan. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
 }
 
 function buildMarkdown(report) {
@@ -2480,7 +3011,10 @@ function buildMarkdown(report) {
   if (report.type === "shipping_quote") {
     return buildShippingQuoteMarkdown(report);
   }
-  if (report.businessStage === "brand") {
+  if (report.type === "retail_to_online") {
+    return buildRetailToOnlineMarkdown(report);
+  }
+  if (isBrandStrategyReport(report)) {
     return buildBrandMarkdown(report);
   }
   if (report.ai) {
@@ -2542,6 +3076,10 @@ function buildBrandMarkdown(report) {
   const brand = normalizeBrandContext(report);
   const audit = buildBrandAudit(report, brand);
   const shopifySection = report.shopify?.shop ? buildShopifyMarkdown(report) : "";
+  const brandPlan = extractBrandPlan(report);
+  const websitePlan = extractWebsitePlan(report) || (brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
+  const brandPlanSection = buildBrandPlanMarkdown(brandPlan);
+  const websitePlanSection = buildWebsitePlanMarkdown(websitePlan);
 
   return `# Auditoria de marca
 
@@ -2553,6 +3091,8 @@ Objetivo: ${brand.goal}
 Solicitud: ${report.naturalRequest}
 Herramienta interna: ${toolLabel(report.selectedInternalTool)}
 ${shopifySection}
+${brandPlanSection}
+${websitePlanSection}
 
 ## Decision
 
@@ -2580,6 +3120,82 @@ ${audit.nextExperiments.map((item) => `- ${item}`).join("\n")}
 `;
 }
 
+function buildBrandPlanMarkdown(brandPlan) {
+  if (!brandPlan) return "";
+  const selectedName = brandPlan.selectedName || {};
+  const palette = brandPlan.colorPalette || {};
+  const options = Array.isArray(brandPlan.nameOptions) ? brandPlan.nameOptions : [];
+  const taglines = Array.isArray(brandPlan.taglineOptions) ? brandPlan.taglineOptions : [];
+  const rules = Array.isArray(brandPlan.namingRules) ? brandPlan.namingRules : [];
+  const nextChecks = Array.isArray(brandPlan.nextChecks) ? brandPlan.nextChecks : [];
+
+  return `
+## Brand plan
+
+Brief: ${brandPlan.namingBrief || ""}
+
+Nombre recomendado: ${selectedName.name || "pendiente"}
+
+${selectedName.rationale || selectedName.problemFit || ""}
+
+Paleta: primary ${palette.primary || "--"} | secondary ${palette.secondary || "--"} | accent ${palette.accent || "--"} | background ${palette.background || "--"} | text ${palette.text || "--"}
+
+${palette.rationale || ""}
+
+Opciones:
+${options.map((option) => `- ${option.name}: ${option.rationale || option.problemFit || ""}`).join("\n")}
+
+Taglines:
+${taglines.map((item) => `- ${item}`).join("\n")}
+
+Reglas:
+${rules.map((item) => `- ${item}`).join("\n")}
+
+Checks:
+${nextChecks.map((item) => `- ${item}`).join("\n")}
+`;
+}
+
+function buildWebsitePlanMarkdown(websitePlan) {
+  if (!websitePlan) return "";
+  const hero = websitePlan.hero || {};
+  const sections = normalizeWebsiteSections(websitePlan);
+  const brandApplication = Array.isArray(websitePlan.brandApplication) ? websitePlan.brandApplication : [];
+  const copyBlocks = Array.isArray(websitePlan.copyBlocks) ? websitePlan.copyBlocks : [];
+  const guardrails = Array.isArray(websitePlan.launchGuardrails) ? websitePlan.launchGuardrails : [];
+  const steps = Array.isArray(websitePlan.nextBuildSteps) ? websitePlan.nextBuildSteps : [];
+
+  return `
+## Website plan
+
+${websitePlan.recommendation || ""}
+
+Primera version: ${websitePlan.firstBuild || ""}
+Stack: ${websitePlan.stackSuggestion || ""}
+
+Hero:
+- Headline: ${hero.headline || ""}
+- Subheadline: ${hero.subheadline || ""}
+- CTA principal: ${hero.primaryCta || ""}
+- CTA secundario: ${hero.secondaryCta || ""}
+
+Aplicacion de marca:
+${brandApplication.map((item) => `- ${item}`).join("\n")}
+
+Secciones:
+${sections.map((section) => `- ${section.name}: ${section.copyAngle || section.goal || ""}`).join("\n")}
+
+Copy:
+${copyBlocks.map((item) => `- ${item}`).join("\n")}
+
+Reglas:
+${guardrails.map((item) => `- ${item}`).join("\n")}
+
+Build:
+${steps.map((item) => `- ${item}`).join("\n")}
+`;
+}
+
 function buildShopifyMarkdown(report) {
   const snapshot = report.shopify?.snapshot || null;
   const products = snapshot?.products || [];
@@ -2598,6 +3214,75 @@ Productos leidos: ${products.length}
 ## Shopify
 
 ${productsText}
+`;
+}
+
+function buildRetailToOnlineMarkdown(report) {
+  const economics = report.economics || {};
+  const currency = economics.currency || "USD";
+  const channel = report.channelRecommendation || {};
+  const product = report.productUnderstanding || {};
+  const database = report.databaseContext || {};
+  const content = report.contentPlan || {};
+  const competitors = report.competitorResearchPlan || {};
+  const website = report.websitePlan || {};
+
+  return `# Tienda fisica a ecommerce
+
+Fecha: ${report.createdAt}
+Solicitud: ${report.naturalRequest}
+Producto: ${product.product || report.product || "producto"}
+Herramienta interna: ${toolLabel(report.toolUsed)}
+
+## Decision
+
+${report.executiveBrief?.decision || ""}
+
+${report.executiveBrief?.recommendedPath || channel.path || ""}
+
+## Numeros
+
+- Ticket promedio: ${formatMoney(economics.aov || 0, currency)}
+- Costo producto: ${formatMoney(economics.cogs || 0, currency)}
+- Envio/empaque: ${formatMoney(economics.shipping || 0, currency)}
+- Contribucion: ${formatMoney(economics.contribution || 0, currency)}
+- Margen: ${formatPercent(economics.margin || 0)}
+- CAC sano: ${formatMoney(economics.cacTarget || 0, currency)}
+- ROAS objetivo: ${economics.targetRoas ? formatRoas(economics.targetRoas) : "pendiente"}
+
+## Canal
+
+${channel.summary || ""}
+
+Primer test: ${channel.firstTest || ""}
+
+## DB digital
+
+${database.hasDatabase ? database.summary : "No se subio DB digital."}
+
+${database.hasDatabase ? `Archivos: ${(database.files || []).map((file) => file.name).join(", ")}
+Columnas: ${(database.detectedColumns || []).slice(0, 30).join(", ")}
+Usos: ${(database.recommendedUses || []).map((item) => `\n- ${item}`).join("")}` : "Puede subir CSV, Excel, JSON, SQL o SQLite desde el boton +."}
+
+## Competencia
+
+${(competitors.sources || []).map((source) => `- ${source.source}: ${source.query} | ${source.useFor}`).join("\n")}
+
+## Contenido
+
+${(content.firstContentSprint || []).map((item) => `- ${item}`).join("\n")}
+
+## Web
+
+${website.recommendation || ""}
+
+${website.firstBuild || ""}
+
+${(website.requiredSections || []).map((item) => `- ${item}`).join("\n")}
+
+## Siguiente
+
+${(report.nextSteps || []).map((item) => `- ${item}`).join("\n")}
 `;
 }
 
@@ -2703,6 +3388,8 @@ function shippingQuoteSummary(shippingQuote) {
 
 function buildAiMarkdown(report) {
   const ai = report.ai;
+  const brandPlanSection = buildBrandPlanMarkdown(ai.brandPlan);
+  const websitePlanSection = buildWebsitePlanMarkdown(ai.websitePlan);
   const shopifySection = ai.shopifyPlan
     ? `
 ## Shopify
@@ -2724,6 +3411,8 @@ Destino DDP: ${report.destination}
 Modo: Codex harness
 Adjuntos: ${attachmentSummary(report.attachments)}
 ${shopifySection}
+${brandPlanSection}
+${websitePlanSection}
 
 ## Decision
 
@@ -2808,6 +3497,7 @@ function attachmentKind(file) {
   const name = file.name || "";
   if (type.startsWith("image/")) return "image";
   if (type === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
+  if (isDatabaseAttachment(file)) return "database";
   if (/\.(docx?|xlsx?|csv|json)$/i.test(name)) return "document";
   if (isTextAttachment(file)) return "text";
   return "file";
@@ -2816,6 +3506,7 @@ function attachmentKind(file) {
 function attachmentLabel(attachment) {
   if (attachment.kind === "image") return "imagen";
   if (attachment.kind === "pdf") return "PDF";
+  if (attachment.kind === "database") return "base de datos";
   if (attachment.contentMode === "text" || attachment.kind === "text") return "texto";
   if (attachment.kind === "document") return "documento";
   return "archivo";
@@ -2831,16 +3522,33 @@ function attachmentSummary(attachments = []) {
 function iconForAttachment(attachment) {
   if (attachment.kind === "image") return "image";
   if (attachment.kind === "pdf") return "file-text";
+  if (attachment.kind === "database") return "database";
   if (attachment.contentMode === "text" || attachment.kind === "text") return "file-type";
   if (attachment.kind === "document") return "file-spreadsheet";
   return "paperclip";
 }
 
+function isDatabaseAttachment(file) {
+  const name = file.name || "";
+  return (
+    [
+      "application/json",
+      "text/csv",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/x-sqlite3",
+      "application/vnd.sqlite3",
+      "application/sql",
+    ].includes(file.type) ||
+    /\.(csv|xlsx?|json|sql|sqlite3?|db)$/i.test(name)
+  );
+}
+
 function isTextAttachment(file) {
   return (
     (file.type && file.type.startsWith("text/")) ||
-    ["application/json", "text/csv"].includes(file.type) ||
-    /\.(txt|csv|json|md)$/i.test(file.name || "")
+    ["application/json", "text/csv", "application/sql"].includes(file.type) ||
+    /\.(txt|csv|json|md|sql)$/i.test(file.name || "")
   );
 }
 
@@ -2848,6 +3556,10 @@ function fallbackMimeType(name = "") {
   if (/\.pdf$/i.test(name)) return "application/pdf";
   if (/\.json$/i.test(name)) return "application/json";
   if (/\.csv$/i.test(name)) return "text/csv";
+  if (/\.sql$/i.test(name)) return "application/sql";
+  if (/\.(sqlite|sqlite3|db)$/i.test(name)) return "application/vnd.sqlite3";
+  if (/\.xlsx$/i.test(name)) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (/\.xls$/i.test(name)) return "application/vnd.ms-excel";
   if (/\.txt$/i.test(name)) return "text/plain";
   return "application/octet-stream";
 }
@@ -2932,6 +3644,7 @@ function toolLabel(value) {
   if (value === "alibaba-sourcing-agent") return "Alibaba sourcing";
   if (value === "shopify-store-audit") return "Shopify audit";
   if (value === "brand-audit-agent") return "Brand audit";
+  if (value === "retail-to-online-agent" || value === "retail_to_online_agent") return "Tienda fisica a online";
   return "Ecom research";
 }
 

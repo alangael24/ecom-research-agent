@@ -52,6 +52,16 @@ export async function onRequestPost(context) {
       })),
     };
 
+    if (shouldUseRetailToOnlineTool(agentPayload)) {
+      const report = await runRetailToOnlineTool(agentPayload, env);
+      const diagnostics = {
+        tool: "retail_to_online_agent",
+        mode: "internal_tool",
+      };
+      await persistReport(auth.config, auth.accessToken, auth.user.id, runContext.id, agentPayload, report);
+      return json({ ok: true, report, diagnostics, runId: runContext.id });
+    }
+
     if (shouldUseShippingRateTool(agentPayload)) {
       const report = await runShippingRateTool(agentPayload, env);
       const diagnostics = {
@@ -427,6 +437,17 @@ function payloadText(payload) {
   return `${payload.naturalRequest || ""} ${payload.reference || ""} ${payload.problem || ""} ${payload.product || ""} ${payload.productDetails || ""} ${brand.name || ""} ${brand.url || ""} ${brand.channels || ""} ${brand.goal || ""}`;
 }
 
+function shouldUseRetailToOnlineTool(payload) {
+  if (payload.selectedInternalTool === "retail-to-online-agent") return true;
+  const text = payloadText(payload).toLowerCase();
+  const physicalStoreIntent =
+    /tienda f[ií]sica|negocio f[ií]sico|negocio local|local comercial|mostrador|sucursal|boutique|tienda de barrio|retail/.test(text);
+  const onlineIntent =
+    /vender (en|por) internet|vender online|e-?commerce|tienda online|p[aá]gina web|crear web/.test(text);
+  const channelPlanningIntent = /tiktok org[aá]nico|paid ads|anuncios pagados|competencia|contenido|ads/.test(text);
+  return physicalStoreIntent || (onlineIntent && channelPlanningIntent) || (onlineIntent && /tienda|local|negocio|producto|productos/.test(text));
+}
+
 function shouldUseProfitabilityTool(payload) {
   const text = payloadText(payload).toLowerCase();
   const intentPattern =
@@ -441,6 +462,528 @@ function shouldUseShippingRateTool(payload) {
   const economicsIntent =
     /rentab|margen|ganancia|utilidad|dejar dinero|deja dinero|unit economics|break ?even|roas|cac|costo del producto|costo producto|devoluciones|returns|recompra|precio de venta|venta promedio/.test(text);
   return shippingIntent && !economicsIntent;
+}
+
+async function runRetailToOnlineTool(payload, env) {
+  const text = payloadText(payload);
+  const currency = inferCurrency(text, payload.market);
+  const defaults = defaultProfitabilityAssumptions(text, currency);
+  const extracted = extractProfitabilityNumbers(text);
+  const databaseContext = analyzeRetailDatabaseAttachments(payload.attachments || []);
+  const feesPercent = extracted.feesPercent ?? 3.2;
+  const feesFixed = extracted.feesFixed ?? (currency === "MXN" ? 6 : 0.3);
+  const targetNetMargin = extracted.targetNetMargin ?? 15;
+  const aov = extracted.aov ?? defaults.aov;
+  const cogs = extracted.cogs ?? defaults.cogs;
+  const shippingQuote = await resolveShippingCost({ payload, text, currency, defaults, extracted, env, aov });
+  const shipping = shippingQuote.amount;
+  const returnRate = extracted.returnRate ?? defaults.returnRate;
+  const returnLoss = extracted.returnLoss ?? cogs + shipping + (aov * (feesPercent / 100) + feesFixed);
+  const fees = aov * (feesPercent / 100) + feesFixed;
+  const returnsReserve = (returnRate / 100) * returnLoss;
+  const variableCosts = cogs + shipping + fees + returnsReserve;
+  const contribution = aov - variableCosts;
+  const margin = aov > 0 ? contribution / aov : 0;
+  const targetProfit = aov * (targetNetMargin / 100);
+  const cacMax = Math.max(0, contribution);
+  const cacTarget = Math.max(0, contribution - targetProfit);
+  const breakEvenRoas = cacMax > 0 ? aov / cacMax : null;
+  const targetRoas = cacTarget > 0 ? aov / cacTarget : null;
+  const economics = {
+    currency,
+    aov,
+    cogs,
+    shipping,
+    feesPercent,
+    feesFixed,
+    fees,
+    returnRate,
+    returnLoss,
+    returnsReserve,
+    variableCosts,
+    contribution,
+    margin,
+    targetNetMargin,
+    targetProfit,
+    cacMax,
+    cacTarget,
+    breakEvenRoas,
+    targetRoas,
+    shippingQuote,
+    missingNumbers: retailMissingNumbers(extracted, shippingQuote),
+    assumptions: buildAssumptionNotes({
+      extracted,
+      defaults,
+      currency,
+      feesPercent,
+      feesFixed,
+      targetNetMargin,
+      shippingQuote,
+    }),
+  };
+  const channelRecommendation = buildRetailChannelRecommendation(economics, text, currency, databaseContext);
+  const productUnderstanding = buildRetailProductUnderstanding(payload, text, economics, databaseContext);
+  const competitorResearchPlan = buildRetailCompetitorPlan(payload, text, databaseContext);
+  const contentPlan = buildRetailContentPlan(payload, channelRecommendation, competitorResearchPlan);
+  const websitePlan = buildRetailWebsitePlan(payload, economics, channelRecommendation, databaseContext);
+  const nextSteps = buildRetailNextSteps(economics, channelRecommendation, websitePlan);
+
+  return {
+    type: "retail_to_online",
+    toolUsed: "retail_to_online_agent",
+    market: payload.market || (currency === "MXN" ? "MX" : "US"),
+    createdAt: new Date().toLocaleString("es-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }),
+    product: payload.product || "producto de tienda fisica",
+    naturalRequest: payload.naturalRequest || "",
+    executiveBrief: {
+      decision: channelRecommendation.decision,
+      recommendedPath: channelRecommendation.path,
+      topRisks: channelRecommendation.risks,
+    },
+    productUnderstanding,
+    databaseContext,
+    economics,
+    channelRecommendation,
+    competitorResearchPlan,
+    contentPlan,
+    websitePlan,
+    nextSteps,
+    agentWorkLog: [
+      {
+        key: "retail",
+        title: "Entender tienda fisica",
+        status: "done",
+        result: productUnderstanding.summary,
+        nextAction: "Validar ticket promedio, margen y producto estrella.",
+      },
+      {
+        key: "database",
+        title: "Leer DB digital",
+        status: databaseContext.hasDatabase ? "contexto recibido" : "sin archivo",
+        result: databaseContext.summary,
+        nextAction: databaseContext.hasDatabase
+          ? "Usar columnas/señales para elegir producto estrella, contenido y primera web."
+          : "Si existe inventario/clientes/ventas en CSV, Excel, JSON o SQLite, subirlo desde el boton +.",
+      },
+      {
+        key: "costs",
+        title: "Unit economics",
+        status: "done",
+        result: `Contribucion estimada: ${formatMoney(contribution, currency)} (${formatPercent(margin)}). CAC sano: ${formatMoney(cacTarget, currency)}.`,
+        nextAction: "Usar estos limites antes de gastar en ads.",
+      },
+      {
+        key: "channel",
+        title: "Canal inicial",
+        status: "done",
+        result: channelRecommendation.summary,
+        nextAction: channelRecommendation.firstTest,
+      },
+      {
+        key: "content",
+        title: "Competencia y contenido",
+        status: "ready",
+        result: "Plan de research separado por TikTok organico, Meta Ads, Google/local y reviews.",
+        nextAction: "Recolectar 10-20 ejemplos antes de producir creativos.",
+      },
+      {
+        key: "web",
+        title: "Primera web",
+        status: "ready",
+        result: websitePlan.recommendation,
+        nextAction: websitePlan.firstBuild,
+      },
+    ],
+    supplierShortlist: [],
+    supplierOutreachQueue: [],
+    limitations: [
+      "Sin datos reales de ventas, el analisis usa supuestos conservadores.",
+      "Antes de invertir en paid ads, confirma margen, envio, devoluciones y capacidad de surtido.",
+      "La competencia debe verificarse con fuentes vivas antes de copiar hooks u ofertas.",
+    ],
+  };
+}
+
+function retailMissingNumbers(extracted, shippingQuote) {
+  const missing = [];
+  if (extracted.aov == null) missing.push("precio/ticket promedio real");
+  if (extracted.cogs == null) missing.push("costo real del producto");
+  if (!isLiveShippingQuote(shippingQuote) && shippingQuote.mode !== "user_provided") missing.push("envio real por pedido");
+  if (extracted.returnRate == null) missing.push("devoluciones/cambios esperados");
+  if (extracted.feesPercent == null) missing.push("fees de plataforma y pagos");
+  return missing;
+}
+
+function analyzeRetailDatabaseAttachments(attachments) {
+  const databaseFiles = attachments.filter(isRetailDatabaseAttachment);
+  if (!databaseFiles.length) {
+    return {
+      hasDatabase: false,
+      summary: "No se subio una base de datos digital.",
+      files: [],
+      detectedColumns: [],
+      detectedTables: [],
+      usefulSignals: [],
+      recommendedUses: [
+        "subir inventario en CSV/Excel para elegir producto estrella",
+        "subir ventas historicas para calcular ticket y margen real",
+        "subir clientes/WhatsApp/CRM para segmentar contenido y remarketing",
+      ],
+    };
+  }
+
+  const files = databaseFiles.map(analyzeRetailDatabaseFile);
+  const detectedColumns = uniqueFlat(files.map((file) => file.columns || [])).slice(0, 30);
+  const detectedTables = uniqueFlat(files.map((file) => file.tables || [])).slice(0, 20);
+  const usefulSignals = uniqueFlat(files.map((file) => file.signals || [])).slice(0, 20);
+  const readableFiles = files.filter((file) => file.readable);
+
+  return {
+    hasDatabase: true,
+    summary: readableFiles.length
+      ? `Se subieron ${files.length} archivo(s) de DB digital; ${readableFiles.length} tienen texto legible para extraer columnas/señales.`
+      : `Se subieron ${files.length} archivo(s) de DB digital. Son binarios o no legibles en esta pasada, pero quedaron guardados en Storage.`,
+    files,
+    detectedColumns,
+    detectedTables,
+    usefulSignals,
+    recommendedUses: buildDatabaseRecommendedUses(detectedColumns, usefulSignals),
+  };
+}
+
+function isRetailDatabaseAttachment(attachment) {
+  const name = attachment.name || "";
+  const type = attachment.type || "";
+  return (
+    attachment.kind === "database" ||
+    [
+      "application/json",
+      "text/csv",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/x-sqlite3",
+      "application/vnd.sqlite3",
+      "application/sql",
+    ].includes(type) ||
+    /\.(csv|xlsx?|json|sql|sqlite3?|db)$/i.test(name)
+  );
+}
+
+function analyzeRetailDatabaseFile(attachment) {
+  const content = typeof attachment.content === "string" ? attachment.content.slice(0, 60000) : "";
+  const base = {
+    name: attachment.name || "database",
+    type: attachment.type || "",
+    size: attachment.size || 0,
+    sizeLabel: attachment.sizeLabel || "",
+    contentMode: attachment.contentMode || "metadata-only",
+    storagePath: attachment.storagePath || attachment.storage_path || "",
+    readable: Boolean(content),
+    columns: [],
+    tables: [],
+    signals: [],
+  };
+
+  if (!content) {
+    return {
+      ...base,
+      signals: ["archivo guardado para revision posterior"],
+    };
+  }
+
+  if (/\.json$/i.test(base.name) || base.type === "application/json") {
+    return analyzeJsonDatabaseContent(base, content);
+  }
+
+  if (/\.sql$/i.test(base.name) || base.type === "application/sql") {
+    return analyzeSqlDatabaseContent(base, content);
+  }
+
+  return analyzeDelimitedDatabaseContent(base, content);
+}
+
+function analyzeDelimitedDatabaseContent(base, content) {
+  const firstLine = content.split(/\r?\n/).find((line) => line.trim()) || "";
+  const delimiter = firstLine.includes("\t") ? "\t" : firstLine.includes(";") ? ";" : ",";
+  const columns = firstLine
+    .split(delimiter)
+    .map((column) => column.trim().replace(/^["']|["']$/g, ""))
+    .filter(Boolean)
+    .slice(0, 40);
+  return {
+    ...base,
+    columns,
+    signals: inferDatabaseSignals(columns, content),
+  };
+}
+
+function analyzeJsonDatabaseContent(base, content) {
+  try {
+    const parsed = JSON.parse(content);
+    const sample = Array.isArray(parsed) ? parsed[0] : parsed && typeof parsed === "object" ? parsed : {};
+    const columns = sample && typeof sample === "object" ? Object.keys(sample).slice(0, 40) : [];
+    return {
+      ...base,
+      columns,
+      signals: inferDatabaseSignals(columns, content),
+    };
+  } catch {
+    return {
+      ...base,
+      signals: ["JSON no pudo parsearse; usar como referencia manual"],
+    };
+  }
+}
+
+function analyzeSqlDatabaseContent(base, content) {
+  const tableMatches = [...content.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([\w.-]+)["`]?/gi)];
+  const insertMatches = [...content.matchAll(/insert\s+into\s+["`]?([\w.-]+)["`]?/gi)];
+  const tables = uniqueFlat([tableMatches.map((match) => match[1]), insertMatches.map((match) => match[1])]).slice(0, 20);
+  const columnMatches = [...content.matchAll(/\(([^()]{5,500})\)/g)].slice(0, 3);
+  const columns = uniqueFlat(
+    columnMatches.map((match) =>
+      match[1]
+        .split(",")
+        .map((item) => item.trim().split(/\s+/)[0]?.replace(/["`]/g, ""))
+        .filter(Boolean),
+    ),
+  ).slice(0, 40);
+  return {
+    ...base,
+    columns,
+    tables,
+    signals: inferDatabaseSignals(columns, content).concat(tables.length ? [`tablas detectadas: ${tables.join(", ")}`] : []),
+  };
+}
+
+function inferDatabaseSignals(columns, content) {
+  const joined = `${columns.join(" ")} ${content.slice(0, 4000)}`.toLowerCase();
+  const signals = [];
+  if (/sku|producto|product|item|inventario|inventory|stock|existencia/.test(joined)) signals.push("inventario/productos");
+  if (/cliente|customer|email|telefono|phone|whatsapp/.test(joined)) signals.push("clientes/contactos");
+  if (/venta|sales|order|pedido|revenue|total|subtotal|ticket/.test(joined)) signals.push("ventas/tickets");
+  if (/precio|price|costo|cost|margin|margen|profit/.test(joined)) signals.push("precios/costos/margen");
+  if (/fecha|date|created|updated|mes|month/.test(joined)) signals.push("historico por fecha");
+  if (/categoria|category|tag|tipo|collection/.test(joined)) signals.push("categorias/colecciones");
+  return signals.length ? signals : ["estructura disponible para revision"];
+}
+
+function buildDatabaseRecommendedUses(columns, signals) {
+  const uses = [];
+  if (signals.includes("inventario/productos")) uses.push("priorizar productos con stock y margen para la primera web");
+  if (signals.includes("ventas/tickets")) uses.push("calcular ticket promedio real y productos mas vendidos");
+  if (signals.includes("clientes/contactos")) uses.push("crear audiencias iniciales, WhatsApp/email y remarketing");
+  if (signals.includes("precios/costos/margen")) uses.push("decidir TikTok organico vs paid ads con CAC real");
+  if (signals.includes("categorias/colecciones")) uses.push("organizar la web por colecciones simples");
+  if (!uses.length && columns.length) uses.push("mapear columnas para definir producto, cliente, venta y contenido");
+  return uses.length ? uses : ["guardar la DB para analisis manual o procesamiento posterior"];
+}
+
+function uniqueFlat(groups) {
+  return [...new Set(groups.flat().filter(Boolean).map((item) => String(item).trim()).filter(Boolean))];
+}
+
+function buildRetailChannelRecommendation(economics, text, currency, databaseContext = {}) {
+  const organicWords = /tiktok org[aá]nico|contenido|sin presupuesto|bajo presupuesto|no tengo presupuesto/.test(text);
+  const paidWords = /paid ads|meta ads|facebook ads|anuncios pagados|ads|roas|cac/.test(text);
+  const highAov = economics.aov >= (currency === "MXN" ? 900 : 55);
+  const paidReady = economics.contribution > 0 && economics.margin >= 0.42 && economics.cacTarget >= (currency === "MXN" ? 120 : 8) && highAov;
+  const paidRisky = economics.contribution <= 0 || economics.margin < 0.35 || !economics.targetRoas || economics.targetRoas > 4;
+  const hasSalesData = databaseContext.usefulSignals?.includes("ventas/tickets");
+
+  if (paidRisky || organicWords) {
+    return {
+      decision: "Empieza con TikTok organico y una web simple antes de paid ads.",
+      path: "Validar demanda con contenido, WhatsApp/web y producto estrella; usar ads solo cuando el CAC permitido este claro.",
+      summary: "Los numeros no dejan suficiente espacio para comprar trafico con calma, o faltan datos para saberlo.",
+      primaryChannel: "tiktok-organic",
+      paidAdsReadiness: "not_ready",
+      firstTest: "Publicar 10-15 videos cortos con demostracion, objeciones y prueba local antes de gastar en anuncios.",
+      risks: [
+        "Gastar en ads sin saber CAC maximo.",
+        "Construir catalogo grande antes de validar producto estrella.",
+        "Prometer envio/precios online sin margen despues de empaque, fees y devoluciones.",
+      ],
+    };
+  }
+
+  if (paidWords && paidReady) {
+    return {
+      decision: "Puede probar paid ads pequeno, pero solo con presupuesto controlado y creativos validados.",
+      path: "Crear landing de 1 oferta, producir contenido organico primero y convertir los mejores hooks en ads.",
+      summary: "El margen estimado permite pagar adquisicion si el CAC se mantiene por debajo del limite sano.",
+      primaryChannel: "paid-ads-test",
+      paidAdsReadiness: "test_small",
+      firstTest: `Test de ${formatMoney(currency === "MXN" ? 1500 : 100, currency)} a ${formatMoney(currency === "MXN" ? 3000 : 200, currency)} con 3 hooks y limite CAC de ${formatMoney(economics.cacTarget, currency)}.`,
+      risks: [
+        "Escalar anuncios antes de confirmar conversion de la web.",
+        "Usar creativos bonitos pero sin prueba de problema/oferta.",
+        "No medir CAC, ROAS y contribucion por pedido juntos.",
+      ],
+    };
+  }
+
+  return {
+    decision: hasSalesData
+      ? "Ruta hibrida: usar la DB para elegir oferta, contenido organico primero y ads despues."
+      : "Ruta hibrida: contenido organico primero, retargeting/ads despues.",
+    path: hasSalesData
+      ? "Cruzar ventas/inventario con contenido para lanzar la web con productos probados; despues probar ads con limite CAC."
+      : "Usar TikTok/Reels para entender lenguaje del cliente, crear web simple y luego probar ads con los mejores videos.",
+    summary: hasSalesData
+      ? "La DB puede reducir incertidumbre porque ayuda a elegir producto estrella y ticket real antes de gastar."
+      : "Hay posibilidad online, pero todavia faltan pruebas de demanda o margen para depender de anuncios.",
+    primaryChannel: "organic-first-retargeting-later",
+    paidAdsReadiness: "needs_validation",
+    firstTest: "Durante 14 dias publicar contenido diario, medir preguntas/DMs/clicks y despues retargetear visitantes o engagers.",
+    risks: [
+      "Confundir likes con compras.",
+      "No tener oferta clara en la web.",
+      "Probar ads frios antes de saber que hook convierte.",
+    ],
+  };
+}
+
+function buildRetailProductUnderstanding(payload, text, economics, databaseContext = {}) {
+  const product = payload.product || "producto principal";
+  const storeType = /boutique|ropa|moda|zapato/.test(text)
+    ? "moda/boutique"
+    : /comida|restaurante|panader|pastel|cafe|café/.test(text)
+      ? "alimentos/local"
+      : /mueble|decor|hogar/.test(text)
+        ? "hogar/decoracion"
+        : "retail fisico";
+  return {
+    storeType,
+    product,
+    summary: `La tienda ya tiene producto o inventario; el reto no es crear otro producto, sino elegir la oferta online con mejor margen y prueba visual.`,
+    likelyBestSeller: product,
+    onlineAngles: [
+      "producto estrella o bundle con margen suficiente",
+      "historia de tienda local y confianza existente",
+      "demostracion visual del producto en uso",
+      "prueba social de clientes reales del local",
+      ...(databaseContext.hasDatabase ? ["usar ventas/inventario de la DB para escoger oferta inicial"] : []),
+    ],
+    mustClarify: [
+      "precio de venta online",
+      "costo total con empaque/envio",
+      "stock disponible para surtir pedidos",
+      "zona de entrega, pickup o envio nacional",
+      `CAC maximo sano estimado: ${formatMoney(economics.cacTarget, economics.currency)}`,
+      ...(databaseContext.hasDatabase ? databaseContext.recommendedUses : []),
+    ],
+  };
+}
+
+function buildRetailCompetitorPlan(payload, text, databaseContext = {}) {
+  const product = payload.product || "producto";
+  const market = payload.market || (text.includes("mexico") || text.includes("méxico") ? "MX" : "US");
+  return {
+    goal: "Entender que mensajes, ofertas y formatos ya estan educando al cliente.",
+    sources: [
+      {
+        source: "TikTok organico",
+        query: `${product} tienda local ${market}`,
+        useFor: "pain language, demostraciones, preguntas frecuentes y contenido que retiene.",
+      },
+      {
+        source: "Meta Ads Library",
+        query: `${product} ecommerce ${market}`,
+        useFor: "ofertas, bundles, claims, descuentos, guarantees y landing angles que competidores pagan.",
+      },
+      {
+        source: "Google/local competitors",
+        query: `${product} comprar online cerca de mi`,
+        useFor: "precios, tiempos de entrega, confianza local, pickup y estructura de pagina.",
+      },
+      {
+        source: "Amazon/reviews si aplica",
+        query: `${product} reviews`,
+        useFor: "objeciones, features esperadas, defectos, razones de devolucion y lenguaje de compra.",
+      },
+    ],
+    output: [
+      "3 competidores directos",
+      "3 hooks repetidos",
+      "3 objeciones",
+      "3 ofertas o bundles",
+      "claims que no se deben copiar sin prueba",
+      ...(databaseContext.hasDatabase ? ["producto/categoria de la DB con mejor oportunidad online"] : []),
+    ],
+  };
+}
+
+function buildRetailContentPlan(payload, channel, competitorPlan) {
+  const product = payload.product || "producto";
+  return {
+    primaryChannel: channel.primaryChannel,
+    researchInputs: competitorPlan.sources.map((item) => item.source),
+    firstContentSprint: [
+      `Demostracion: como se usa/elige ${product}.`,
+      "Antes/despues o problema/solucion sin claims exagerados.",
+      "Comparacion: por que comprarlo en esta tienda vs marketplace.",
+      "Objeciones: precio, calidad, entrega, garantia, tallas/sabores/materiales.",
+      "Historia local: quien esta detras de la tienda y prueba de clientes.",
+      "Oferta: bundle o producto estrella con CTA a web/WhatsApp.",
+      "FAQ rapido: envio, pickup, cambios, tiempos y pagos.",
+    ],
+    measurement: [
+      "DMs o comentarios con intencion de compra",
+      "clics a web/WhatsApp",
+      "add-to-cart o formularios",
+      "ventas por contenido",
+      "preguntas repetidas que deben ir en la web",
+    ],
+    doNotDoYet: [
+      "grabar solo videos bonitos sin oferta",
+      "copiar claims de competidores",
+      "lanzar 30 SKUs antes de saber que producto jala",
+    ],
+  };
+}
+
+function buildRetailWebsitePlan(payload, economics, channel, databaseContext = {}) {
+  const product = payload.product || "producto estrella";
+  const databaseSections = databaseContext.hasDatabase
+    ? ["producto estrella elegido desde DB", "colecciones basadas en inventario/ventas", "captura de clientes para recompra"]
+    : [];
+  return {
+    recommendation: "Crear una web simple de venta, no un catalogo gigante.",
+    firstBuild: `Landing o tienda pequena con ${product}, pago, WhatsApp, entrega/pickup y prueba social.`,
+    stackSuggestion: "Shopify si necesita catalogo/pagos/inventario; landing + checkout/WhatsApp si solo validara una oferta.",
+    requiredSections: [
+      "headline con producto/oferta clara",
+      "beneficios y diferenciadores reales",
+      "fotos/video del producto en contexto",
+      "precio, bundle o promo inicial",
+      "entrega, pickup, cambios y tiempos",
+      "testimonios o prueba del local fisico",
+      "FAQ con objeciones vistas en contenido",
+      "CTA a comprar o WhatsApp",
+      ...databaseSections,
+    ],
+    launchGuardrails: [
+      `No pagar mas de ${formatMoney(economics.cacTarget, economics.currency)} por cliente hasta validar margen.`,
+      "Empezar con 1-3 SKUs/ofertas.",
+      "Medir conversion antes de meter mas presupuesto.",
+      channel.paidAdsReadiness === "not_ready" ? "No iniciar ads frios todavia." : "Ads solo con presupuesto pequeno y stop-loss claro.",
+    ],
+  };
+}
+
+function buildRetailNextSteps(economics, channel, websitePlan) {
+  return [
+    "Elegir 1 producto estrella o bundle con inventario disponible.",
+    `Confirmar numeros: ${economics.missingNumbers.length ? economics.missingNumbers.join(", ") : "precio, costo, envio, fees y devoluciones ya tienen base inicial"}.`,
+    websitePlan.firstBuild,
+    channel.firstTest,
+    "Hacer research de 10 competidores/contenidos antes de escribir hooks finales.",
+    "Revisar despues de 14 dias: ventas, DMs, clics, CAC estimado y preguntas repetidas.",
+  ];
 }
 
 async function runShippingRateTool(payload, env) {
