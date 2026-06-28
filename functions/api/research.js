@@ -1,3 +1,5 @@
+import { readSession } from "../_auth.js";
+
 const DEFAULT_TIMEOUT_MS = 900000;
 
 export async function onRequestPost(context) {
@@ -13,6 +15,19 @@ export async function onRequestPost(context) {
   const validationError = validatePayload(payload);
   if (validationError) {
     return json({ ok: false, code: "invalid_payload", message: validationError }, 400);
+  }
+
+  const passwordOk = env.APP_PASSWORD && request.headers.get("x-app-password") === env.APP_PASSWORD;
+  const session = passwordOk ? null : await readSession(request, env);
+  if (!passwordOk && !session) {
+    return json(
+      {
+        ok: false,
+        code: "auth_required",
+        message: "Inicia sesión para ejecutar el agente.",
+      },
+      401,
+    );
   }
 
   if (shouldUseShippingRateTool(payload)) {
@@ -36,17 +51,6 @@ export async function onRequestPost(context) {
         mode: "internal_tool",
       },
     });
-  }
-
-  if (env.APP_PASSWORD && request.headers.get("x-app-password") !== env.APP_PASSWORD) {
-    return json(
-      {
-        ok: false,
-        code: "forbidden",
-        message: "Clave de acceso incorrecta.",
-      },
-      403,
-    );
   }
 
   if (!env.HARNESS_URL || !env.HARNESS_TOKEN) {

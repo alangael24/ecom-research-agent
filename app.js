@@ -1,5 +1,6 @@
 const state = {
   latest: null,
+  user: null,
 };
 
 const form = document.querySelector("#researchForm");
@@ -7,6 +8,13 @@ const resultPanel = document.querySelector(".result-panel");
 const panels = [...document.querySelectorAll("[data-panel]")];
 const tabs = [...document.querySelectorAll("[data-tab]")];
 const emptyState = document.querySelector("#emptyState");
+const hero = document.querySelector(".hero");
+const authPage = document.querySelector("#authPage");
+const authError = document.querySelector("#authError");
+const googleLogin = document.querySelector("#googleLogin");
+const shopifyLoginForm = document.querySelector("#shopifyLoginForm");
+const userPill = document.querySelector("#userPill");
+const pendingRequestKey = "agentGeniaPendingRequest";
 
 const tabLabelSets = {
   sourcing: ["Resumen", "Herramientas", "Proveedores", "Negociacion", "DDP", "Calidad"],
@@ -180,19 +188,32 @@ const productProfiles = [
   },
 ];
 
-function init() {
+async function init() {
   renderEmptyState();
   form.accessKey.value = localStorage.getItem("alibabaSourcingAccessKey") || "";
+  state.user = await fetchSession();
+  renderAuthState();
+  renderRoute();
   form.addEventListener("submit", handleSubmit);
+  shopifyLoginForm.addEventListener("submit", handleShopifyLogin);
   document.querySelector("#downloadBrief").addEventListener("click", downloadBrief);
   document.querySelector("#copySummary").addEventListener("click", copySummary);
   tabs.forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
   lucide.createIcons();
+  resumePendingRequest();
 }
 
 async function handleSubmit(event) {
   event.preventDefault();
   const data = readForm();
+  if (!state.user) {
+    queueLogin(data.naturalRequest);
+    return;
+  }
+  await runResearch(data);
+}
+
+async function runResearch(data) {
   const report = buildReport(data);
   setLoading(true);
 
@@ -240,6 +261,91 @@ async function handleSubmit(event) {
   saveState(report);
   setLoading(false);
   showToast(report.ai ? "Sourcing generado con Codex" : "Plan guiado generado");
+}
+
+async function fetchSession() {
+  try {
+    const response = await fetch("./api/session", { credentials: "include" });
+    if (!response.ok) return null;
+    const session = await response.json();
+    return session.authenticated ? session.user : null;
+  } catch {
+    return null;
+  }
+}
+
+function renderAuthState() {
+  if (!state.user) {
+    userPill.hidden = true;
+    userPill.innerHTML = "";
+    return;
+  }
+
+  userPill.hidden = false;
+  userPill.innerHTML = `
+    <span>${escapeHtml(state.user.name || state.user.email)}</span>
+    <a href="/api/logout">Salir</a>
+  `;
+}
+
+function renderRoute() {
+  const isLoginRoute = window.location.pathname === "/login";
+  document.body.classList.toggle("auth-mode", isLoginRoute);
+  hero.hidden = isLoginRoute;
+  authPage.hidden = !isLoginRoute;
+  if (isLoginRoute) {
+    resultPanel.hidden = true;
+    renderAuthError();
+  }
+  if (isLoginRoute && state.user) {
+    window.location.replace("/");
+  }
+}
+
+function renderAuthError() {
+  const message = {
+    google_config: "Falta configurar Google OAuth.",
+    google_state: "La sesión de Google expiró. Intenta de nuevo.",
+    google_token: "Google no pudo completar el acceso.",
+    google_profile: "No pudimos leer el perfil de Google.",
+    google_email: "Google no devolvió un correo.",
+    shopify_config: "Falta configurar Shopify OAuth.",
+    shopify_shop: "Escribe una tienda válida de Shopify.",
+    shopify_state: "La sesión de Shopify expiró. Intenta de nuevo.",
+    shopify_hmac: "Shopify no pudo verificar la solicitud.",
+    shopify_token: "Shopify no pudo completar el acceso.",
+  }[new URLSearchParams(window.location.search).get("error")];
+
+  authError.hidden = !message;
+  authError.textContent = message || "";
+}
+
+function queueLogin(naturalRequest) {
+  sessionStorage.setItem(pendingRequestKey, naturalRequest);
+  window.location.href = "/login";
+}
+
+function resumePendingRequest() {
+  const params = new URLSearchParams(window.location.search);
+  if (!state.user || params.get("auth") !== "success") return;
+  const pending = sessionStorage.getItem(pendingRequestKey);
+  sessionStorage.removeItem(pendingRequestKey);
+  window.history.replaceState({}, "", window.location.pathname);
+  if (!pending) return;
+  form.naturalRequest.value = pending;
+  runResearch(readForm());
+}
+
+function handleShopifyLogin(event) {
+  event.preventDefault();
+  const data = new FormData(shopifyLoginForm);
+  const shop = String(data.get("shop") || "").trim();
+  if (!shop) {
+    showToast("Escribe tu tienda Shopify");
+    shopifyLoginForm.shop.focus();
+    return;
+  }
+  window.location.href = `/api/auth/shopify/start?shop=${encodeURIComponent(shop)}`;
 }
 
 function readForm() {
@@ -332,6 +438,7 @@ async function requestBackendReport(data) {
   const response = await fetch("./api/research", {
     method: "POST",
     headers,
+    credentials: "include",
     body: JSON.stringify({ ...data, accessKey: undefined }),
   });
 
@@ -339,7 +446,13 @@ async function requestBackendReport(data) {
     throw new Error("Backend not deployed");
   }
 
-  return response.json();
+  const body = await response.json();
+  if (response.status === 401 || body.code === "auth_required") {
+    state.user = null;
+    queueLogin(data.naturalRequest);
+    throw new Error("Auth required");
+  }
+  return body;
 }
 
 function defaultDestination(market) {

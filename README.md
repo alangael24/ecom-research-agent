@@ -49,6 +49,12 @@ pnpm dlx wrangler pages secret put HARNESS_URL --project-name ecom-research-agen
 pnpm dlx wrangler pages secret put HARNESS_TOKEN --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put APP_PASSWORD --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put ENVIA_TOKEN --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put AUTH_SECRET --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put GOOGLE_CLIENT_ID --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put GOOGLE_CLIENT_SECRET --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put SHOPIFY_API_KEY --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put SHOPIFY_API_SECRET --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put SHOPIFY_SCOPES --project-name ecom-research-agent
 ```
 
 Optional Mexico shipping config:
@@ -63,6 +69,13 @@ pnpm dlx wrangler pages secret put SHIP_FROM_STATE --project-name ecom-research-
 
 The Envia integration is rate-only. The Cloudflare Function only calls the quote endpoint (`/ship/rate/`) to compare shipping prices; it does not create labels, buy shipping guides, schedule pickups, or charge shipments.
 
+Authentication:
+
+- Google OAuth callback: `https://agentgenia.com/api/auth/google/callback`
+- Shopify OAuth callback: `https://agentgenia.com/api/auth/shopify/callback`
+- `AUTH_SECRET` signs the Agent Genia session cookie. If missing, the function falls back to `SHOPIFY_TOKEN_ENCRYPTION_SECRET`, `HARNESS_TOKEN`, or `APP_PASSWORD`.
+- Users can type on the main page before logging in. When they submit, the app sends them to `/login`, stores the prompt in the browser session, and resumes after OAuth succeeds.
+
 Deploy:
 
 ```bash
@@ -72,4 +85,4 @@ cp index.html app.js styles.css .nojekyll _headers _redirects dist/
 pnpm dlx wrangler pages deploy dist --project-name ecom-research-agent
 ```
 
-Give the public Pages URL and `APP_PASSWORD` to the intended user.
+Give the public Pages URL to the intended user. `APP_PASSWORD` remains only as a legacy/private bypass for trusted testing.

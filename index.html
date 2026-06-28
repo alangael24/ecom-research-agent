@@ -24,6 +24,7 @@
           </div>
         </a>
         <div class="top-actions">
+          <div class="user-pill" id="userPill" hidden></div>
           <button class="icon-button" id="copySummary" type="button" title="Copiar resumen">
             <i data-lucide="copy"></i>
           </button>
@@ -60,6 +61,54 @@
               </div>
             </div>
           </form>
+        </section>
+
+        <section class="auth-page" id="authPage" hidden>
+          <div class="auth-panel">
+            <a class="auth-brand" href="/" aria-label="Agent Genia">
+              <span class="brand-mark" aria-hidden="true">
+                <i data-lucide="wand-sparkles"></i>
+              </span>
+              <span>Agent Genia</span>
+            </a>
+
+            <div class="auth-copy">
+              <h2>Crea tu cuenta</h2>
+              <p id="authSubtitle">Inicia sesión para ejecutar el agente.</p>
+              <p class="auth-error" id="authError" hidden></p>
+            </div>
+
+            <div class="auth-actions">
+              <a class="auth-provider" id="googleLogin" href="/api/auth/google/start">
+                <span class="provider-mark google-mark">G</span>
+                <span>Continuar con Google</span>
+              </a>
+
+              <form class="shopify-login" id="shopifyLoginForm">
+                <label for="shopDomain">Tienda Shopify</label>
+                <div class="shopify-row">
+                  <input
+                    id="shopDomain"
+                    name="shop"
+                    type="text"
+                    inputmode="url"
+                    placeholder="tu-tienda.myshopify.com"
+                    autocomplete="organization"
+                  />
+                  <button type="submit">Continuar</button>
+                </div>
+              </form>
+            </div>
+
+            <a class="back-link" href="/">Volver</a>
+          </div>
+
+          <div class="auth-visual" aria-hidden="true">
+            <div class="auth-prompt-preview">
+              <span>Quiero validar una marca de skincare</span>
+              <i data-lucide="arrow-up"></i>
+            </div>
+          </div>
         </section>
 
         <section class="result-panel" aria-live="polite" hidden>
