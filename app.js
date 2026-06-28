@@ -50,6 +50,7 @@ const tabLabelSets = {
   shopify: ["Resumen", "Shopify", "Catalogo", "Acciones", "DDP", "Calidad"],
   profitability: ["Resumen", "Numeros", "Alertas", "Siguiente", "Supuestos", "Notas"],
   shipping: ["Resumen", "Tarifas", "Detalles", "Alertas", "Siguiente", "Notas"],
+  shopifyPage: ["Preview", "Contenido", "Shopify", "Publicar", "SEO", "Notas"],
 };
 
 const repurchaseLabels = {
@@ -249,6 +250,7 @@ async function init() {
   historyList?.addEventListener("click", (event) => void handleHistoryClick(event));
   document.querySelector("#downloadBrief").addEventListener("click", downloadBrief);
   document.querySelector("#copySummary").addEventListener("click", copySummary);
+  document.addEventListener("click", handleDocumentClick);
   tabs.forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
   lucide.createIcons();
   resumePendingRequest();
@@ -799,6 +801,17 @@ async function runResearch(data) {
         showToast("Cotizacion de envio lista");
         return;
       }
+      if (backend.report.type === "shopify_page_draft") {
+        state.latest = backend.report;
+        document.body.classList.add("report-ready");
+        renderShopifyPageDraftReport(backend.report);
+        activateTab("brief");
+        saveState(backend.report);
+        setLoading(false);
+        resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+        showToast("Preview de pagina Shopify listo");
+        return;
+      }
       report.ai = backend.report;
       report.backendMode = "codex-harness";
       report.diagnostics = backend.diagnostics || null;
@@ -828,6 +841,13 @@ async function fetchSession() {
     return session.authenticated ? session.user : null;
   } catch {
     return null;
+  }
+}
+
+function handleDocumentClick(event) {
+  const publishButton = event.target.closest("[data-publish-shopify-page]");
+  if (publishButton) {
+    publishShopifyPage(publishButton);
   }
 }
 
@@ -1585,6 +1605,202 @@ function packageSummary(packageInfo, currency) {
     return `${formatNumber(packageInfo.weightKg || 0)} kg · ${formatNumber(packageInfo.lengthCm || 0)} x ${formatNumber(packageInfo.widthCm || 0)} x ${formatNumber(packageInfo.heightCm || 0)} cm`;
   }
   return `${formatNumber(packageInfo.weightKg || 0)} kg`;
+}
+
+function renderShopifyPageDraftReport(report) {
+  resultPanel.hidden = false;
+  setTabLabels(tabLabelSets.shopifyPage);
+
+  const page = report.page || {};
+  const preview = page.preview || {};
+  const publication = report.publication || null;
+  const warnings = Array.isArray(report.warnings) ? report.warnings : [];
+  const nextSteps = Array.isArray(report.nextSteps) ? report.nextSteps : [];
+  const shop = report.shopify?.shop || "";
+  const canPublish = Boolean(shop && page.title && page.bodyHtml);
+  const publishedCard = publication
+    ? `<article class="report-card full-span success-card">
+        <h3>Pagina publicada</h3>
+        <p>La pagina ya fue creada en Shopify.</p>
+        <div class="pill-row">
+          <a class="pill link-pill" href="${escapeHtml(publication.url || "#")}" target="_blank" rel="noreferrer"><i data-lucide="external-link"></i>Ver pagina</a>
+          <a class="pill link-pill" href="${escapeHtml(publication.adminUrl || "#")}" target="_blank" rel="noreferrer"><i data-lucide="settings"></i>Abrir en Shopify</a>
+        </div>
+      </article>`
+    : "";
+
+  document.querySelector("#brief").innerHTML = `
+    <div class="metric-row">
+      <article class="metric-card"><strong>${escapeHtml(shop || "Pendiente")}</strong><p>tienda</p></article>
+      <article class="metric-card"><strong>${escapeHtml(page.handle || "--")}</strong><p>handle</p></article>
+      <article class="metric-card"><strong>Preview</strong><p>requiere aprobacion</p></article>
+    </div>
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>${escapeHtml(preview.headline || page.title || "Nueva pagina Shopify")}</h3>
+        <p>${escapeHtml(preview.subheadline || "Preview generado para Shopify.")}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="shopping-bag"></i>${escapeHtml(shop || "conecta Shopify")}</span>
+          <span class="pill"><i data-lucide="file-text"></i>${escapeHtml(page.title || "sin titulo")}</span>
+          <span class="pill"><i data-lucide="mouse-pointer-click"></i>${escapeHtml(preview.cta || "CTA pendiente")}</span>
+        </div>
+      </article>
+      <article class="report-card full-span">
+        <h3>Preview visual</h3>
+        ${renderShopifyPagePreview(preview)}
+      </article>
+      ${publishedCard}
+    </div>`;
+
+  document.querySelector("#tools").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Contenido que se publicara</h3>
+        <dl class="calculation-list">
+          <div><dt>Titulo</dt><dd>${escapeHtml(page.title || "--")}</dd></div>
+          <div><dt>URL</dt><dd>/pages/${escapeHtml(page.handle || "--")}</dd></div>
+          <div><dt>SEO title</dt><dd>${escapeHtml(page.seoTitle || page.title || "--")}</dd></div>
+          <div><dt>SEO description</dt><dd>${escapeHtml(page.seoDescription || "--")}</dd></div>
+        </dl>
+      </article>
+      <article class="report-card full-span">
+        <h3>HTML Shopify</h3>
+        <pre class="message-box">${escapeHtml(page.bodyHtml || "")}</pre>
+      </article>
+    </div>`;
+
+  document.querySelector("#suppliers").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span ${shop ? "" : "notice-card"}">
+        <h3>Conexion Shopify</h3>
+        <p>${shop ? `Se publicara en ${escapeHtml(shop)}.` : "Conecta Shopify antes de publicar esta pagina."}</p>
+        <ul>
+          <li>La app debe tener permiso <strong>write_content</strong>.</li>
+          <li>Si ya conectaste la tienda antes de este cambio, vuelve a iniciar sesion con Shopify para aceptar el permiso nuevo.</li>
+          <li>El contenido se crea como una pagina de Online Store, no como theme edit.</li>
+        </ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#negotiation").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Publicar en Shopify</h3>
+        <p>Esto crea una pagina real en la tienda conectada. Revisa el preview antes de publicar.</p>
+        <button class="primary-button" type="button" data-publish-shopify-page ${canPublish || publication ? "" : "disabled"}>
+          <i data-lucide="${publication ? "check-circle" : "upload-cloud"}"></i>
+          ${publication ? "Publicado" : "Publicar pagina en Shopify"}
+        </button>
+        <p class="publish-status" id="shopifyPagePublishStatus">${publication ? `Publicada: ${escapeHtml(publication.url || publication.handle || "")}` : canPublish ? "Lista para publicar." : "Conecta Shopify para publicar."}</p>
+      </article>
+      <article class="report-card full-span notice-card">
+        <h3>Antes de publicar</h3>
+        <ul>${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#ddp").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>SEO y estructura</h3>
+        <dl class="calculation-list">
+          <div><dt>SEO title</dt><dd>${escapeHtml(page.seoTitle || page.title || "--")}</dd></div>
+          <div><dt>Meta description sugerida</dt><dd>${escapeHtml(page.seoDescription || "--")}</dd></div>
+          <div><dt>CTA</dt><dd>${escapeHtml(preview.cta || "--")}</dd></div>
+        </dl>
+      </article>
+    </div>`;
+
+  document.querySelector("#quality").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Siguientes pasos</h3>
+        <ol>${nextSteps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ol>
+      </article>
+    </div>`;
+
+  lucide.createIcons();
+}
+
+function renderShopifyPagePreview(preview) {
+  const benefits = Array.isArray(preview.benefits) ? preview.benefits : [];
+  const objections = Array.isArray(preview.objections) ? preview.objections : [];
+  return `<div class="shopify-page-preview">
+    <div class="preview-hero">
+      <span>${escapeHtml(preview.brandName || "Marca")}</span>
+      <h4>${escapeHtml(preview.headline || "Nueva pagina")}</h4>
+      <p>${escapeHtml(preview.subheadline || "")}</p>
+      <button type="button">${escapeHtml(preview.cta || "Ver productos")}</button>
+    </div>
+    <div class="preview-benefits">
+      ${benefits
+        .map(
+          (item) => `<article>
+            <strong>${escapeHtml(item.title)}</strong>
+            <p>${escapeHtml(item.copy)}</p>
+          </article>`,
+        )
+        .join("")}
+    </div>
+    <ul class="preview-objections">
+      ${objections.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+    </ul>
+  </div>`;
+}
+
+async function publishShopifyPage(button) {
+  const report = state.latest;
+  if (!report || report.type !== "shopify_page_draft") return;
+  if (report.publication) {
+    showToast("Esta pagina ya fue publicada");
+    return;
+  }
+
+  const status = document.querySelector("#shopifyPagePublishStatus");
+  const page = report.page || {};
+  const shop = report.shopify?.shop || "";
+  if (!shop) {
+    showToast("Conecta Shopify antes de publicar");
+    return;
+  }
+
+  button.disabled = true;
+  button.innerHTML = '<i data-lucide="loader-circle"></i> Publicando...';
+  if (status) status.textContent = "Publicando en Shopify...";
+  lucide.createIcons();
+
+  try {
+    const response = await fetch("./api/shopify/pages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        shop,
+        title: page.title,
+        handle: page.handle,
+        bodyHtml: page.bodyHtml,
+        published: page.published !== false,
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok || !body.ok) {
+      throw new Error(body.message || "No se pudo publicar en Shopify.");
+    }
+
+    report.publication = body.page;
+    state.latest = report;
+    saveState(report);
+    renderShopifyPageDraftReport(report);
+    activateTab("negotiation");
+    showToast("Pagina publicada en Shopify");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo publicar en Shopify.";
+    if (status) status.textContent = message;
+    button.disabled = false;
+    button.innerHTML = '<i data-lucide="upload-cloud"></i> Publicar pagina en Shopify';
+    lucide.createIcons();
+    showToast(message);
+  }
 }
 
 function renderReport(report) {
@@ -2480,6 +2696,9 @@ function buildMarkdown(report) {
   if (report.type === "shipping_quote") {
     return buildShippingQuoteMarkdown(report);
   }
+  if (report.type === "shopify_page_draft") {
+    return buildShopifyPageMarkdown(report);
+  }
   if (report.businessStage === "brand") {
     return buildBrandMarkdown(report);
   }
@@ -2643,6 +2862,47 @@ ${warnings}
 
 ## Siguiente
 ${nextSteps}
+`;
+}
+
+function buildShopifyPageMarkdown(report) {
+  const page = report.page || {};
+  const preview = page.preview || {};
+  const publication = report.publication || null;
+  const warnings = Array.isArray(report.warnings) ? report.warnings : [];
+  const nextSteps = Array.isArray(report.nextSteps) ? report.nextSteps : [];
+
+  return `# Shopify Page Builder
+
+Fecha: ${report.createdAt || ""}
+Tienda: ${report.shopify?.shop || "no conectada"}
+Titulo: ${page.title || ""}
+Handle: ${page.handle || ""}
+Publicada: ${publication ? publication.url || publication.handle || "si" : "no"}
+
+## Preview
+
+Headline: ${preview.headline || ""}
+Subheadline: ${preview.subheadline || ""}
+CTA: ${preview.cta || ""}
+
+## Beneficios
+
+${(preview.benefits || []).map((item) => `- ${item.title}: ${item.copy}`).join("\n")}
+
+## Advertencias
+
+${warnings.map((item) => `- ${item}`).join("\n")}
+
+## Siguientes pasos
+
+${nextSteps.map((item) => `- ${item}`).join("\n")}
+
+## HTML Shopify
+
+\`\`\`html
+${page.bodyHtml || ""}
+\`\`\`
 `;
 }
 
@@ -2932,6 +3192,7 @@ function toolLabel(value) {
   if (value === "alibaba-sourcing-agent") return "Alibaba sourcing";
   if (value === "shopify-store-audit") return "Shopify audit";
   if (value === "brand-audit-agent") return "Brand audit";
+  if (value === "shopify_page_builder") return "Shopify page builder";
   return "Ecom research";
 }
 

@@ -1,5 +1,5 @@
 export const DEFAULT_API_VERSION = "2026-04";
-export const DEFAULT_SCOPES = "read_products";
+export const DEFAULT_SCOPES = "read_products,write_content";
 export const MAX_PRODUCTS = 50;
 export const STORE_PREFIX = "shopify:store:";
 export const STATE_COOKIE = "shopify_oauth_state";
@@ -219,6 +219,61 @@ export async function fetchShopifySnapshot({ shop, accessToken, apiVersion }) {
   return normalizeShopifySnapshot(body.data, shop, apiVersion);
 }
 
+export async function createShopifyPage({ shop, accessToken, apiVersion, page }) {
+  const response = await fetch(`https://${shop}/admin/api/${apiVersion}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-shopify-access-token": accessToken,
+    },
+    body: JSON.stringify({
+      query: `#graphql
+        mutation CreatePage($page: PageCreateInput!) {
+          pageCreate(page: $page) {
+            page {
+              id
+              title
+              handle
+            }
+            userErrors {
+              code
+              field
+              message
+            }
+          }
+        }
+      `,
+      variables: {
+        page: {
+          title: page.title,
+          handle: page.handle,
+          body: page.bodyHtml,
+          isPublished: page.published !== false,
+        },
+      },
+    }),
+  });
+
+  const body = await response.json().catch(() => ({}));
+  const userErrors = body?.data?.pageCreate?.userErrors || [];
+  const pageData = body?.data?.pageCreate?.page || null;
+  if (!response.ok || body.errors?.length || userErrors.length || !pageData) {
+    const message =
+      summarizeGraphqlErrors(body.errors) ||
+      userErrors.map((error) => error.message).filter(Boolean).join(" ") ||
+      "Shopify rechazo la creacion de la pagina.";
+    const error = new Error(message);
+    error.status = response.ok ? 422 : response.status;
+    throw error;
+  }
+
+  return {
+    id: pageData.id,
+    title: pageData.title,
+    handle: pageData.handle,
+  };
+}
+
 export function normalizeShopifySnapshot(data, fallbackDomain, apiVersion) {
   const shop = data?.shop || {};
   const products = data?.products?.nodes || [];
@@ -241,6 +296,27 @@ export function summarizeShopifyError(errors) {
     .map((error) => error?.message)
     .filter(Boolean)
     .slice(0, 2)
+    .join(" ");
+}
+
+export function summarizeShopifyRestError(body) {
+  if (!body || typeof body !== "object") return "";
+  if (typeof body.error === "string") return body.error;
+  if (typeof body.errors === "string") return body.errors;
+  if (Array.isArray(body.errors)) return body.errors.join(" ");
+  if (body.errors && typeof body.errors === "object") {
+    return Object.entries(body.errors)
+      .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(", ") : value}`)
+      .join(" ");
+  }
+  return "";
+}
+
+function summarizeGraphqlErrors(errors) {
+  if (!Array.isArray(errors) || !errors.length) return "";
+  return errors
+    .map((error) => error?.message)
+    .filter(Boolean)
     .join(" ");
 }
 

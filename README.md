@@ -135,6 +135,7 @@ Login endpoints:
 - `GET /api/auth/google/callback`: validates Google OAuth and creates the session.
 - `GET /api/shopify/login`: sends the user to Shopify's own login/store selection flow.
 - `GET /api/shopify/callback`: connects the Shopify store and creates the Agent Genia session.
+- `POST /api/shopify/pages`: creates a real Shopify Online Store page after the user approves the preview.
 - `GET /api/auth/shopify/start?shop=store.myshopify.com`: optional direct-shop Shopify login.
 - `GET /api/auth/shopify/callback`: validates direct-shop Shopify OAuth and creates the session.
 
@@ -146,7 +147,7 @@ Create a Shopify Partner app and configure:
 - Allowed redirection URLs:
   - `https://YOUR_PAGES_DOMAIN/api/shopify/callback`
   - `https://YOUR_PAGES_DOMAIN/api/auth/shopify/callback`
-- Scopes: `read_products`
+- Scopes: `read_products,write_content`
 - API version: `2026-04`
 - Distribution/install link: save the Shopify Partner install link as `SHOPIFY_INSTALL_URL`.
 
@@ -160,7 +161,10 @@ Cloudflare endpoints:
 - `GET /api/shopify/connect?shop=store.myshopify.com`: starts OAuth install.
 - `GET /api/shopify/callback`: validates Shopify HMAC/state, exchanges code for an access token, encrypts it, stores the shop in KV, and signs in the user.
 - `POST /api/shopify`: returns a sanitized catalog snapshot for a connected store.
+- `POST /api/shopify/pages`: publishes an approved Agent Genia page draft to Shopify Pages.
 - `DELETE /api/shopify`: disconnects a store by deleting its KV record.
+
+If `write_content` is added after a store was already connected, the merchant must reconnect/reinstall the Shopify app so Shopify grants a token with the new scope.
 
 The KV binding is declared in `wrangler.toml` as `SHOPIFY_STORES`.
 

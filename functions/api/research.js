@@ -52,6 +52,17 @@ export async function onRequestPost(context) {
       })),
     };
 
+    if (shouldUseShopifyPageBuilder(agentPayload)) {
+      const report = runShopifyPageBuilderTool(agentPayload);
+      const diagnostics = {
+        tool: "shopify_page_builder",
+        mode: "internal_tool",
+        publishesDirectly: false,
+      };
+      await persistReport(auth.config, auth.accessToken, auth.user.id, runContext.id, agentPayload, report);
+      return json({ ok: true, report, diagnostics, runId: runContext.id });
+    }
+
     if (shouldUseShippingRateTool(agentPayload)) {
       const report = await runShippingRateTool(agentPayload, env);
       const diagnostics = {
@@ -441,6 +452,223 @@ function shouldUseShippingRateTool(payload) {
   const economicsIntent =
     /rentab|margen|ganancia|utilidad|dejar dinero|deja dinero|unit economics|break ?even|roas|cac|costo del producto|costo producto|devoluciones|returns|recompra|precio de venta|venta promedio/.test(text);
   return shippingIntent && !economicsIntent;
+}
+
+function shouldUseShopifyPageBuilder(payload) {
+  const text = payloadText(payload).toLowerCase();
+  return /shopify/.test(text) && /crear|hacer|generar|construir|publicar|subir|lanzar|landing|pagina|página|page|web|sitio/.test(text);
+}
+
+function runShopifyPageBuilderTool(payload) {
+  const text = payloadText(payload);
+  const shop = payload.shopify?.shop || "";
+  const page = buildShopifyPageDraft(payload, text);
+  const warnings = [];
+
+  if (!shop) {
+    warnings.push("Conecta o selecciona una tienda Shopify antes de publicar.");
+  }
+  warnings.push("Se generó como draft de Agent Genia; la publicación en Shopify requiere aprobación del usuario.");
+  warnings.push("Para poder crear páginas reales, la app Shopify debe tener el permiso write_content y la tienda debe reinstalar/autorizar ese permiso.");
+
+  return {
+    type: "shopify_page_draft",
+    toolUsed: "shopify_page_builder",
+    market: payload.market || "US",
+    createdAt: new Date().toLocaleString("es-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }),
+    shopify: {
+      shop,
+      focus: payload.shopify?.focus || "",
+    },
+    page,
+    warnings,
+    nextSteps: [
+      "Revisa el preview y confirma que la oferta, promesas y CTA sean correctos.",
+      "Publica solo si la tienda conectada es la tienda correcta.",
+      "Después de publicar, revisa la página en Shopify y conecta links/menús si hace falta.",
+    ],
+  };
+}
+
+function buildShopifyPageDraft(payload, text) {
+  const brand = payload.brand || {};
+  const product = cleanPageTopic(payload.product || brand.name || payload.reference || payload.problem || payload.naturalRequest);
+  const brandName = cleanPageTopic(brand.name || inferBrandFromUrl(brand.url) || "Tu marca");
+  const goal = cleanSentence(brand.goal || payload.shopify?.focus || "convertir visitantes en clientes");
+  const audience = inferPageAudience(text);
+  const offer = inferPageOffer(text, product);
+  const handle = slugify(`${product} ${offer.short}`);
+  const title = `${product}: ${offer.short}`;
+  const cta = inferPageCta(text);
+  const benefits = buildPageBenefits(text, product, audience);
+  const objections = buildPageObjections(text);
+  const seoDescription = `${product} de ${brandName}. ${offer.summary}`.slice(0, 155);
+  const bodyHtml = buildShopifyPageHtml({
+    brandName,
+    product,
+    audience,
+    offer,
+    goal,
+    cta,
+    benefits,
+    objections,
+  });
+
+  return {
+    title,
+    handle,
+    bodyHtml,
+    seoTitle: title.slice(0, 70),
+    seoDescription,
+    published: true,
+    preview: {
+      brandName,
+      product,
+      audience,
+      headline: offer.headline,
+      subheadline: offer.summary,
+      cta,
+      benefits,
+      objections,
+    },
+  };
+}
+
+function buildShopifyPageHtml({ brandName, product, audience, offer, goal, cta, benefits, objections }) {
+  return `
+<section style="padding:56px 20px;max-width:1040px;margin:0 auto;font-family:inherit;">
+  <p style="margin:0 0 12px;color:#5f6f68;font-weight:700;text-transform:uppercase;letter-spacing:.08em;">${escapeHtml(brandName)}</p>
+  <h1 style="font-size:clamp(34px,6vw,64px);line-height:1.02;margin:0 0 18px;color:#17211c;">${escapeHtml(offer.headline)}</h1>
+  <p style="font-size:20px;line-height:1.5;max-width:760px;color:#4d5c56;margin:0 0 28px;">${escapeHtml(offer.summary)}</p>
+  <p style="margin:0;"><a href="/collections/all" style="display:inline-block;background:#17211c;color:#fff;padding:16px 24px;border-radius:10px;text-decoration:none;font-weight:800;">${escapeHtml(cta)}</a></p>
+</section>
+
+<section style="padding:34px 20px;max-width:1040px;margin:0 auto;">
+  <h2 style="font-size:32px;line-height:1.15;margin:0 0 18px;color:#17211c;">Para ${escapeHtml(audience)}</h2>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;">
+    ${benefits.map((item) => `<article style="border:1px solid #d9e2dd;border-radius:12px;padding:18px;background:#fff;"><h3 style="font-size:18px;margin:0 0 8px;color:#17211c;">${escapeHtml(item.title)}</h3><p style="margin:0;color:#60706a;line-height:1.45;">${escapeHtml(item.copy)}</p></article>`).join("")}
+  </div>
+</section>
+
+<section style="padding:34px 20px;max-width:1040px;margin:0 auto;">
+  <h2 style="font-size:32px;line-height:1.15;margin:0 0 18px;color:#17211c;">Por qué esta página existe</h2>
+  <p style="font-size:18px;line-height:1.55;color:#4d5c56;margin:0;max-width:760px;">${escapeHtml(goal)}. Esta página debe explicar el valor de ${escapeHtml(product)}, reducir dudas y llevar al visitante a una acción simple.</p>
+</section>
+
+<section style="padding:34px 20px;max-width:1040px;margin:0 auto;">
+  <h2 style="font-size:32px;line-height:1.15;margin:0 0 18px;color:#17211c;">Dudas que debemos resolver</h2>
+  <ul style="display:grid;gap:10px;margin:0;padding-left:22px;color:#4d5c56;font-size:18px;line-height:1.5;">
+    ${objections.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+  </ul>
+</section>
+
+<section style="padding:46px 20px 64px;max-width:1040px;margin:0 auto;text-align:center;">
+  <h2 style="font-size:34px;line-height:1.15;margin:0 0 14px;color:#17211c;">Listo para probar ${escapeHtml(product)}?</h2>
+  <p style="font-size:18px;line-height:1.45;color:#60706a;margin:0 0 24px;">Empieza con la colección principal y ajusta esta página con datos reales de tráfico, conversiones y preguntas de clientes.</p>
+  <a href="/collections/all" style="display:inline-block;background:#0f7b68;color:#fff;padding:16px 24px;border-radius:10px;text-decoration:none;font-weight:800;">${escapeHtml(cta)}</a>
+</section>`.trim();
+}
+
+function inferPageAudience(text) {
+  const value = text.toLowerCase();
+  if (/mama|mamá|mamas|mamás|madres/.test(value)) return "personas ocupadas que quieren una compra fácil y confiable";
+  if (/skincare|piel|beauty|belleza/.test(value)) return "personas que quieren una rutina más clara para su piel";
+  if (/suplement|protein|prote[ií]na|vitamin/.test(value)) return "personas que buscan mejorar su rutina diaria sin complicarse";
+  if (/shopify|tienda|marca/.test(value)) return "clientes que necesitan entender rápido por qué comprar";
+  return "clientes que quieren resolver este problema sin perder tiempo";
+}
+
+function inferPageOffer(text, product) {
+  const value = text.toLowerCase();
+  if (/descuento|promo|oferta/.test(value)) {
+    return {
+      short: "oferta especial",
+      headline: `${product} con una oferta simple de entender`,
+      summary: "Una página enfocada en explicar el beneficio, responder dudas y llevar al cliente a comprar con menos fricción.",
+    };
+  }
+  if (/landing|conversion|conversi[oó]n|ads|anuncios/.test(value)) {
+    return {
+      short: "landing de conversion",
+      headline: `${product} explicado para convertir mejor`,
+      summary: "Una landing pensada para tráfico frío: promesa clara, beneficios concretos, objeciones resueltas y CTA directo.",
+    };
+  }
+  return {
+    short: "pagina de marca",
+    headline: `${product} con una propuesta clara`,
+    summary: "Una página lista para Shopify que ordena la oferta, muestra beneficios y guía al visitante hacia la colección principal.",
+  };
+}
+
+function inferPageCta(text) {
+  const value = text.toLowerCase();
+  if (/reserv|waitlist|lista de espera/.test(value)) return "Unirme a la lista";
+  if (/cotiz|contact/.test(value)) return "Pedir información";
+  return "Ver productos";
+}
+
+function buildPageBenefits(text, product) {
+  const category = text.toLowerCase();
+  if (/skincare|piel|beauty|belleza/.test(category)) {
+    return [
+      { title: "Rutina más clara", copy: "Explica qué problema resuelve y cómo encaja en el día a día." },
+      { title: "Compra con confianza", copy: "Deja visibles expectativas, uso, ingredientes o prueba social pendiente." },
+      { title: "Oferta sin ruido", copy: "Centra la página en el producto principal y evita distraer con demasiadas opciones." },
+    ];
+  }
+  return [
+    { title: "Beneficio principal", copy: `Presenta ${product} con una promesa simple y específica.` },
+    { title: "Menos fricción", copy: "Responde dudas de envío, calidad, uso y confianza antes del CTA." },
+    { title: "Siguiente paso claro", copy: "Lleva al visitante a colección, producto o contacto sin pedirle pensar demasiado." },
+  ];
+}
+
+function buildPageObjections(text) {
+  const objections = ["Qué incluye exactamente.", "Por qué cuesta lo que cuesta.", "Cuánto tarda el envío.", "Qué pasa si no me sirve."];
+  if (/skincare|piel|beauty|belleza/.test(text.toLowerCase())) {
+    objections.push("Cómo se usa y para qué tipo de piel aplica.");
+  }
+  return objections;
+}
+
+function cleanPageTopic(value) {
+  return cleanSentence(value).replace(/^https?:\/\//i, "").replace(/^www\./i, "").slice(0, 80) || "Nueva página";
+}
+
+function cleanSentence(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function inferBrandFromUrl(value) {
+  try {
+    const host = new URL(value).hostname.replace(/^www\./, "");
+    return host.split(".")[0] || "";
+  } catch {
+    return "";
+  }
+}
+
+function slugify(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || `agent-genia-page-${Date.now()}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 async function runShippingRateTool(payload, env) {

@@ -20,7 +20,7 @@ export async function onRequestGet({ request, env }) {
   const redirectUri = `${getOrigin(request)}/api/auth/shopify/callback`;
   const authUrl = new URL(`https://${shop}/admin/oauth/authorize`);
   authUrl.searchParams.set("client_id", env.SHOPIFY_API_KEY);
-  authUrl.searchParams.set("scope", env.SHOPIFY_SCOPES || "read_products");
+  authUrl.searchParams.set("scope", env.SHOPIFY_SCOPES || "read_products,write_content");
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("state", state);
 
