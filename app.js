@@ -40,7 +40,6 @@ const stageCards = [...document.querySelectorAll("[data-stage-card]")];
 const hero = document.querySelector(".hero");
 const authPage = document.querySelector("#authPage");
 const authError = document.querySelector("#authError");
-const shopifyLoginForm = document.querySelector("#shopifyLoginForm");
 const userPill = document.querySelector("#userPill");
 const pendingRequestKey = "agentGeniaPendingRequest";
 const SHOPIFY_PRODUCTION_ORIGIN = "https://agentgenia.com";
@@ -240,7 +239,6 @@ async function init() {
   handleShopifyCallbackParams();
   loadShopifyStores();
   form.addEventListener("submit", handleSubmit);
-  shopifyLoginForm?.addEventListener("submit", handleShopifyLogin);
   form.querySelector(".plus-button")?.addEventListener("click", () => attachmentInput?.click());
   attachmentInput?.addEventListener("change", (event) => void handleAttachmentInput(event));
   attachmentTray?.addEventListener("click", handleAttachmentTrayClick);
@@ -891,18 +889,6 @@ function resumePendingRequest() {
   if (!pending) return;
   form.naturalRequest.value = pending;
   runResearch(readForm());
-}
-
-function handleShopifyLogin(event) {
-  event.preventDefault();
-  const data = new FormData(shopifyLoginForm);
-  const shop = String(data.get("shop") || "").trim();
-  if (!shop) {
-    showToast("Escribe tu tienda Shopify");
-    shopifyLoginForm.shop.focus();
-    return;
-  }
-  window.location.href = `/api/auth/shopify/start?shop=${encodeURIComponent(shop)}`;
 }
 
 function readForm() {

@@ -133,8 +133,10 @@ Login endpoints:
 - `GET /api/logout`: clears the signed session cookie.
 - `GET /api/auth/google/start`: starts Google OAuth.
 - `GET /api/auth/google/callback`: validates Google OAuth and creates the session.
-- `GET /api/auth/shopify/start?shop=store.myshopify.com`: starts Shopify OAuth for login.
-- `GET /api/auth/shopify/callback`: validates Shopify OAuth and creates the session.
+- `GET /api/shopify/login`: sends the user to Shopify's own login/store selection flow.
+- `GET /api/shopify/callback`: connects the Shopify store and creates the Agent Genia session.
+- `GET /api/auth/shopify/start?shop=store.myshopify.com`: optional direct-shop Shopify login.
+- `GET /api/auth/shopify/callback`: validates direct-shop Shopify OAuth and creates the session.
 
 ## Shopify OAuth
 
@@ -156,7 +158,7 @@ Cloudflare endpoints:
 - `GET /api/shopify/login`: sends the merchant to Shopify login/store selection through `SHOPIFY_INSTALL_URL`.
 - `GET /api/shopify/start`: receives Shopify's selected `shop`, validates HMAC when present, then starts OAuth.
 - `GET /api/shopify/connect?shop=store.myshopify.com`: starts OAuth install.
-- `GET /api/shopify/callback`: validates Shopify HMAC/state, exchanges code for an access token, encrypts it, and stores the shop in KV.
+- `GET /api/shopify/callback`: validates Shopify HMAC/state, exchanges code for an access token, encrypts it, stores the shop in KV, and signs in the user.
 - `POST /api/shopify`: returns a sanitized catalog snapshot for a connected store.
 - `DELETE /api/shopify`: disconnects a store by deleting its KV record.
 

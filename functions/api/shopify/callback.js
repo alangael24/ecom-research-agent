@@ -14,6 +14,7 @@ import {
   verifyShopifyHmac,
   verifySignedState,
 } from "../../_lib/shopify.js";
+import { createSessionCookie } from "../../_auth.js";
 
 export async function onRequestGet(context) {
   const { request, env } = context;
@@ -60,11 +61,22 @@ export async function onRequestGet(context) {
       shopInfo: snapshot.shop,
     });
 
+    const sessionCookie = await createSessionCookie(
+      {
+        provider: "shopify",
+        email: `${shop}@shopify.local`,
+        name: snapshot.shop?.name || shop,
+        shop,
+      },
+      env,
+    );
+
     const appUrl = new URL("/", url.origin);
     appUrl.searchParams.set("shopify_connected", shop);
     appUrl.searchParams.set("stage", "shopify");
+    appUrl.searchParams.set("auth", "success");
     return redirect(appUrl.toString(), {
-      "set-cookie": clearOauthCookie(),
+      "set-cookie": [clearOauthCookie(), sessionCookie],
     });
   } catch (error) {
     return json(
