@@ -41,6 +41,7 @@
             <input id="accessKey" name="accessKey" type="hidden" />
             <div class="stage-inputs" aria-hidden="true">
               <input type="radio" name="businessStage" value="starter" checked tabindex="-1" />
+              <input type="radio" name="businessStage" value="brand" tabindex="-1" />
               <input type="radio" name="businessStage" value="shopify" tabindex="-1" />
             </div>
             <div class="prompt-row">
@@ -67,11 +68,72 @@
 
           <div class="connector-dock" aria-label="Opciones ecommerce">
             <div class="connector-cards" role="radiogroup" aria-label="Camino ecommerce">
+              <button class="connector-card" type="button" data-stage-card="brand" aria-pressed="false">
+                <span class="connector-icon brand-icon"><i data-lucide="store"></i></span>
+                <span class="connector-label">Analizar marca</span>
+                <span class="connector-check"><i data-lucide="check"></i></span>
+              </button>
               <button class="connector-card" type="button" data-stage-card="shopify" aria-pressed="false">
                 <span class="connector-icon shopify-icon"><i data-lucide="shopping-bag"></i></span>
                 <span class="connector-label">Conectar Shopify</span>
                 <span class="connector-check"><i data-lucide="check"></i></span>
               </button>
+            </div>
+          </div>
+
+          <div class="brand-panel" id="brandFields" hidden>
+            <div class="shopify-panel-head">
+              <div>
+                <strong>Marca existente</strong>
+                <small>Contexto para decisiones</small>
+              </div>
+              <button class="panel-close" id="closeBrandPanel" type="button" title="Cerrar marca">
+                <i data-lucide="x"></i>
+              </button>
+            </div>
+            <div class="brand-grid">
+              <label>
+                Marca
+                <input
+                  id="brandName"
+                  name="brandName"
+                  type="text"
+                  placeholder="nombre de la marca"
+                  autocomplete="off"
+                />
+              </label>
+              <label>
+                Sitio o tienda
+                <input
+                  id="brandUrl"
+                  name="brandUrl"
+                  type="text"
+                  placeholder="https://..."
+                  autocomplete="off"
+                />
+              </label>
+            </div>
+            <div class="brand-grid">
+              <label>
+                Canales
+                <input
+                  id="brandChannels"
+                  name="brandChannels"
+                  type="text"
+                  placeholder="Meta Ads, TikTok, email, Amazon..."
+                  autocomplete="off"
+                />
+              </label>
+              <label>
+                Objetivo
+                <input
+                  id="brandGoal"
+                  name="brandGoal"
+                  type="text"
+                  placeholder="subir conversion, retencion, AOV..."
+                  autocomplete="off"
+                />
+              </label>
             </div>
           </div>
 
