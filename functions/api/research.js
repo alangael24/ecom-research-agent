@@ -42,7 +42,7 @@ export async function onRequestPost(context) {
     });
   }
 
-  if (shouldUseProfitabilityTool(payload)) {
+  if (payload.businessStage !== "brand" && shouldUseProfitabilityTool(payload)) {
     return json({
       ok: true,
       report: await runProfitabilityTool(payload, env),
@@ -120,7 +120,8 @@ function validatePayload(payload) {
   if (payload.productDetails && !stringField(payload.productDetails, 2000)) return "Invalid product details.";
   if (payload.goals && !Array.isArray(payload.goals)) return "Invalid goals.";
   if (payload.destination && typeof payload.destination !== "string") return "Invalid destination.";
-  if (payload.businessStage && !["starter", "shopify"].includes(payload.businessStage)) return "Invalid business stage.";
+  if (payload.businessStage && !["starter", "brand", "shopify"].includes(payload.businessStage)) return "Invalid business stage.";
+  if (payload.brand && typeof payload.brand !== "object") return "Invalid brand payload.";
   if (payload.shopify && typeof payload.shopify !== "object") return "Invalid Shopify payload.";
   if (payload.shopify?.shop && !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(payload.shopify.shop)) {
     return "Invalid Shopify shop domain.";
@@ -133,7 +134,8 @@ function stringField(value, maxLength) {
 }
 
 function payloadText(payload) {
-  return `${payload.naturalRequest || ""} ${payload.reference || ""} ${payload.problem || ""} ${payload.product || ""} ${payload.productDetails || ""}`;
+  const brand = payload.brand || {};
+  return `${payload.naturalRequest || ""} ${payload.reference || ""} ${payload.problem || ""} ${payload.product || ""} ${payload.productDetails || ""} ${brand.name || ""} ${brand.url || ""} ${brand.channels || ""} ${brand.goal || ""}`;
 }
 
 function shouldUseProfitabilityTool(payload) {

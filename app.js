@@ -10,6 +10,11 @@ const resultPanel = document.querySelector(".result-panel");
 const panels = [...document.querySelectorAll("[data-panel]")];
 const tabs = [...document.querySelectorAll("[data-tab]")];
 const emptyState = document.querySelector("#emptyState");
+const brandFields = document.querySelector("#brandFields");
+const brandNameInput = document.querySelector("#brandName");
+const brandUrlInput = document.querySelector("#brandUrl");
+const brandChannelsInput = document.querySelector("#brandChannels");
+const brandGoalInput = document.querySelector("#brandGoal");
 const shopifyFields = document.querySelector("#shopifyFields");
 const shopifyDomainInput = document.querySelector("#shopifyDomain");
 const shopifyStoreSelect = document.querySelector("#shopifyStore");
@@ -26,6 +31,7 @@ const SHOPIFY_PRODUCTION_ORIGIN = "https://agentgenia.com";
 
 const tabLabelSets = {
   sourcing: ["Resumen", "Herramientas", "Proveedores", "Negociacion", "DDP", "Calidad"],
+  brand: ["Resumen", "Marca", "Oferta", "Crecimiento", "Conversion", "Siguiente"],
   shopify: ["Resumen", "Shopify", "Catalogo", "Acciones", "DDP", "Calidad"],
   profitability: ["Resumen", "Numeros", "Alertas", "Siguiente", "Supuestos", "Notas"],
   shipping: ["Resumen", "Tarifas", "Detalles", "Alertas", "Siguiente", "Notas"],
@@ -84,6 +90,11 @@ const goalConfig = {
     label: "Auditar Shopify",
     icon: "shopping-bag",
     className: "shopify",
+  },
+  brand: {
+    label: "Auditar marca",
+    icon: "store",
+    className: "brand",
   },
 };
 
@@ -233,6 +244,7 @@ function setupStageControls() {
   document.querySelector("#refreshShopifyStores")?.addEventListener("click", loadShopifyStores);
   document.querySelector("#disconnectShopify")?.addEventListener("click", disconnectSelectedShopifyStore);
   document.querySelector("#closeShopifyPanel")?.addEventListener("click", () => selectBusinessStage("starter"));
+  document.querySelector("#closeBrandPanel")?.addEventListener("click", () => selectBusinessStage("starter"));
   updateStageUI();
 }
 
@@ -241,8 +253,8 @@ function selectBusinessStage(stage) {
   if (!input) return;
   input.checked = true;
   updateStageUI();
-  if (stage === "shopify") {
-    shopifyFields?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (stage === "shopify" || stage === "brand") {
+    (stage === "shopify" ? shopifyFields : brandFields)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 }
 
@@ -306,8 +318,11 @@ function selectedBusinessStage() {
 
 function updateStageUI() {
   const isShopify = selectedBusinessStage() === "shopify";
+  const isBrand = selectedBusinessStage() === "brand";
+  if (brandFields) brandFields.hidden = !isBrand;
   if (shopifyFields) shopifyFields.hidden = !isShopify;
   document.body.classList.toggle("shopify-mode", isShopify);
+  document.body.classList.toggle("brand-mode", isBrand);
   stageCards.forEach((card) => {
     const active = card.dataset.stageCard === selectedBusinessStage();
     card.classList.toggle("active", active);
@@ -440,7 +455,7 @@ async function handleSubmit(event) {
 async function runResearch(data) {
   setLoading(true);
 
-  if (data.businessStage === "shopify" && data.shopify.shop) {
+  if ((data.businessStage === "shopify" || data.businessStage === "brand") && data.shopify.shop) {
     try {
       data.shopify.snapshot = await requestShopifySnapshot(data.shopify.shop);
     } catch (error) {
@@ -594,6 +609,12 @@ function readForm() {
       shop: shopifyStoreSelect?.value || "",
       focus: shopifyFocusInput?.value.trim() || "",
     },
+    brand: {
+      name: brandNameInput?.value.trim() || "",
+      url: normalizeBrandUrl(brandUrlInput?.value.trim() || ""),
+      channels: brandChannelsInput?.value.trim() || "",
+      goal: brandGoalInput?.value.trim() || "",
+    },
     accessKey: form.accessKey.value.trim(),
   };
 }
@@ -616,6 +637,9 @@ function inferRequest(naturalRequest, businessStage = "starter") {
   const shopifyIntent =
     businessStage === "shopify" ||
     hasAny(text, ["shopify", "tienda", "store", "catalogo", "catálogo", "conversion", "conversiones"]);
+  const brandIntent =
+    businessStage === "brand" ||
+    hasAny(text, ["marca", "brand", "negocio", "ventas", "aov", "retencion", "retención", "email", "ads", "roas"]);
   const market = text.includes("mexico") || text.includes("méxico") ? "MX" : text.includes("latam") ? "LATAM" : "US";
   const destination = inferDestination(text, market);
   const budget = inferMoney(text, ["presupuesto", "budget", "tengo", "invertir"]);
@@ -636,15 +660,27 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     depth: text.includes("profundo") || text.includes("completo") ? "profundo" : "rapido",
     goals: sourcingIntent
       ? ["interpret", "search", "negotiate", "ddp", "quality"]
+      : brandIntent
+        ? ["interpret", "brand", "shopify", "quality"]
       : shopifyIntent
         ? ["interpret", "shopify", "quality"]
         : ["interpret"],
     selectedInternalTool: sourcingIntent
       ? "alibaba-sourcing-agent"
+      : brandIntent
+        ? "brand-audit-agent"
       : shopifyIntent
         ? "shopify-store-audit"
         : "ecom-research-agent",
   };
+}
+
+function normalizeBrandUrl(value) {
+  const cleaned = String(value || "").trim();
+  if (!cleaned) return "";
+  if (/^https?:\/\//i.test(cleaned)) return cleaned;
+  if (/^[\w.-]+\.[a-z]{2,}/i.test(cleaned)) return `https://${cleaned}`;
+  return cleaned;
 }
 
 function buildReport(data) {
@@ -813,6 +849,28 @@ function buildAgentTasks(query, data, category) {
     },
   ];
   if (data.selectedInternalTool !== "alibaba-sourcing-agent") {
+    if (data.selectedInternalTool === "brand-audit-agent") {
+      return firstStep.concat([
+        {
+          key: "brand",
+          title: "Leer contexto de marca",
+          status: data.brand?.url || data.brand?.name ? "contexto recibido" : "requiere contexto",
+          result: data.brand?.name
+            ? `El agente analizara ${data.brand.name} con la solicitud y los canales disponibles.`
+            : "El agente necesita nombre, sitio o canales para entender mejor la marca.",
+          nextAction: "Priorizar oferta, conversion, retencion y oportunidades de crecimiento.",
+        },
+        {
+          key: "shopify",
+          title: "Cruzar con Shopify",
+          status: data.shopify?.shop ? "catalogo disponible" : "opcional",
+          result: data.shopify?.shop
+            ? `Tambien usara ${data.shopify.shop} como contexto de catalogo real.`
+            : "Shopify puede conectarse despues para leer catalogo, precios e inventario.",
+          nextAction: "Combinar datos de marca con catalogo si la tienda esta conectada.",
+        },
+      ]);
+    }
     if (data.selectedInternalTool === "shopify-store-audit") {
       return firstStep.concat([
         {
@@ -1235,6 +1293,11 @@ function packageSummary(packageInfo, currency) {
 }
 
 function renderReport(report) {
+  if (report.businessStage === "brand") {
+    renderBrandReport(report);
+    return;
+  }
+
   const isShopify = report.businessStage === "shopify";
   setTabLabels(isShopify ? tabLabelSets.shopify : tabLabelSets.sourcing);
   const ai = report.ai || null;
@@ -1427,6 +1490,248 @@ function renderReport(report) {
     </div>`;
 
   lucide.createIcons();
+}
+
+function renderBrandReport(report) {
+  resultPanel.hidden = false;
+  setTabLabels(tabLabelSets.brand);
+
+  const brand = normalizeBrandContext(report);
+  const audit = buildBrandAudit(report, brand);
+  const shopifyOverview = report.shopify?.shop ? renderShopifyOverview(report) : "";
+  const backendNotice = report.backendError
+    ? `<article class="report-card full-span notice-card">
+        <h3>Backend privado</h3>
+        <p>${escapeHtml(report.backendError)}</p>
+      </article>`
+    : "";
+
+  document.querySelector("#brief").innerHTML = `
+    <div class="metric-row">
+      <article class="metric-card"><strong>${escapeHtml(brand.name)}</strong><p>marca</p></article>
+      <article class="metric-card"><strong>${escapeHtml(brand.stage)}</strong><p>estado</p></article>
+      <article class="metric-card"><strong>${escapeHtml(toolLabel(report.selectedInternalTool))}</strong><p>herramienta interna</p></article>
+    </div>
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Decision</h3>
+        <p>${escapeHtml(audit.decision)}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="store"></i>${escapeHtml(brand.name)}</span>
+          <span class="pill"><i data-lucide="globe"></i>${escapeHtml(brand.url || "sitio pendiente")}</span>
+          <span class="pill"><i data-lucide="megaphone"></i>${escapeHtml(brand.channels || "canales pendientes")}</span>
+          <span class="pill"><i data-lucide="target"></i>${escapeHtml(brand.goal)}</span>
+        </div>
+      </article>
+      <article class="report-card">
+        <h3>Contexto recibido</h3>
+        <ul>${audit.context.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card">
+        <h3>Riesgos principales</h3>
+        <ul>${audit.risks.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>Trabajo del agente</h3>
+        ${renderAgentWorkLog(report.agentTasks)}
+      </article>
+      ${shopifyOverview}
+      ${backendNotice}
+    </div>`;
+
+  document.querySelector("#tools").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Mapa de marca</h3>
+        ${renderCompactSections([
+          ["Posicionamiento", audit.positioning],
+          ["Cliente", audit.customer],
+          ["Datos que faltan", audit.missingData],
+        ])}
+      </article>
+      <article class="report-card full-span">
+        <h3>Fuentes de contexto</h3>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="message-square-text"></i>${escapeHtml(report.naturalRequest)}</span>
+          <span class="pill"><i data-lucide="globe"></i>${escapeHtml(brand.url || "sin URL")}</span>
+          <span class="pill"><i data-lucide="shopping-bag"></i>${escapeHtml(report.shopify?.shop || "Shopify opcional")}</span>
+        </div>
+      </article>
+    </div>`;
+
+  document.querySelector("#suppliers").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Oferta y catalogo</h3>
+        ${renderCompactSections([
+          ["Que revisar primero", audit.offer],
+          ["Catalogo", audit.catalog],
+          ["Pruebas de producto", audit.productTests],
+        ])}
+      </article>
+    </div>`;
+
+  document.querySelector("#negotiation").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Plan de crecimiento</h3>
+        <ol>${audit.growth.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
+      </article>
+      <article class="report-card full-span">
+        <h3>Mensajes a probar</h3>
+        <ul>${audit.messaging.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#ddp").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Conversion</h3>
+        ${renderCompactSections([
+          ["Landing / PDP", audit.conversion],
+          ["AOV y recompra", audit.retention],
+          ["Medicion", audit.measurement],
+        ])}
+      </article>
+    </div>`;
+
+  document.querySelector("#quality").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Siguientes experimentos</h3>
+        <ol>${audit.nextExperiments.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
+      </article>
+      <article class="report-card full-span">
+        <h3>Prompt profundo</h3>
+        <p>${escapeHtml(buildPrompt(report))}</p>
+      </article>
+    </div>`;
+
+  lucide.createIcons();
+}
+
+function normalizeBrandContext(report) {
+  const brand = report.brand || {};
+  const inferredName =
+    brand.name ||
+    inferBrandNameFromUrl(brand.url) ||
+    report.product?.split(/\s+/).slice(0, 4).join(" ") ||
+    "Marca";
+  return {
+    name: inferredName,
+    url: brand.url || "",
+    channels: brand.channels || "canales no definidos",
+    goal: brand.goal || report.shopify?.focus || "crecer con mejor contexto",
+    stage: report.shopify?.shop ? "con tienda conectada" : brand.url ? "marca con presencia digital" : "contexto inicial",
+  };
+}
+
+function inferBrandNameFromUrl(value) {
+  try {
+    const host = new URL(value).hostname.replace(/^www\./, "");
+    return host.split(".")[0] || "";
+  } catch {
+    return "";
+  }
+}
+
+function buildBrandAudit(report, brand) {
+  const products = report.shopify?.snapshot?.products || [];
+  const hasCatalog = products.length > 0;
+  const goal = brand.goal.toLowerCase();
+  const conversionFocus = /conversion|conversi[oó]n|roas|cac|ads|anuncios/.test(goal);
+  const retentionFocus = /retencion|retenci[oó]n|email|recompra|ltv|clientes/.test(goal);
+
+  return {
+    decision: hasCatalog
+      ? `Analizar ${brand.name} como una marca en operacion: cruzar posicionamiento, catalogo, pricing e inventario antes de sugerir crecimiento.`
+      : `Analizar ${brand.name} como marca existente: primero ordenar contexto, promesa, oferta, canales y datos faltantes antes de recomendar anuncios o inventario.`,
+    context: [
+      `Objetivo principal: ${brand.goal}.`,
+      `Canales declarados: ${brand.channels}.`,
+      brand.url ? `Sitio o referencia: ${brand.url}.` : "Falta sitio, tienda o perfil social para leer señales externas.",
+      report.shopify?.shop ? `Shopify conectado: ${report.shopify.shop}.` : "Shopify no conectado; la auditoria usa contexto declarado.",
+    ],
+    risks: [
+      "Optimizar anuncios sin tener clara la oferta y el margen real.",
+      "Confundir trafico con problema de producto, precio o confianza.",
+      "Tomar decisiones sin separar datos reales de supuestos.",
+    ],
+    positioning: [
+      "Definir una frase: para quien es, que problema resuelve y por que comprar aqui.",
+      "Identificar el angulo ganador: precio, calidad, resultado, rapidez, identidad o conveniencia.",
+      "Comparar la promesa principal contra competidores directos antes de meter mas presupuesto.",
+    ],
+    customer: [
+      "Separar comprador actual, comprador ideal y comprador que solo pregunta pero no compra.",
+      "Mapear objeciones: precio, confianza, envio, calidad, talla, garantia o resultados.",
+      "Usar mensajes distintos para frio, retargeting y clientes existentes.",
+    ],
+    missingData: [
+      "AOV, margen bruto, CAC, tasa de conversion y recompra.",
+      "Productos mas vendidos, productos con inventario y productos que atraen trafico pero no convierten.",
+      "Canales con gasto, ventas atribuidas y principales objeciones de clientes.",
+    ],
+    offer: [
+      "Auditar si la oferta tiene resultado claro, prueba, garantia y urgencia real.",
+      "Crear un producto/bundle gancho si el catalogo se siente disperso.",
+      "Alinear precio con margen, envio, devoluciones y costo de adquirir cliente.",
+    ],
+    catalog: hasCatalog
+      ? [
+          `${products.length} productos leidos desde Shopify.`,
+          "Ordenar productos por inventario, precio y estado antes de decidir campañas.",
+          "Detectar productos sin categoria, sin tipo o con poca claridad de uso.",
+        ]
+      : [
+          "Conectar Shopify para leer catalogo real, inventario y precios.",
+          "Si no usa Shopify, pegar productos top y precios en el prompt.",
+          "Priorizar 3-5 SKUs antes de intentar optimizar toda la marca.",
+        ],
+    productTests: [
+      "Testear 3 hooks: problema, resultado y comparacion contra alternativa.",
+      "Probar una oferta de entrada y un bundle de mayor AOV.",
+      "Revisar si las fotos explican uso, escala, calidad y transformacion.",
+    ],
+    growth: [
+      conversionFocus ? "Auditar landing/PDP antes de subir presupuesto de ads." : "Elegir un canal principal y una metrica de decision por 14 dias.",
+      "Crear tablero simple: visitas, conversion, AOV, margen, CAC, recompra y devoluciones.",
+      "Probar mensajes por avatar antes de producir mas creativos.",
+      "Usar clientes actuales para extraer objeciones, reviews y lenguaje real.",
+    ],
+    messaging: [
+      "Hook de dolor: lo que el cliente intenta resolver hoy.",
+      "Hook de resultado: como se ve la vida despues de comprar.",
+      "Hook de prueba: evidencia, reviews, antes/despues o comparacion.",
+    ],
+    conversion: [
+      "Above the fold debe decir que vendes, para quien y por que importa.",
+      "PDP necesita fotos claras, beneficios, prueba social, envio/devoluciones y CTA visible.",
+      "Eliminar friccion: costos ocultos, tiempos ambiguos, dudas de talla/calidad o checkout largo.",
+    ],
+    retention: retentionFocus
+      ? [
+          "Diseñar flows de email/SMS: bienvenida, abandono, post-compra, recompra y winback.",
+          "Crear motivo de recompra: refill, accesorios, bundle, suscripcion o temporada.",
+          "Segmentar clientes por producto comprado y margen.",
+        ]
+      : [
+          "Medir si el producto permite recompra o si necesita upsell/cross-sell.",
+          "Crear post-compra que pida review, resuelva dudas y ofrezca siguiente compra.",
+          "No depender solo de adquisicion si el CAC sube.",
+        ],
+    measurement: [
+      "Separar ventas nuevas vs clientes existentes.",
+      "Medir margen despues de envio, descuentos, fees y devoluciones.",
+      "Documentar cada experimento con hipotesis, metrica y decision.",
+    ],
+    nextExperiments: [
+      "Pegar URL de marca y 3 productos top para una auditoria mas precisa.",
+      "Conectar Shopify cuando el install flow este listo para leer catalogo real.",
+      "Ejecutar filtro de rentabilidad con AOV, costo, envio, margen y CAC objetivo.",
+      "Crear 5 hooks por avatar y escoger 2 para probar en ads o TikTok organico.",
+    ],
+  };
 }
 
 function renderShopifyOverview(report) {
@@ -1775,6 +2080,10 @@ function setLoading(isLoading) {
 }
 
 function buildPrompt(report) {
+  if (report.businessStage === "brand") {
+    const brand = normalizeBrandContext(report);
+    return `Actua como Agent Genia. El usuario tiene una marca existente: ${brand.name}. Solicitud: "${report.naturalRequest}". Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
+  }
   return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Decide que herramienta interna usar. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
 }
 
@@ -1785,6 +2094,9 @@ function buildMarkdown(report) {
   }
   if (report.type === "shipping_quote") {
     return buildShippingQuoteMarkdown(report);
+  }
+  if (report.businessStage === "brand") {
+    return buildBrandMarkdown(report);
   }
   if (report.ai) {
     return buildAiMarkdown(report);
@@ -1837,6 +2149,48 @@ ${quality.sampleChecklist.map((item) => `- ${item}`).join("\n")}
 ## Prompt profundo
 
 ${buildPrompt(report)}
+`;
+}
+
+function buildBrandMarkdown(report) {
+  const brand = normalizeBrandContext(report);
+  const audit = buildBrandAudit(report, brand);
+  const shopifySection = report.shopify?.shop ? buildShopifyMarkdown(report) : "";
+
+  return `# Auditoria de marca
+
+Fecha: ${report.createdAt}
+Marca: ${brand.name}
+Sitio: ${brand.url || "no definido"}
+Canales: ${brand.channels}
+Objetivo: ${brand.goal}
+Solicitud: ${report.naturalRequest}
+Herramienta interna: ${toolLabel(report.selectedInternalTool)}
+${shopifySection}
+
+## Decision
+
+${audit.decision}
+
+## Riesgos
+
+${audit.risks.map((item) => `- ${item}`).join("\n")}
+
+## Oferta
+
+${audit.offer.map((item) => `- ${item}`).join("\n")}
+
+## Crecimiento
+
+${audit.growth.map((item) => `- ${item}`).join("\n")}
+
+## Conversion
+
+${audit.conversion.map((item) => `- ${item}`).join("\n")}
+
+## Siguientes experimentos
+
+${audit.nextExperiments.map((item) => `- ${item}`).join("\n")}
 `;
 }
 
@@ -2099,6 +2453,7 @@ function formatDate(value) {
 function toolLabel(value) {
   if (value === "alibaba-sourcing-agent") return "Alibaba sourcing";
   if (value === "shopify-store-audit") return "Shopify audit";
+  if (value === "brand-audit-agent") return "Brand audit";
   return "Ecom research";
 }
 
