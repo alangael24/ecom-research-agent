@@ -3,9 +3,39 @@ const state = {
 };
 
 const form = document.querySelector("#researchForm");
+const resultPanel = document.querySelector(".result-panel");
 const panels = [...document.querySelectorAll("[data-panel]")];
 const tabs = [...document.querySelectorAll("[data-tab]")];
 const emptyState = document.querySelector("#emptyState");
+
+const tabLabelSets = {
+  sourcing: ["Resumen", "Herramientas", "Proveedores", "Negociacion", "DDP", "Calidad"],
+  profitability: ["Resumen", "Numeros", "Alertas", "Siguiente", "Supuestos", "Notas"],
+  shipping: ["Resumen", "Tarifas", "Detalles", "Alertas", "Siguiente", "Notas"],
+};
+
+const repurchaseLabels = {
+  1: "Sin recompra clara",
+  1.15: "Baja",
+  1.35: "Media",
+  1.7: "Alta",
+};
+
+const differentiationLabels = {
+  commodity: "Casi igual a los demas",
+  weak: "Un poco diferente",
+  clear: "Se entiende la diferencia",
+  defensible: "Dificil de copiar",
+};
+
+const channelLabels = {
+  meta: "Facebook/Instagram",
+  "tiktok-organic": "videos organicos en TikTok",
+  "tiktok-paid": "anuncios en TikTok",
+  influencers: "creadores o influencers",
+  search: "Google",
+  amazon: "Amazon",
+};
 
 const goalConfig = {
   interpret: {
@@ -169,6 +199,28 @@ async function handleSubmit(event) {
   try {
     const backend = await requestBackendReport(data);
     if (backend?.ok && backend.report) {
+      if (backend.report.type === "profitability") {
+        state.latest = backend.report;
+        document.body.classList.add("report-ready");
+        renderProfitabilityReport(backend.report);
+        activateTab("brief");
+        saveState(backend.report);
+        setLoading(false);
+        resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+        showToast("Analisis de rentabilidad listo");
+        return;
+      }
+      if (backend.report.type === "shipping_quote") {
+        state.latest = backend.report;
+        document.body.classList.add("report-ready");
+        renderShippingQuoteReport(backend.report);
+        activateTab("brief");
+        saveState(backend.report);
+        setLoading(false);
+        resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+        showToast("Cotizacion de envio lista");
+        return;
+      }
       report.ai = backend.report;
       report.backendMode = "codex-harness";
       report.diagnostics = backend.diagnostics || null;
@@ -182,7 +234,7 @@ async function handleSubmit(event) {
 
   state.latest = report;
   document.body.classList.add("report-ready");
-  document.querySelector(".result-panel").hidden = false;
+  resultPanel.hidden = false;
   renderReport(report);
   activateTab("brief");
   saveState(report);
@@ -515,11 +567,299 @@ function buildGuidedSupplierProfiles(data, category, targetUnitCost) {
 }
 
 function renderEmptyState() {
+  setTabLabels(tabLabelSets.sourcing);
   document.querySelector("#brief").innerHTML = emptyState.innerHTML;
   lucide.createIcons();
 }
 
+function renderProfitabilityReport(report) {
+  const data = report.profitability || {};
+  const currency = data.currency || "USD";
+  const verdict = report.verdict || {
+    level: "watch",
+    label: "Revisar",
+    title: "Faltan numeros para decidir",
+    copy: "El agente separo los datos dados de los supuestos. No conviene lanzar hasta confirmar costos reales.",
+  };
+  const risks = Array.isArray(report.risks) && report.risks.length
+    ? report.risks
+    : ["Faltan riesgos calculados; confirma precio, producto, envio, fees y devoluciones."];
+  const steps = Array.isArray(report.steps) && report.steps.length
+    ? report.steps
+    : ["Completa los numeros faltantes antes de comprar inventario."];
+  const assumptions = Array.isArray(data.assumptions) && data.assumptions.length
+    ? data.assumptions
+    : ["Resultado basado en supuestos conservadores hasta confirmar numeros reales."];
+  const score = Number.isFinite(report.score) ? Math.max(0, Math.min(100, report.score)) : 0;
+  const scoreClass = verdict.level === "fail" ? "danger" : verdict.level === "watch" ? "warning" : "";
+
+  resultPanel.hidden = false;
+  setTabLabels(tabLabelSets.profitability);
+
+  document.querySelector("#brief").innerHTML = `
+    <div class="metric-row">
+      <article class="metric-card ${verdict.level === "fail" ? "danger" : verdict.level === "watch" ? "warning" : ""}">
+        <strong>${escapeHtml(verdict.label)}</strong>
+        <p>veredicto</p>
+      </article>
+      <article class="metric-card">
+        <strong>${score}/100</strong>
+        <p>calificacion</p>
+      </article>
+      <article class="metric-card">
+        <strong>${formatMoney(data.cacTarget, currency)}</strong>
+        <p>meta sana por cliente</p>
+      </article>
+    </div>
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>${escapeHtml(verdict.title)}</h3>
+        <p>${escapeHtml(verdict.copy)}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="calculator"></i>Filtro de rentabilidad</span>
+          <span class="pill"><i data-lucide="shopping-bag"></i>${formatMoney(data.aov, currency)} por pedido</span>
+          <span class="pill"><i data-lucide="megaphone"></i>${escapeHtml(channelLabels[data.channel] || data.channel || "canal pendiente")}</span>
+        </div>
+      </article>
+      <article class="report-card">
+        <h3>Dinero antes de anuncios</h3>
+        <p>${formatMoney(data.contribution, currency)} por pedido, equivalente a ${formatPercent(data.margin)}.</p>
+      </article>
+      <article class="report-card">
+        <h3>Ventas necesarias</h3>
+        <p>Para no perder, necesitas vender ${formatRoas(data.breakEvenRoas)} por cada $1 gastado en anuncios.</p>
+      </article>
+      <article class="report-card full-span">
+        <h3>Calificacion</h3>
+        <div class="score-track"><span class="${scoreClass}" style="width: ${score}%"></span></div>
+      </article>
+    </div>`;
+
+  document.querySelector("#tools").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Numeros usados</h3>
+        <dl class="calculation-list">
+          <div><dt>Venta por pedido</dt><dd>${formatMoney(data.aov, currency)}</dd></div>
+          <div><dt>Producto</dt><dd>${formatMoney(data.cogs, currency)}</dd></div>
+          <div><dt>Envio</dt><dd>${formatMoney(data.shipping, currency)}</dd></div>
+          <div><dt>Cobros de plataforma</dt><dd>${formatMoney(data.fees, currency)}</dd></div>
+          <div><dt>Reserva por devoluciones</dt><dd>${formatMoney(data.returnsReserve, currency)}</dd></div>
+          <div><dt>Maximo para conseguir cliente</dt><dd>${formatMoney(data.cacMax, currency)}</dd></div>
+          <div><dt>Meta sana por cliente</dt><dd>${formatMoney(data.cacTarget, currency)}</dd></div>
+          <div><dt>ROAS para no perder</dt><dd>${formatRoas(data.breakEvenRoas)}</dd></div>
+          <div><dt>ROAS objetivo</dt><dd>${formatRoas(data.targetRoas)}</dd></div>
+          <div><dt>Valor si compra otra vez</dt><dd>${formatMoney(data.ltvContribution, currency)}</dd></div>
+        </dl>
+      </article>
+      ${renderShippingQuoteDetails(data.shippingQuote)}
+    </div>`;
+
+  document.querySelector("#suppliers").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span notice-card">
+        <h3>Alertas importantes</h3>
+        <ul>${risks.map((risk) => `<li>${escapeHtml(stripHtml(risk))}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#negotiation").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Que haria despues</h3>
+        <ul>${steps.map((step) => `<li>${escapeHtml(stripHtml(step))}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#ddp").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Supuestos usados</h3>
+        <ul>${assumptions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>Numeros que conviene confirmar</h3>
+        <ul>
+          <li>Precio real de venta y bundle promedio.</li>
+          <li>Costo de producto landed, no solo precio de proveedor.</li>
+          <li>Envio real por CP, peso y medidas.</li>
+          <li>Fees de plataforma, pagos, devoluciones y reenvios.</li>
+        </ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#quality").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Herramienta interna</h3>
+        <p>El agente uso el filtro de unit economics sin abrir una pagina separada.</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="wrench"></i>${escapeHtml(report.toolUsed || "unit_economics_filter")}</span>
+          <span class="pill"><i data-lucide="map-pin"></i>${escapeHtml(report.market || "mercado pendiente")}</span>
+          <span class="pill"><i data-lucide="calendar"></i>${escapeHtml(report.createdAt || "")}</span>
+        </div>
+      </article>
+    </div>`;
+
+  lucide.createIcons();
+}
+
+function renderShippingQuoteDetails(shippingQuote) {
+  if (!shippingQuote) return "";
+  const status = {
+    live_envia_mx: "Cotizado en vivo con Envia.com",
+    live_easypost: "Cotizado en vivo",
+    user_provided: "Escrito por el usuario",
+    estimated_no_envia_token: "Estimado para Mexico",
+    estimated_missing_mx_details: "Estimado para Mexico",
+    estimated_after_envia_error: "Estimado para Mexico",
+    estimated_no_api_key: "Estimado",
+    estimated_unsupported_currency: "Estimado",
+    estimated_missing_details: "Estimado",
+    estimated_after_quote_error: "Estimado",
+  }[shippingQuote.mode] || "Estimado";
+  const profile = shippingQuote.profile || {};
+  const currency = shippingQuote.currency || "USD";
+  const packageText =
+    currency === "MXN"
+      ? `${formatNumber((profile.weightOz || 0) / 35.274)} kg, ${formatNumber((profile.lengthIn || 0) * 2.54)} x ${formatNumber((profile.widthIn || 0) * 2.54)} x ${formatNumber((profile.heightIn || 0) * 2.54)} cm`
+      : `${formatNumber(profile.weightOz || 0)} oz, ${formatNumber(profile.lengthIn || 0)} x ${formatNumber(profile.widthIn || 0)} x ${formatNumber(profile.heightIn || 0)} in`;
+  const routeText =
+    currency === "MXN"
+      ? `${profile.originZip || "origen pendiente"} -> ${profile.destinationZip || "destino pendiente"}`
+      : `${profile.originZip || "origin pending"} -> ${profile.destinationZip || "destination pending"}`;
+
+  return `<article class="report-card full-span">
+    <h3>Como se calculo el envio</h3>
+    <p><strong>${escapeHtml(status)}:</strong> ${formatMoney(shippingQuote.amount, currency)} por pedido.</p>
+    <div class="pill-row">
+      <span class="pill"><i data-lucide="map-pinned"></i>${escapeHtml(routeText)}</span>
+      <span class="pill"><i data-lucide="package"></i>${escapeHtml(packageText)}</span>
+    </div>
+    ${renderShippingRates(shippingQuote)}
+  </article>`;
+}
+
+function renderShippingQuoteReport(report) {
+  const quote = report.shippingQuote || {};
+  const profile = quote.profile || {};
+  const currency = quote.currency || "MXN";
+  const route = `${profile.originZip || "origen pendiente"} -> ${profile.destinationZip || "destino pendiente"}`;
+  const live = quote.mode === "live_envia_mx" || quote.mode === "live_easypost";
+  const status = live ? "Cotizacion viva" : quote.mode === "user_provided" ? "Envio escrito" : "Estimacion";
+  const notes = Array.isArray(quote.notes) ? quote.notes : [];
+  const warnings = Array.isArray(report.warnings) ? report.warnings : [];
+  const nextSteps = Array.isArray(report.nextSteps) ? report.nextSteps : [];
+
+  resultPanel.hidden = false;
+  setTabLabels(tabLabelSets.shipping);
+
+  document.querySelector("#brief").innerHTML = `
+    <div class="metric-row">
+      <article class="metric-card ${live ? "" : "warning"}">
+        <strong>${formatMoney(quote.amount, currency)}</strong>
+        <p>costo de envio</p>
+      </article>
+      <article class="metric-card">
+        <strong>${escapeHtml(status)}</strong>
+        <p>tipo de calculo</p>
+      </article>
+      <article class="metric-card">
+        <strong>${escapeHtml(quote.carrier || (currency === "MXN" ? "Envia" : "API"))}</strong>
+        <p>proveedor</p>
+      </article>
+    </div>
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Ruta cotizada</h3>
+        <p>${escapeHtml(route)}${profile.originCity || profile.destinationCity ? ` · ${escapeHtml([profile.originCity, profile.destinationCity].filter(Boolean).join(" a "))}` : ""}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="truck"></i>Solo cotizacion</span>
+          <span class="pill"><i data-lucide="package"></i>${escapeHtml(packageSummary(report.package, currency))}</span>
+          <span class="pill"><i data-lucide="shield-check"></i>No se compro guia</span>
+        </div>
+      </article>
+      <article class="report-card full-span">
+        <h3>Notas</h3>
+        <ul>${notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#tools").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Tarifas disponibles</h3>
+        ${renderShippingRates(quote)}
+      </article>
+    </div>`;
+
+  document.querySelector("#suppliers").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Detalles usados</h3>
+        <dl class="calculation-list">
+          <div><dt>Origen</dt><dd>${escapeHtml(profile.originZip || "pendiente")}</dd></div>
+          <div><dt>Destino</dt><dd>${escapeHtml(profile.destinationZip || "pendiente")}</dd></div>
+          <div><dt>Peso</dt><dd>${formatNumber(report.package?.weightKg || 0)} kg</dd></div>
+          <div><dt>Medidas</dt><dd>${formatNumber(report.package?.lengthCm || 0)} x ${formatNumber(report.package?.widthCm || 0)} x ${formatNumber(report.package?.heightCm || 0)} cm</dd></div>
+          <div><dt>Valor declarado</dt><dd>${formatMoney(profile.declaredValue || 0, currency)}</dd></div>
+        </dl>
+      </article>
+    </div>`;
+
+  document.querySelector("#negotiation").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span ${warnings.length ? "notice-card" : ""}">
+        <h3>Alertas</h3>
+        <ul>${(warnings.length ? warnings : ["No hay alertas adicionales para esta cotizacion."]).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#ddp").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Que haria despues</h3>
+        <ul>${(nextSteps.length ? nextSteps : ["Usa esta tarifa como costo base; confirma cobertura y tiempos antes de prometerlo al cliente."]).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#quality").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Modo de la herramienta</h3>
+        <p>Solo cotiza tarifas. No crea guia, no compra envio y no contacta paqueterias.</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="wrench"></i>${escapeHtml(report.provider || "shipping_rate_quote")}</span>
+          <span class="pill"><i data-lucide="calendar"></i>${escapeHtml(report.createdAt || "")}</span>
+        </div>
+      </article>
+    </div>`;
+
+  lucide.createIcons();
+}
+
+function renderShippingRates(quote) {
+  if (!Array.isArray(quote.rates) || !quote.rates.length) {
+    const notes = Array.isArray(quote.notes) ? quote.notes : ["No hay tarifas vivas disponibles; se uso estimacion."];
+    return `<p>${escapeHtml(notes.join(" "))}</p>`;
+  }
+  return `<dl class="calculation-list mini-list">${quote.rates
+    .map(
+      (rate) => `<div><dt>${escapeHtml(rate.carrier)} ${escapeHtml(rate.service)}</dt><dd>${formatMoney(rate.amount, rate.currency || quote.currency || "USD")}</dd></div>`,
+    )
+    .join("")}</dl>`;
+}
+
+function packageSummary(packageInfo, currency) {
+  if (!packageInfo) return "paquete";
+  if (currency === "MXN") {
+    return `${formatNumber(packageInfo.weightKg || 0)} kg · ${formatNumber(packageInfo.lengthCm || 0)} x ${formatNumber(packageInfo.widthCm || 0)} x ${formatNumber(packageInfo.heightCm || 0)} cm`;
+  }
+  return `${formatNumber(packageInfo.weightKg || 0)} kg`;
+}
+
 function renderReport(report) {
+  setTabLabels(tabLabelSets.sourcing);
   const ai = report.ai || null;
   const supplierShortlist = ai?.supplierShortlist?.length ? ai.supplierShortlist : report.supplierProfiles;
   const agentWorkLog = ai?.agentWorkLog?.length ? ai.agentWorkLog : report.agentTasks;
@@ -879,6 +1219,12 @@ function activateTab(name) {
   panels.forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === name));
 }
 
+function setTabLabels(labels) {
+  tabs.forEach((tab, index) => {
+    tab.textContent = labels[index] || tab.textContent;
+  });
+}
+
 function renderCompactSections(sections) {
   return sections
     .filter(([, items]) => Array.isArray(items) && items.length)
@@ -907,6 +1253,12 @@ function buildPrompt(report) {
 
 function buildMarkdown(report) {
   if (!report) return "";
+  if (report.type === "profitability") {
+    return buildProfitabilityMarkdown(report);
+  }
+  if (report.type === "shipping_quote") {
+    return buildShippingQuoteMarkdown(report);
+  }
   if (report.ai) {
     return buildAiMarkdown(report);
   }
@@ -957,6 +1309,106 @@ ${quality.sampleChecklist.map((item) => `- ${item}`).join("\n")}
 
 ${buildPrompt(report)}
 `;
+}
+
+function buildShippingQuoteMarkdown(report) {
+  const quote = report.shippingQuote || {};
+  const profile = quote.profile || {};
+  const rates = Array.isArray(quote.rates) && quote.rates.length
+    ? quote.rates.map((rate) => `- ${rate.carrier} ${rate.service}: ${formatMoney(rate.amount, rate.currency || quote.currency || "USD")}`).join("\n")
+    : "- Sin tarifas vivas; se uso estimacion.";
+  const warnings = Array.isArray(report.warnings) && report.warnings.length
+    ? report.warnings.map((warning) => `- ${warning}`).join("\n")
+    : "- Sin alertas adicionales.";
+  const nextSteps = Array.isArray(report.nextSteps) && report.nextSteps.length
+    ? report.nextSteps.map((step) => `- ${step}`).join("\n")
+    : "- Usa esta tarifa como costo base y confirma cobertura antes de prometer tiempos.";
+
+  return `# Cotizacion de envio
+
+Fecha: ${report.createdAt || ""}
+Modo: ${quote.mode || "estimado"}
+Proveedor: ${report.provider || ""}
+Solo cotizacion: ${report.rateOnly ? "si" : "no"}
+
+## Ruta
+- Origen: ${profile.originZip || "pendiente"} ${profile.originCity || ""}
+- Destino: ${profile.destinationZip || "pendiente"} ${profile.destinationCity || ""}
+
+## Paquete
+- Peso: ${formatNumber(report.package?.weightKg || 0)} kg
+- Medidas: ${formatNumber(report.package?.lengthCm || 0)} x ${formatNumber(report.package?.widthCm || 0)} x ${formatNumber(report.package?.heightCm || 0)} cm
+- Valor declarado: ${formatMoney(profile.declaredValue || 0, quote.currency || "USD")}
+
+## Resultado
+- Costo usado: ${formatMoney(quote.amount, quote.currency || "USD")}
+- Carrier: ${quote.carrier || "No disponible"}
+- Servicio: ${quote.service || "No disponible"}
+
+## Tarifas
+${rates}
+
+## Alertas
+${warnings}
+
+## Siguiente
+${nextSteps}
+`;
+}
+
+function buildProfitabilityMarkdown(report) {
+  const data = report.profitability || {};
+  const currency = data.currency || "USD";
+  const assumptions = Array.isArray(data.assumptions) ? data.assumptions : [];
+  const risks = Array.isArray(report.risks) ? report.risks : [];
+  const steps = Array.isArray(report.steps) ? report.steps : [];
+
+  return `# Analisis de rentabilidad
+
+Idea: ${data.ideaName || report.problem || report.reference || "Idea ecommerce"}
+Veredicto: ${report.verdict?.label || "Revisar"}
+Calificacion: ${Number.isFinite(report.score) ? report.score : 0}/100
+
+## Preguntas
+- Venta promedio por pedido: ${formatMoney(data.aov, currency)}
+- Costo del producto: ${formatMoney(data.cogs, currency)}
+- Costo de envio: ${formatMoney(data.shipping, currency)}
+- Fuente del envio: ${shippingQuoteSummary(data.shippingQuote)}
+- Cobros de plataforma/tarjeta: ${formatMoney(data.fees, currency)}
+- Devoluciones estimadas: ${formatPercent((data.returnRate || 0) / 100)}
+- Recompra posible: ${repurchaseLabels[data.repurchaseMultiplier] || "Pendiente"}
+- Diferencia: ${differentiationLabels[data.differentiation] || "Pendiente"}
+- Donde conseguir clientes: ${channelLabels[data.channel] || "Pendiente"}
+
+## Resultado
+- Dinero que queda antes de anuncios: ${formatPercent(data.margin)}
+- Maximo para conseguir un cliente: ${formatMoney(data.cacMax, currency)}
+- Meta sana para conseguir un cliente: ${formatMoney(data.cacTarget, currency)}
+- Ventas necesarias por cada $1 en anuncios: ${formatRoas(data.breakEvenRoas)}
+- Meta sana de ventas por cada $1 en anuncios: ${formatRoas(data.targetRoas)}
+- Valor si compra otra vez: ${formatMoney(data.ltvContribution, currency)}
+
+## Supuestos
+${assumptions.map((item) => `- ${item}`).join("\n")}
+
+## Alertas
+${risks.map((item) => `- ${stripHtml(item)}`).join("\n")}
+
+## Siguiente
+${steps.map((item) => `- ${stripHtml(item)}`).join("\n")}
+`;
+}
+
+function shippingQuoteSummary(shippingQuote) {
+  if (!shippingQuote) return "No disponible";
+  if (shippingQuote.mode === "live_envia_mx") {
+    return `Cotizado con Envia.com (${shippingQuote.carrier || ""} ${shippingQuote.service || ""})`.trim();
+  }
+  if (shippingQuote.mode === "live_easypost") {
+    return `Cotizado en vivo (${shippingQuote.carrier || ""} ${shippingQuote.service || ""})`.trim();
+  }
+  if (shippingQuote.mode === "user_provided") return "Numero escrito por el usuario";
+  return "Estimacion por falta de datos o API key";
 }
 
 function buildAiMarkdown(report) {
@@ -1044,8 +1496,32 @@ function numberValue(value) {
   return Number.isFinite(number) && number > 0 ? number : 0;
 }
 
-function formatMoney(value) {
-  return `$${Number(value).toFixed(2)}`;
+function formatMoney(value, currency = "USD") {
+  const number = Number(value);
+  const locale = currency === "MXN" ? "es-MX" : "en-US";
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+    maximumFractionDigits: Number.isFinite(number) && Math.abs(number) >= 100 ? 0 : 2,
+  }).format(Number.isFinite(number) ? number : 0);
+}
+
+function formatPercent(value) {
+  const number = Number(value);
+  return `${Math.round((Number.isFinite(number) ? number : 0) * 100)}%`;
+}
+
+function formatRoas(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "Sin margen";
+  return `${number.toFixed(number >= 10 ? 0 : 1)}x`;
+}
+
+function formatNumber(value) {
+  const number = Number(value);
+  return new Intl.NumberFormat("es-MX", {
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(number) ? number : 0);
 }
 
 function toolLabel(value) {
@@ -1068,6 +1544,12 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function stripHtml(value) {
+  const node = document.createElement("div");
+  node.innerHTML = String(value);
+  return node.textContent || node.innerText || "";
 }
 
 init();

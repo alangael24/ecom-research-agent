@@ -540,6 +540,73 @@ textarea:focus {
   margin-bottom: 8px;
 }
 
+.metric-card.warning {
+  background: #fff8ed;
+  border-color: #f4c27a;
+}
+
+.metric-card.danger {
+  background: #fff1f1;
+  border-color: #ef9a9a;
+}
+
+.score-track {
+  background: #e8efeb;
+  height: 10px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.score-track span {
+  background: var(--teal);
+  display: block;
+  height: 100%;
+}
+
+.score-track span.warning {
+  background: #d99128;
+}
+
+.score-track span.danger {
+  background: #c94a4a;
+}
+
+.calculation-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.calculation-list div {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 0 0 10px;
+}
+
+.calculation-list div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.calculation-list dt {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.calculation-list dd {
+  color: var(--ink);
+  font-weight: 850;
+  margin: 0;
+  text-align: right;
+}
+
+.mini-list {
+  margin-top: 14px;
+}
+
 .pill-row {
   display: flex;
   flex-wrap: wrap;

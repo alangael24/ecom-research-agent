@@ -121,6 +121,12 @@ async function runCodexResearch(payload) {
 function buildPrompt(payload) {
   return `Eres Agent Genia. El usuario escribe una solicitud natural en la main page y tu trabajo es decidir que herramientas internas usar, como Cursor cuando llama tools durante su flujo.
 
+Instruccion de aislamiento:
+- Trata esta solicitud como una conversacion completamente nueva.
+- No uses memoria, preferencias, productos, marcas, conclusiones ni contexto de ejecuciones anteriores.
+- La unica informacion del usuario disponible es lo que aparece en este prompt.
+- Si el usuario menciona una categoria como suplementos, skincare o cualquier otra, no la favorezcas por historial: valida evidencia, unit economics y riesgos desde cero.
+
 Solicitud del usuario: ${payload.naturalRequest}
 
 Inferencias del frontend, revisalas y corrigelas si hace falta:
@@ -136,9 +142,13 @@ Inferencias del frontend, revisalas y corrigelas si hace falta:
 Herramientas internas disponibles:
 - $alibaba-sourcing-agent: usar cuando la solicitud mencione Alibaba, proveedores, fabricantes, sourcing, MOQ, DDP, muestras, precio de proveedor, negociar con proveedor o encontrar productos para vender.
 - ecom research: usar para research de marca, problema, Meta Ads, Amazon reviews, TikTok, avatar, hooks y validacion de oportunidad.
+- unit economics filter: usar cuando la solicitud pida costos, margen, CAC, ROAS, break even, rentabilidad o si conviene lanzar.
+- shipping rate quote: usar cuando la solicitud pida cotizar envio, tarifa de paqueteria, costo de paquete, origen/destino, CP, peso o medidas.
 
 Reglas:
 - Si eliges Alibaba sourcing, usa $alibaba-sourcing-agent como herramienta interna. No lo presentes como pagina separada ni pidas al usuario llenar formulario extra.
+- Si detectas intencion de costos, margen, CAC, ROAS, break even o rentabilidad, separa numeros dados de supuestos y no recomiendes lanzar sin pasar por unit economics.
+- Si detectas intencion de envio, usa cotizacion de tarifa como herramienta interna. No crees guia ni compres envio; solo cotiza y marca faltantes.
 - Si la solicitud no es sourcing, conserva el resultado dentro del schema usando secciones compatibles y explica en limitations que no se llamo Alibaba.
 - Busca y compara proveedores/productos de Alibaba si tienes acceso web. Incluye URL de Alibaba por proveedor cuando exista.
 - La main page es el cockpit. No le digas al usuario que abra Alibaba ni que haga busquedas manuales como siguiente paso principal.
