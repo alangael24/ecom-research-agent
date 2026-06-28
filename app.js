@@ -34,7 +34,7 @@ const SHOPIFY_PRODUCTION_ORIGIN = "https://agentgenia.com";
 
 const tabLabelSets = {
   sourcing: ["Resumen", "Herramientas", "Proveedores", "Negociacion", "DDP", "Calidad"],
-  brand: ["Resumen", "Marca", "Oferta", "Crecimiento", "Conversion", "Siguiente"],
+  brand: ["Resumen", "Competencia", "Oferta", "Crecimiento", "Conversion", "Siguiente"],
   shopify: ["Resumen", "Shopify", "Catalogo", "Acciones", "DDP", "Calidad"],
   profitability: ["Resumen", "Numeros", "Alertas", "Siguiente", "Supuestos", "Notas"],
   shipping: ["Resumen", "Tarifas", "Detalles", "Alertas", "Siguiente", "Notas"],
@@ -712,6 +712,9 @@ function inferChannelsFromText(value) {
 }
 
 function inferBrandGoalFromText(value) {
+  if (/compet|inspiraci[oó]n|hooks?|headlines?|titulares?|avatar|pain points?|puntos? de dolor|formatos?|creativos?/.test(value)) {
+    return "sacar inspiracion de competencia";
+  }
   if (/conversion|conversi[oó]n|cvr|checkout/.test(value)) return "mejorar conversion";
   if (/retencion|retenci[oó]n|recompra|ltv|email/.test(value)) return "mejorar retencion";
   if (/aov|ticket|bundle|paquete/.test(value)) return "subir AOV";
@@ -753,7 +756,36 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     hasAny(text, ["shopify", "tienda", "store", "catalogo", "catálogo", "conversion", "conversiones"]);
   const brandIntent =
     businessStage === "brand" ||
-    hasAny(text, ["marca", "brand", "negocio", "ventas", "aov", "retencion", "retención", "email", "ads", "roas"]);
+    hasAny(text, [
+      "marca",
+      "brand",
+      "negocio",
+      "ventas",
+      "aov",
+      "retencion",
+      "retención",
+      "email",
+      "ads",
+      "roas",
+      "competencia",
+      "competidor",
+      "competidores",
+      "inspiracion",
+      "inspiración",
+      "hook",
+      "hooks",
+      "headline",
+      "headlines",
+      "avatar",
+      "pain point",
+      "pain points",
+      "punto de dolor",
+      "puntos de dolor",
+      "formato",
+      "formatos",
+      "creativo",
+      "creativos",
+    ]);
   const market = text.includes("mexico") || text.includes("méxico") ? "MX" : text.includes("latam") ? "LATAM" : "US";
   const destination = inferDestination(text, market);
   const budget = inferMoney(text, ["presupuesto", "budget", "tengo", "invertir"]);
@@ -1612,6 +1644,7 @@ function renderBrandReport(report) {
 
   const brand = normalizeBrandContext(report);
   const audit = buildBrandAudit(report, brand);
+  const competitorInspiration = buildCompetitorInspiration(report, brand);
   const shopifyOverview = report.shopify?.shop ? renderShopifyOverview(report) : "";
   const backendNotice = report.backendError
     ? `<article class="report-card full-span notice-card">
@@ -1655,6 +1688,7 @@ function renderBrandReport(report) {
 
   document.querySelector("#tools").innerHTML = `
     <div class="report-grid">
+      ${renderCompetitorInspiration(competitorInspiration)}
       <article class="report-card full-span">
         <h3>Mapa de marca</h3>
         ${renderCompactSections([
@@ -1724,6 +1758,37 @@ function renderBrandReport(report) {
   lucide.createIcons();
 }
 
+function renderCompetitorInspiration(inspiration) {
+  const rows = inspiration.rows || [];
+  const references = inspiration.references || [];
+  return `<article class="report-card full-span">
+    <h3>Analizador de competencia</h3>
+    <p>Desglose para inspiracion creativa. No copia claims: convierte patrones en angulos propios para la marca.</p>
+    <div class="pill-row">
+      <span class="pill"><i data-lucide="scan-search"></i>${references.length ? `${references.length} referencia(s)` : "referencias por prompt"}</span>
+      <span class="pill"><i data-lucide="message-square-text"></i>hooks + headlines</span>
+      <span class="pill"><i data-lucide="user-round-search"></i>avatar + pain points</span>
+    </div>
+    ${references.length ? `<div class="compact-section">
+      <h4>Referencias detectadas</h4>
+      <ul>${references.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+    </div>` : ""}
+    <div class="inspiration-grid">
+      ${rows
+        .map(
+          (row) => `<article class="inspiration-card">
+            <div><span>Formato</span><strong>${escapeHtml(row.format)}</strong></div>
+            <div><span>Avatar</span><strong>${escapeHtml(row.avatar)}</strong></div>
+            <div><span>Pain point</span><strong>${escapeHtml(row.painPoint)}</strong></div>
+            <div><span>Hook</span><strong>${escapeHtml(row.hook)}</strong></div>
+            <div><span>Headline</span><strong>${escapeHtml(row.headline)}</strong></div>
+          </article>`,
+        )
+        .join("")}
+    </div>
+  </article>`;
+}
+
 function normalizeBrandContext(report) {
   const brand = report.brand || {};
   const promptBrand = inferBrandContext(report.naturalRequest || "");
@@ -1752,17 +1817,120 @@ function inferBrandNameFromUrl(value) {
   }
 }
 
+function buildCompetitorInspiration(report, brand) {
+  const text = `${report.naturalRequest || ""} ${brand.goal || ""} ${brand.channels || ""}`.toLowerCase();
+  const category = report.category?.category || report.product || "producto";
+  const references = extractUrlsFromText(report.naturalRequest || "").filter((url) => url !== brand.url);
+  const primaryChannel = inferPrimaryCreativeChannel(text, brand.channels);
+  const format = primaryChannel === "TikTok"
+    ? "UGC corto / problema-solucion"
+    : primaryChannel === "email/SMS"
+      ? "Email de objecion + oferta"
+      : "Anuncio Meta / creativo estatico";
+  const avatar = inferCompetitiveAvatar(text, category);
+  const painPoints = inferCompetitivePainPoints(text, category);
+
+  return {
+    references,
+    rows: [
+      {
+        format,
+        avatar,
+        painPoint: painPoints[0],
+        hook: `Esto es lo que nadie te dice antes de comprar ${category}`,
+        headline: `Antes de elegir ${category}, revisa esto`,
+      },
+      {
+        format: primaryChannel === "TikTok" ? "Comparacion lado a lado" : "Carrusel comparativo",
+        avatar,
+        painPoint: painPoints[1],
+        hook: `La diferencia entre comprar barato y comprar bien`,
+        headline: `${brand.name}: menos duda, mejor decision`,
+      },
+      {
+        format: "Testimonio / prueba social",
+        avatar: "Comprador que necesita confianza antes de pagar",
+        painPoint: painPoints[2],
+        hook: `Lo que cambia cuando el producto si resuelve el problema`,
+        headline: `Compra con mas claridad, no con promesas vacias`,
+      },
+      {
+        format: "Lista rapida / checklist",
+        avatar: "Persona ocupada que quiere decidir rapido",
+        painPoint: "No sabe que comparar entre opciones similares.",
+        hook: `3 cosas que revisaria antes de comprar`,
+        headline: `La checklist simple para elegir mejor`,
+      },
+      {
+        format: "Founder POV / detras de marca",
+        avatar: "Cliente que compra por criterio, historia y confianza",
+        painPoint: "Siente que todas las marcas dicen lo mismo.",
+        hook: `Por que hicimos esto diferente`,
+        headline: `Una alternativa mas clara para ${category}`,
+      },
+    ],
+  };
+}
+
+function extractUrlsFromText(value) {
+  const matches = String(value || "").match(/https?:\/\/[^\s,]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s,]*)?/gi) || [];
+  return [...new Set(matches.map((match) => normalizeBrandUrl(match)))];
+}
+
+function inferPrimaryCreativeChannel(text, channels) {
+  const value = `${text} ${channels || ""}`.toLowerCase();
+  if (/tiktok|reels|shorts|ugc/.test(value)) return "TikTok";
+  if (/email|klaviyo|sms/.test(value)) return "email/SMS";
+  if (/google|search|seo/.test(value)) return "Google/Search";
+  return "Meta Ads";
+}
+
+function inferCompetitiveAvatar(text, category) {
+  if (/premium|calidad|lujo/.test(text)) return "Comprador que quiere calidad y seguridad antes de pagar mas";
+  if (/precio|barato|descuento/.test(text)) return "Comprador sensible a precio que compara muchas opciones";
+  if (/regalo|gift/.test(text)) return "Persona que compra para regalar y quiere evitar equivocarse";
+  if (/skincare|piel|beauty|belleza/.test(text)) return "Cliente que quiere resultados visibles sin arriesgar su piel";
+  return `Comprador interesado en ${category} que necesita una razon clara para elegir`;
+}
+
+function inferCompetitivePainPoints(text, category) {
+  if (/skincare|piel|beauty|belleza/.test(text)) {
+    return [
+      "Tiene miedo de irritacion, ingredientes confusos o resultados exagerados.",
+      "No sabe si el producto encaja con su tipo de piel y rutina.",
+      "Desconfia de promesas sin prueba social o evidencia visible.",
+    ];
+  }
+  if (/ropa|fashion|moda|talla/.test(text)) {
+    return [
+      "No sabe si la talla, ajuste o material sera como en las fotos.",
+      "Le preocupa pagar por una prenda que no se vea premium en persona.",
+      "Quiere evitar devoluciones por fit, color o calidad.",
+    ];
+  }
+  return [
+    `No entiende por que una opcion de ${category} es mejor que otra.`,
+    "Quiere evitar comprar algo barato que termine saliendo caro.",
+    "Necesita confianza: prueba social, garantia, materiales y uso real.",
+  ];
+}
+
 function buildBrandAudit(report, brand) {
   const products = report.shopify?.snapshot?.products || [];
   const hasCatalog = products.length > 0;
   const goal = brand.goal.toLowerCase();
   const conversionFocus = /conversion|conversi[oó]n|roas|cac|ads|anuncios/.test(goal);
   const retentionFocus = /retencion|retenci[oó]n|email|recompra|ltv|clientes/.test(goal);
+  const inspirationFocus = /compet|inspiraci[oó]n|hooks?|headlines?|titulares?|avatar|pain points?|puntos? de dolor|formatos?|creativos?/.test(
+    `${goal} ${report.naturalRequest || ""}`.toLowerCase(),
+  );
 
   return {
-    decision: hasCatalog
-      ? `Analizar ${brand.name} como una marca en operacion: cruzar posicionamiento, catalogo, pricing e inventario antes de sugerir crecimiento.`
-      : `Analizar ${brand.name} como marca existente: primero ordenar contexto, promesa, oferta, canales y datos faltantes antes de recomendar anuncios o inventario.`,
+    decision: inspirationFocus
+      ? `Desglosar competencia para ${brand.name}: extraer patrones de hooks, headlines, formatos, avatar y pain points para inspirar nuevos angulos sin copiar.`
+      : hasCatalog
+        ? `Analizar ${brand.name} como una marca en operacion: cruzar posicionamiento, catalogo, pricing e inventario antes de sugerir crecimiento.`
+        : `Analizar ${brand.name} como marca existente: primero ordenar contexto, promesa, oferta, canales y datos faltantes antes de recomendar anuncios o inventario.`,
     context: [
       `Objetivo principal: ${brand.goal}.`,
       `Canales declarados: ${brand.channels}.`,
@@ -2199,7 +2367,7 @@ function setLoading(isLoading) {
 function buildPrompt(report) {
   if (report.businessStage === "brand") {
     const brand = normalizeBrandContext(report);
-    return `Actua como Agent Genia. El usuario tiene una marca existente: ${brand.name}. Solicitud: "${report.naturalRequest}". Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
+    return `Actua como Agent Genia. El usuario tiene una marca existente: ${brand.name}. Solicitud: "${report.naturalRequest}". Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si pide competencia o inspiracion, desglosa lo que otros estan haciendo en hooks, headlines, formato, avatar y pain points; separa evidencia observada de hipotesis y no copies claims. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
   }
   return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Decide que herramienta interna usar. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
 }
@@ -2272,6 +2440,7 @@ ${buildPrompt(report)}
 function buildBrandMarkdown(report) {
   const brand = normalizeBrandContext(report);
   const audit = buildBrandAudit(report, brand);
+  const competitorInspiration = buildCompetitorInspiration(report, brand);
   const shopifySection = report.shopify?.shop ? buildShopifyMarkdown(report) : "";
 
   return `# Auditoria de marca
@@ -2292,6 +2461,12 @@ ${audit.decision}
 ## Riesgos
 
 ${audit.risks.map((item) => `- ${item}`).join("\n")}
+
+## Inspiracion de competencia
+
+| Formato | Avatar | Pain point | Hook | Headline |
+| --- | --- | --- | --- | --- |
+${competitorInspiration.rows.map((row) => `| ${row.format} | ${row.avatar} | ${row.painPoint} | ${row.hook} | ${row.headline} |`).join("\n")}
 
 ## Oferta
 

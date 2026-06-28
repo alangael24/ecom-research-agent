@@ -870,6 +870,43 @@ textarea:focus {
   margin: 0 0 8px;
 }
 
+.inspiration-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.inspiration-card {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.inspiration-card div {
+  border-right: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.inspiration-card div:last-child {
+  border-right: 0;
+}
+
+.inspiration-card span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.inspiration-card strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
 .report-card ul,
 .report-card ol {
   margin: 0;
@@ -1317,8 +1354,18 @@ textarea:focus {
   .field-grid,
   .report-grid,
   .metric-row,
-  .agent-work-grid {
+  .agent-work-grid,
+  .inspiration-card {
     grid-template-columns: 1fr;
+  }
+
+  .inspiration-card div {
+    border-bottom: 1px solid var(--line);
+    border-right: 0;
+  }
+
+  .inspiration-card div:last-child {
+    border-bottom: 0;
   }
 
   .hero > h2 {
