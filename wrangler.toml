@@ -1,3 +1,7 @@
 name = "ecom-research-agent"
 compatibility_date = "2026-06-27"
 pages_build_output_dir = "dist"
+
+[vars]
+SUPABASE_URL = "https://jzwdskeqqfptazvrwgpm.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_SZmpi6Vup0D4kFPdcldpag_YzNUzxxh"

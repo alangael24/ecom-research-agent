@@ -24,14 +24,43 @@
           </div>
         </a>
         <div class="top-actions">
+          <button class="icon-button auth-only" id="toggleHistory" type="button" title="Historial">
+            <i data-lucide="history"></i>
+          </button>
           <button class="icon-button" id="copySummary" type="button" title="Copiar resumen">
             <i data-lucide="copy"></i>
           </button>
           <button class="icon-button" id="downloadBrief" type="button" title="Descargar brief">
             <i data-lucide="download"></i>
           </button>
+          <button class="icon-button auth-only" id="signOut" type="button" title="Salir">
+            <i data-lucide="log-out"></i>
+          </button>
         </div>
       </header>
+
+      <section class="auth-gate" id="authGate" hidden>
+        <form class="auth-card" id="signInForm">
+          <div class="brand-mark" aria-hidden="true">
+            <i data-lucide="wand-sparkles"></i>
+          </div>
+          <h2>Entra a Agent Genia</h2>
+          <p>Acceso privado para guardar research, archivos y proveedores.</p>
+          <label>
+            Email
+            <input id="authEmail" name="email" type="email" autocomplete="email" required />
+          </label>
+          <label>
+            Password
+            <input id="authPassword" name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button class="primary-button" type="submit">
+            <i data-lucide="log-in"></i>
+            Entrar
+          </button>
+          <p class="auth-status" id="authStatus" role="status"></p>
+        </form>
+      </section>
 
       <main class="main-page">
         <section class="hero">
@@ -39,8 +68,16 @@
 
           <form class="command-panel" id="researchForm">
             <input id="accessKey" name="accessKey" type="hidden" />
+            <input
+              id="attachmentInput"
+              name="attachments"
+              type="file"
+              accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xlsx,.xls,.json"
+              multiple
+              hidden
+            />
             <div class="prompt-row">
-              <button class="plus-button" type="button" title="Agregar contexto">
+              <button class="plus-button" type="button" title="Subir archivo o imagen" aria-label="Subir archivo o imagen">
                 <i data-lucide="plus"></i>
               </button>
               <textarea
@@ -59,6 +96,7 @@
                 </button>
               </div>
             </div>
+            <div class="attachment-tray" id="attachmentTray" aria-live="polite" hidden></div>
           </form>
         </section>
 
@@ -80,6 +118,16 @@
           <div class="report" id="quality" data-panel="quality"></div>
         </section>
       </main>
+
+      <aside class="history-drawer" id="historyDrawer" hidden>
+        <div class="history-head">
+          <h2>Historial</h2>
+          <button class="icon-button" id="closeHistory" type="button" title="Cerrar historial">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <div class="history-list" id="historyList"></div>
+      </aside>
     </div>
 
     <template id="emptyState">

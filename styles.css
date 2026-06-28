@@ -111,6 +111,14 @@ button {
   gap: 8px;
 }
 
+.auth-only {
+  display: none;
+}
+
+.authenticated .auth-only {
+  display: grid;
+}
+
 .icon-button {
   align-items: center;
   background: var(--surface);
@@ -135,6 +143,109 @@ button {
   max-width: 1280px;
   min-height: 100vh;
   padding: clamp(42px, 8vh, 88px) clamp(18px, 4vw, 64px) 42px;
+}
+
+.auth-required .main-page,
+.auth-required .history-drawer {
+  display: none;
+}
+
+.auth-gate {
+  align-items: center;
+  display: grid;
+  min-height: 100vh;
+  padding: clamp(22px, 5vw, 64px);
+}
+
+.auth-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 20px 70px rgba(22, 34, 29, 0.08);
+  display: grid;
+  gap: 14px;
+  margin: 0 auto;
+  max-width: 420px;
+  padding: clamp(22px, 4vw, 34px);
+  width: 100%;
+}
+
+.auth-card h2,
+.auth-card p {
+  margin: 0;
+}
+
+.auth-card h2 {
+  font-size: 30px;
+  line-height: 1.05;
+}
+
+.auth-card p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.auth-status {
+  min-height: 22px;
+}
+
+.history-drawer {
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  bottom: 0;
+  box-shadow: -18px 0 48px rgba(22, 34, 29, 0.1);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-width: 390px;
+  position: fixed;
+  right: 0;
+  top: 0;
+  width: min(100vw, 390px);
+  z-index: 30;
+}
+
+.history-head {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.history-head h2 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.history-list {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.history-item {
+  background: #f8fbf9;
+  border: 1px solid var(--line);
+  color: inherit;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  text-align: left;
+  width: 100%;
+}
+
+.history-item strong,
+.history-item span {
+  overflow-wrap: anywhere;
+}
+
+.history-item strong {
+  font-size: 14px;
+}
+
+.history-item span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .hero {
@@ -207,6 +318,13 @@ button {
   width: 58px;
 }
 
+.plus-button:hover,
+.plus-button:focus-visible {
+  background: #f2f7f4;
+  color: var(--teal-dark);
+  outline: 0;
+}
+
 .input-actions {
   align-items: center;
   display: flex;
@@ -231,6 +349,89 @@ button {
 .send-button:disabled {
   background: #87918d;
   cursor: wait;
+}
+
+.plus-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.attachment-tray {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 22px 20px 26px;
+}
+
+.attachment-chip {
+  align-items: center;
+  background: #f8fbf9;
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 34px minmax(0, 1fr) 28px;
+  max-width: min(100%, 320px);
+  min-height: 48px;
+  padding: 6px;
+}
+
+.attachment-thumb,
+.attachment-icon {
+  height: 34px;
+  width: 34px;
+}
+
+.attachment-thumb {
+  object-fit: cover;
+}
+
+.attachment-icon {
+  align-items: center;
+  background: var(--surface);
+  color: var(--muted);
+  display: grid;
+  justify-items: center;
+}
+
+.attachment-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.attachment-copy strong,
+.attachment-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-copy strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.attachment-copy span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.attachment-remove {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  display: inline-flex;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.attachment-remove:hover {
+  color: var(--ink);
 }
 
 .workspace {
@@ -830,6 +1031,21 @@ textarea:focus {
 }
 
 @media (max-width: 640px) {
+  .auth-gate {
+    align-items: start;
+    padding: 88px 14px 24px;
+  }
+
+  .auth-card {
+    padding: 20px;
+  }
+
+  .history-drawer {
+    border-left: 0;
+    max-width: none;
+    width: 100vw;
+  }
+
   .main-page {
     align-content: start;
     gap: 22px;
@@ -911,6 +1127,24 @@ textarea:focus {
     width: 36px;
   }
 
+  .attachment-tray {
+    gap: 7px;
+    padding: 0 12px 12px 10px;
+  }
+
+  .attachment-chip {
+    grid-template-columns: 30px minmax(0, 1fr) 28px;
+    max-width: 100%;
+    min-height: 44px;
+    width: 100%;
+  }
+
+  .attachment-thumb,
+  .attachment-icon {
+    height: 30px;
+    width: 30px;
+  }
+
   .mic-button {
     display: none;
   }
@@ -956,6 +1190,10 @@ textarea:focus {
     min-height: 64px;
     padding-bottom: 8px;
     padding-top: 8px;
+  }
+
+  .report-ready .attachment-tray {
+    padding-bottom: 8px;
   }
 
   .tabs {

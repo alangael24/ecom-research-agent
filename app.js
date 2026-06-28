@@ -1,8 +1,25 @@
 const state = {
   latest: null,
+  attachments: [],
+  config: null,
+  session: null,
+  user: null,
+  runs: [],
 };
 
+const MAX_ATTACHMENTS = 6;
+const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const TEXT_ATTACHMENT_LIMIT = 60000;
+
 const form = document.querySelector("#researchForm");
+const attachmentInput = document.querySelector("#attachmentInput");
+const attachmentTray = document.querySelector("#attachmentTray");
+const authGate = document.querySelector("#authGate");
+const signInForm = document.querySelector("#signInForm");
+const authStatus = document.querySelector("#authStatus");
+const historyDrawer = document.querySelector("#historyDrawer");
+const historyList = document.querySelector("#historyList");
 const panels = [...document.querySelectorAll("[data-panel]")];
 const tabs = [...document.querySelectorAll("[data-tab]")];
 const emptyState = document.querySelector("#emptyState");
@@ -150,18 +167,308 @@ const productProfiles = [
   },
 ];
 
-function init() {
+async function init() {
   renderEmptyState();
   form.accessKey.value = localStorage.getItem("alibabaSourcingAccessKey") || "";
   form.addEventListener("submit", handleSubmit);
+  form.querySelector(".plus-button").addEventListener("click", () => attachmentInput.click());
+  attachmentInput.addEventListener("change", (event) => void handleAttachmentInput(event));
+  attachmentTray.addEventListener("click", handleAttachmentTrayClick);
+  signInForm.addEventListener("submit", handleSignIn);
+  document.querySelector("#signOut").addEventListener("click", signOut);
+  document.querySelector("#toggleHistory").addEventListener("click", toggleHistory);
+  document.querySelector("#closeHistory").addEventListener("click", () => closeHistory());
+  historyList.addEventListener("click", (event) => void handleHistoryClick(event));
   document.querySelector("#downloadBrief").addEventListener("click", downloadBrief);
   document.querySelector("#copySummary").addEventListener("click", copySummary);
   tabs.forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
   lucide.createIcons();
+  await bootAuth();
+}
+
+async function bootAuth() {
+  document.body.classList.add("auth-required");
+  authGate.hidden = false;
+  setAuthStatus("Conectando con Supabase...");
+
+  try {
+    const response = await fetch("./api/config", { headers: { "cache-control": "no-store" } });
+    const config = await response.json();
+    if (!response.ok || !config?.ok) {
+      throw new Error(config?.message || "Supabase no esta configurado.");
+    }
+
+    state.config = {
+      supabaseUrl: config.supabaseUrl,
+      supabaseAnonKey: config.supabaseAnonKey,
+    };
+
+    const restored = await restoreSession();
+    if (restored) {
+      await enterAuthenticatedApp();
+    } else {
+      setAuthStatus("Usa una cuenta invitada para entrar.");
+    }
+  } catch (error) {
+    setAuthStatus(error.message || "No se pudo conectar Supabase.");
+  }
+
+  lucide.createIcons();
+}
+
+async function handleSignIn(event) {
+  event.preventDefault();
+  if (!state.config) {
+    setAuthStatus("Supabase todavia no esta configurado.");
+    return;
+  }
+
+  const button = signInForm.querySelector("button[type='submit']");
+  button.disabled = true;
+  setAuthStatus("Entrando...");
+
+  try {
+    const email = signInForm.email.value.trim();
+    const password = signInForm.password.value;
+    const session = await supabaseAuthRequest("token?grant_type=password", {
+      method: "POST",
+      body: { email, password },
+    });
+    setSession(session);
+    await enterAuthenticatedApp();
+  } catch (error) {
+    clearSession();
+    setAuthStatus(error.message || "No se pudo iniciar sesion.");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function enterAuthenticatedApp() {
+  document.body.classList.remove("auth-required");
+  document.body.classList.add("authenticated");
+  authGate.hidden = true;
+  setAuthStatus("");
+  await loadHistory();
+}
+
+async function restoreSession() {
+  const stored = readStoredSession();
+  if (!stored?.access_token) return false;
+  state.session = stored;
+
+  try {
+    if (stored.expires_at && Date.now() > stored.expires_at - 60000 && stored.refresh_token) {
+      const refreshed = await supabaseAuthRequest("token?grant_type=refresh_token", {
+        method: "POST",
+        useSession: false,
+        body: { refresh_token: stored.refresh_token },
+      });
+      setSession(refreshed);
+    }
+
+    const user = await supabaseAuthRequest("user", { method: "GET" });
+    state.user = user.user || user;
+    return Boolean(state.user?.id);
+  } catch {
+    clearSession();
+    return false;
+  }
+}
+
+async function signOut() {
+  if (state.session?.access_token && state.config) {
+    await fetch(`${state.config.supabaseUrl}/auth/v1/logout`, {
+      method: "POST",
+      headers: authHeaders(),
+    }).catch(() => null);
+  }
+  clearSession();
+  state.latest = null;
+  state.runs = [];
+  closeHistory();
+  document.body.classList.remove("authenticated", "report-ready");
+  document.body.classList.add("auth-required");
+  document.querySelector(".result-panel").hidden = true;
+  authGate.hidden = false;
+  setAuthStatus("Sesion cerrada.");
+}
+
+async function supabaseAuthRequest(path, options = {}) {
+  const response = await fetch(`${state.config.supabaseUrl}/auth/v1/${path}`, {
+    method: options.method || "GET",
+    headers: authHeaders({}, options.useSession !== false),
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : {};
+
+  if (!response.ok) {
+    throw new Error(body.msg || body.message || body.error_description || "Error de autenticacion.");
+  }
+  return body;
+}
+
+function authHeaders(extra = {}, useSession = true) {
+  return {
+    apikey: state.config.supabaseAnonKey,
+    authorization: useSession && state.session?.access_token ? `Bearer ${state.session.access_token}` : `Bearer ${state.config.supabaseAnonKey}`,
+    "content-type": "application/json",
+    ...extra,
+  };
+}
+
+function setSession(session) {
+  const expiresAt = session.expires_at ? session.expires_at * 1000 : Date.now() + Number(session.expires_in || 3600) * 1000;
+  state.session = { ...session, expires_at: expiresAt };
+  state.user = session.user || state.user;
+  localStorage.setItem("agentGeniaSession", JSON.stringify(state.session));
+}
+
+function readStoredSession() {
+  try {
+    return JSON.parse(localStorage.getItem("agentGeniaSession") || "null");
+  } catch {
+    return null;
+  }
+}
+
+function clearSession() {
+  state.session = null;
+  state.user = null;
+  localStorage.removeItem("agentGeniaSession");
+}
+
+function setAuthStatus(message) {
+  authStatus.textContent = message;
+}
+
+async function handleAttachmentInput(event) {
+  const files = [...(event.target.files || [])];
+  event.target.value = "";
+  await addAttachments(files);
+}
+
+async function addAttachments(files) {
+  if (!files.length) return;
+
+  const slots = MAX_ATTACHMENTS - state.attachments.length;
+  if (slots <= 0) {
+    showToast(`Maximo ${MAX_ATTACHMENTS} adjuntos`);
+    return;
+  }
+
+  let added = 0;
+  for (const file of files.slice(0, slots)) {
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      showToast(`${file.name} pesa mas de ${formatBytes(MAX_ATTACHMENT_BYTES)}`);
+      continue;
+    }
+
+    const totalBytes = state.attachments.reduce((sum, item) => sum + item.size, 0) + file.size;
+    if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+      showToast(`Adjuntos maximo ${formatBytes(MAX_TOTAL_ATTACHMENT_BYTES)} en total`);
+      break;
+    }
+
+    try {
+      state.attachments.push(await fileToAttachment(file));
+      added += 1;
+    } catch {
+      showToast(`No pude leer ${file.name}`);
+    }
+  }
+
+  if (files.length > slots && added) {
+    showToast(`${added} adjuntos agregados. Maximo ${MAX_ATTACHMENTS}.`);
+  } else if (files.length > slots) {
+    showToast(`Maximo ${MAX_ATTACHMENTS} adjuntos`);
+  } else if (added) {
+    showToast(added === 1 ? "Adjunto agregado" : `${added} adjuntos agregados`);
+  }
+
+  renderAttachments();
+}
+
+async function fileToAttachment(file) {
+  const kind = attachmentKind(file);
+  const attachment = {
+    id: createAttachmentId(),
+    name: file.name || "archivo",
+    type: file.type || fallbackMimeType(file.name),
+    size: file.size,
+    sizeLabel: formatBytes(file.size),
+    kind,
+    contentMode: "metadata-only",
+  };
+
+  if (kind === "image") {
+    attachment.previewUrl = URL.createObjectURL(file);
+    attachment.dataUrl = await readFileAsDataUrl(file);
+    attachment.contentMode = "image-data-url";
+    return attachment;
+  }
+
+  if (isTextAttachment(file)) {
+    const text = await readFileAsText(file);
+    attachment.content = text.slice(0, TEXT_ATTACHMENT_LIMIT);
+    attachment.truncated = text.length > TEXT_ATTACHMENT_LIMIT;
+    attachment.contentMode = "text";
+    return attachment;
+  }
+
+  attachment.dataUrl = await readFileAsDataUrl(file);
+  attachment.contentMode = "binary-data-url";
+  return attachment;
+}
+
+function renderAttachments() {
+  attachmentTray.hidden = state.attachments.length === 0;
+  attachmentTray.innerHTML = state.attachments.map(renderAttachmentChip).join("");
+  lucide.createIcons();
+}
+
+function renderAttachmentChip(attachment) {
+  const visual =
+    attachment.kind === "image" && attachment.previewUrl
+      ? `<img class="attachment-thumb" src="${escapeHtml(attachment.previewUrl)}" alt="" />`
+      : `<span class="attachment-icon"><i data-lucide="${iconForAttachment(attachment)}"></i></span>`;
+
+  return `<article class="attachment-chip">
+    ${visual}
+    <div class="attachment-copy">
+      <strong>${escapeHtml(attachment.name)}</strong>
+      <span>${escapeHtml(attachment.sizeLabel)} · ${escapeHtml(attachmentLabel(attachment))}</span>
+    </div>
+    <button class="attachment-remove" type="button" data-attachment-id="${escapeHtml(attachment.id)}" title="Quitar adjunto" aria-label="Quitar ${escapeHtml(attachment.name)}">
+      <i data-lucide="x"></i>
+    </button>
+  </article>`;
+}
+
+function handleAttachmentTrayClick(event) {
+  const button = event.target.closest("[data-attachment-id]");
+  if (!button) return;
+  const id = button.dataset.attachmentId;
+  const attachment = state.attachments.find((item) => item.id === id);
+  if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+  state.attachments = state.attachments.filter((item) => item.id !== id);
+  renderAttachments();
+}
+
+function serializeAttachments() {
+  return state.attachments.map(({ previewUrl, ...attachment }) => attachment);
 }
 
 async function handleSubmit(event) {
   event.preventDefault();
+  if (!state.session?.access_token) {
+    document.body.classList.add("auth-required");
+    authGate.hidden = false;
+    setAuthStatus("Inicia sesion para usar el agente.");
+    return;
+  }
+
   const data = readForm();
   const report = buildReport(data);
   setLoading(true);
@@ -176,8 +483,7 @@ async function handleSubmit(event) {
       report.backendError = backend.message;
     }
   } catch (error) {
-    report.backendError =
-      "Preview local sin harness conectado. En produccion, el agente ejecuta busqueda, comparacion y cola de negociacion desde esta misma pagina.";
+    report.backendError = error.message || "No se pudo conectar con el backend.";
   }
 
   state.latest = report;
@@ -187,6 +493,7 @@ async function handleSubmit(event) {
   activateTab("brief");
   saveState(report);
   setLoading(false);
+  await loadHistory();
   showToast(report.ai ? "Sourcing generado con Codex" : "Plan guiado generado");
 }
 
@@ -197,6 +504,7 @@ function readForm() {
     naturalRequest,
     ...inferred,
     accessKey: form.accessKey.value.trim(),
+    attachments: serializeAttachments(),
   };
 }
 
@@ -266,16 +574,10 @@ function buildReport(data) {
 }
 
 async function requestBackendReport(data) {
-  if (data.accessKey) {
-    localStorage.setItem("alibabaSourcingAccessKey", data.accessKey);
-  }
-
   const headers = {
     "content-type": "application/json",
+    authorization: `Bearer ${state.session.access_token}`,
   };
-  if (data.accessKey) {
-    headers["x-app-password"] = data.accessKey;
-  }
 
   const response = await fetch("./api/research", {
     method: "POST",
@@ -287,7 +589,11 @@ async function requestBackendReport(data) {
     throw new Error("Backend not deployed");
   }
 
-  return response.json();
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body.message || "No se pudo generar el research.");
+  }
+  return body;
 }
 
 function defaultDestination(market) {
@@ -553,6 +859,7 @@ function renderReport(report) {
           <span class="pill"><i data-lucide="package"></i>${escapeHtml(report.product)}</span>
           <span class="pill"><i data-lucide="map-pin"></i>${escapeHtml(report.destination)}</span>
           <span class="pill"><i data-lucide="wrench"></i>${escapeHtml(toolLabel(report.selectedInternalTool))}</span>
+          ${renderAttachmentPills(report.attachments)}
           ${ai ? '<span class="pill"><i data-lucide="cpu"></i>Codex harness</span>' : ""}
         </div>
       </article>
@@ -597,6 +904,7 @@ function renderReport(report) {
           <li>Mercado: ${escapeHtml(report.market)}</li>
           <li>Destino: ${escapeHtml(report.destination)}</li>
           <li>Prioridad: ${escapeHtml(report.qualityLevel)}</li>
+          <li>Adjuntos: ${escapeHtml(attachmentSummary(report.attachments))}</li>
         </ul>
       </article>
       <article class="report-card">
@@ -879,6 +1187,91 @@ function activateTab(name) {
   panels.forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === name));
 }
 
+async function loadHistory() {
+  if (!state.session?.access_token) return;
+  try {
+    const response = await fetch("./api/runs", {
+      headers: {
+        authorization: `Bearer ${state.session.access_token}`,
+      },
+    });
+    const body = await response.json();
+    if (!response.ok || !body.ok) throw new Error(body.message || "No se pudo cargar historial.");
+    state.runs = body.runs || [];
+    renderHistory();
+  } catch (error) {
+    historyList.innerHTML = `<p class="auth-status">${escapeHtml(error.message || "No se pudo cargar historial.")}</p>`;
+  }
+}
+
+function renderHistory() {
+  if (!state.runs.length) {
+    historyList.innerHTML = '<p class="auth-status">Todavia no hay research guardado.</p>';
+    return;
+  }
+
+  historyList.innerHTML = state.runs
+    .map(
+      (run) => `<button class="history-item" type="button" data-run-id="${escapeHtml(run.id)}">
+        <strong>${escapeHtml(run.natural_request || "Research")}</strong>
+        <span>${escapeHtml(run.status || "sin estado")} · ${escapeHtml(formatRunDate(run.created_at))}</span>
+      </button>`,
+    )
+    .join("");
+}
+
+async function toggleHistory() {
+  if (historyDrawer.hidden) {
+    await loadHistory();
+    historyDrawer.hidden = false;
+  } else {
+    closeHistory();
+  }
+}
+
+function closeHistory() {
+  historyDrawer.hidden = true;
+}
+
+async function handleHistoryClick(event) {
+  const button = event.target.closest("[data-run-id]");
+  if (!button) return;
+  const runId = button.dataset.runId;
+  button.disabled = true;
+
+  try {
+    const response = await fetch(`./api/runs/${encodeURIComponent(runId)}`, {
+      headers: {
+        authorization: `Bearer ${state.session.access_token}`,
+      },
+    });
+    const body = await response.json();
+    if (!response.ok || !body.ok) throw new Error(body.message || "No se pudo abrir el research.");
+
+    const run = body.run;
+    const input = run.input_json || {};
+    const report = buildReport({
+      ...input,
+      naturalRequest: run.natural_request || input.naturalRequest || "Research guardado",
+      attachments: input.attachments || [],
+      accessKey: "",
+    });
+    report.ai = run.result_json || null;
+    report.backendMode = "supabase";
+    report.runId = run.id;
+    state.latest = report;
+    document.body.classList.add("report-ready");
+    document.querySelector(".result-panel").hidden = false;
+    renderReport(report);
+    activateTab("brief");
+    closeHistory();
+  } catch (error) {
+    showToast(error.message || "No se pudo abrir");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function renderCompactSections(sections) {
   return sections
     .filter(([, items]) => Array.isArray(items) && items.length)
@@ -893,7 +1286,9 @@ function renderCompactSections(sections) {
 
 function setLoading(isLoading) {
   const button = form.querySelector("button[type='submit']");
+  const uploadButton = form.querySelector(".plus-button");
   button.disabled = isLoading;
+  uploadButton.disabled = isLoading;
   button.title = isLoading ? "Trabajando" : "Ejecutar agente";
   button.innerHTML = isLoading
     ? '<i data-lucide="loader-circle"></i>'
@@ -902,7 +1297,8 @@ function setLoading(isLoading) {
 }
 
 function buildPrompt(report) {
-  return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Decide que herramienta interna usar. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
+  const attachments = attachmentSummary(report.attachments);
+  return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Adjuntos: ${attachments}. Decide que herramienta interna usar. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
 }
 
 function buildMarkdown(report) {
@@ -926,6 +1322,7 @@ Destino DDP: ${report.destination}
 Presupuesto: ${report.budget || "no definido"}
 Cantidad: ${report.orderQuantity || "no definida"}
 Costo objetivo: ${report.targetUnitCost ? formatMoney(report.targetUnitCost) : "no definido"}
+Adjuntos: ${attachmentSummary(report.attachments)}
 
 ## Decision
 
@@ -969,6 +1366,7 @@ Producto: ${report.product}
 Mercado: ${report.market}
 Destino DDP: ${report.destination}
 Modo: Codex harness
+Adjuntos: ${attachmentSummary(report.attachments)}
 
 ## Decision
 
@@ -1036,7 +1434,108 @@ async function copySummary() {
 }
 
 function saveState(report) {
-  localStorage.setItem("alibabaSourcingLatest", JSON.stringify(report));
+  const lightReport = {
+    ...report,
+    attachments: (report.attachments || []).map(({ dataUrl, content, ...attachment }) => ({
+      ...attachment,
+      contentPreview: content ? content.slice(0, 400) : "",
+      hasInlineData: Boolean(dataUrl || content),
+    })),
+  };
+  try {
+    localStorage.setItem("alibabaSourcingLatest", JSON.stringify(lightReport));
+  } catch {
+    localStorage.removeItem("alibabaSourcingLatest");
+  }
+}
+
+function attachmentKind(file) {
+  const name = file.name || "";
+  const type = file.type || "";
+  if (type.startsWith("image/")) return "image";
+  if (type === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
+  if (/\.(docx?|xlsx?|csv|txt|json|md)$/i.test(name)) return "document";
+  return "file";
+}
+
+function attachmentLabel(attachment) {
+  if (attachment.kind === "image") return "imagen";
+  if (attachment.kind === "pdf") return "PDF";
+  if (attachment.contentMode === "text") return "texto";
+  if (attachment.kind === "document") return "documento";
+  return "archivo";
+}
+
+function attachmentSummary(attachments = []) {
+  if (!attachments.length) return "ninguno";
+  return attachments
+    .map((item) => `${item.name} (${item.sizeLabel || formatBytes(item.size)}, ${attachmentLabel(item)})`)
+    .join("; ");
+}
+
+function renderAttachmentPills(attachments = []) {
+  return attachments
+    .map(
+      (item) => `<span class="pill"><i data-lucide="${iconForAttachment(item)}"></i>${escapeHtml(item.name)}</span>`,
+    )
+    .join("");
+}
+
+function iconForAttachment(attachment) {
+  if (attachment.kind === "image") return "image";
+  if (attachment.kind === "pdf") return "file-text";
+  if (attachment.contentMode === "text") return "file-type";
+  return "paperclip";
+}
+
+function isTextAttachment(file) {
+  const type = file.type || "";
+  return (
+    type.startsWith("text/") ||
+    ["application/json", "text/csv"].includes(type) ||
+    /\.(txt|csv|json|md)$/i.test(file.name || "")
+  );
+}
+
+function fallbackMimeType(name = "") {
+  if (/\.pdf$/i.test(name)) return "application/pdf";
+  if (/\.csv$/i.test(name)) return "text/csv";
+  if (/\.json$/i.test(name)) return "application/json";
+  if (/\.txt$/i.test(name)) return "text/plain";
+  if (/\.docx$/i.test(name)) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (/\.xlsx$/i.test(name)) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  return "application/octet-stream";
+}
+
+function readFileAsDataUrl(file) {
+  return readFile(file, "DataURL");
+}
+
+function readFileAsText(file) {
+  return readFile(file, "Text");
+}
+
+function readFile(file, method) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error);
+    reader[`readAs${method}`](file);
+  });
+}
+
+function createAttachmentId() {
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 KB";
+  const units = ["B", "KB", "MB", "GB"];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** exponent;
+  const digits = exponent === 0 || value >= 10 ? 0 : 1;
+  return `${value.toFixed(digits)} ${units[exponent]}`;
 }
 
 function numberValue(value) {
@@ -1046,6 +1545,18 @@ function numberValue(value) {
 
 function formatMoney(value) {
   return `$${Number(value).toFixed(2)}`;
+}
+
+function formatRunDate(value) {
+  if (!value) return "";
+  try {
+    return new Date(value).toLocaleString("es-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return String(value);
+  }
 }
 
 function toolLabel(value) {
