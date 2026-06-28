@@ -71,7 +71,8 @@ function validatePayload(payload) {
   if (payload.product && !stringField(payload.product, 500)) return "Invalid product.";
   if (payload.productDetails && !stringField(payload.productDetails, 2000)) return "Invalid product details.";
   if (payload.goals && !Array.isArray(payload.goals)) return "Invalid goals.";
-  if (payload.businessStage && !["starter", "shopify"].includes(payload.businessStage)) return "Invalid business stage.";
+  if (payload.businessStage && !["starter", "brand", "shopify"].includes(payload.businessStage)) return "Invalid business stage.";
+  if (payload.brand && typeof payload.brand !== "object") return "Invalid brand payload.";
   if (payload.shopify && typeof payload.shopify !== "object") return "Invalid Shopify payload.";
   return "";
 }
@@ -141,6 +142,10 @@ Inferencias del frontend, revisalas y corrigelas si hace falta:
 - Prioridad inferida: ${payload.qualityLevel || "balanced"}
 - Herramienta sugerida: ${payload.selectedInternalTool || "decidir"}
 - Camino ecommerce: ${payload.businessStage || "starter"}
+- Marca: ${payload.brand?.name || "no especificada"}
+- Sitio o referencia de marca: ${payload.brand?.url || "no especificado"}
+- Canales de marca: ${payload.brand?.channels || "no especificados"}
+- Objetivo de marca: ${payload.brand?.goal || "no especificado"}
 - Shopify conectado: ${payload.shopify?.shop || "no"}
 - Foco Shopify: ${payload.shopify?.focus || "no especificado"}
 - Snapshot Shopify: ${payload.shopify?.snapshot ? JSON.stringify(payload.shopify.snapshot).slice(0, 6000) : "sin snapshot"}
@@ -150,9 +155,11 @@ Herramientas internas disponibles:
 - ecom research: usar para research de marca, problema, Meta Ads, Amazon reviews, TikTok, avatar, hooks y validacion de oportunidad.
 - unit economics filter: usar cuando la solicitud pida costos, margen, CAC, ROAS, break even, rentabilidad o si conviene lanzar.
 - shipping rate quote: usar cuando la solicitud pida cotizar envio, tarifa de paqueteria, costo de paquete, origen/destino, CP, peso o medidas.
+- brand audit: usar cuando businessStage sea brand o el usuario tenga una marca/tienda existente. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y experimentos.
 - shopify store audit: usar cuando businessStage sea shopify o cuando exista una tienda Shopify conectada. Lee el snapshot como contexto real; no pidas tokens manuales.
 
 Reglas:
+- Si businessStage es brand, responde como auditoria de marca existente. No trates al usuario como principiante sin tienda; separa lo que ya existe, lo que falta medir y las decisiones de crecimiento.
 - Si businessStage es shopify, conserva la auditoria dentro del mismo schema y, cuando tengas datos suficientes, llena shopifyPlan con resumen de tienda, oportunidades de catalogo y acciones prioritarias.
 - Si eliges Alibaba sourcing, usa $alibaba-sourcing-agent como herramienta interna. No lo presentes como pagina separada ni pidas al usuario llenar formulario extra.
 - Si detectas intencion de costos, margen, CAC, ROAS, break even o rentabilidad, separa numeros dados de supuestos y no recomiendes lanzar sin pasar por unit economics.

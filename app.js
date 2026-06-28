@@ -20,7 +20,10 @@ const shopifyDomainInput = document.querySelector("#shopifyDomain");
 const shopifyStoreSelect = document.querySelector("#shopifyStore");
 const shopifyFocusInput = document.querySelector("#shopifyFocus");
 const shopifyConnectionStatus = document.querySelector("#shopifyConnectionStatus");
-const stageCards = [...document.querySelectorAll("[data-stage-card]")];
+const toolMenuToggle = document.querySelector("#toolMenuToggle");
+const toolMenu = document.querySelector("#toolMenu");
+const toolOptionButtons = [...document.querySelectorAll("[data-tool-option]")];
+const activeContextChip = document.querySelector("#activeContextChip");
 const hero = document.querySelector(".hero");
 const authPage = document.querySelector("#authPage");
 const authError = document.querySelector("#authError");
@@ -236,16 +239,51 @@ function setupStageControls() {
   form.querySelectorAll("input[name='businessStage']").forEach((input) => {
     input.addEventListener("change", updateStageUI);
   });
-  stageCards.forEach((card) => {
-    card.addEventListener("click", () => selectBusinessStage(card.dataset.stageCard));
+  toolMenuToggle?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleToolMenu();
   });
-  document.querySelector("#loginShopify")?.addEventListener("click", startShopifyLogin);
+  activeContextChip?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleToolMenu(true);
+  });
+  toolOptionButtons.forEach((button) => {
+    button.addEventListener("click", () => selectToolOption(button.dataset.toolOption));
+  });
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element) || !event.target.closest(".tool-menu-wrap")) closeToolMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeToolMenu();
+  });
   document.querySelector("#connectShopify")?.addEventListener("click", connectShopifyStore);
   document.querySelector("#refreshShopifyStores")?.addEventListener("click", loadShopifyStores);
   document.querySelector("#disconnectShopify")?.addEventListener("click", disconnectSelectedShopifyStore);
-  document.querySelector("#closeShopifyPanel")?.addEventListener("click", () => selectBusinessStage("starter"));
-  document.querySelector("#closeBrandPanel")?.addEventListener("click", () => selectBusinessStage("starter"));
   updateStageUI();
+}
+
+function toggleToolMenu(forceOpen) {
+  if (!toolMenu || !toolMenuToggle) return;
+  const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : toolMenu.hidden;
+  toolMenu.hidden = !shouldOpen;
+  toolMenuToggle.setAttribute("aria-expanded", String(shouldOpen));
+  if (shouldOpen) lucide.createIcons();
+}
+
+function closeToolMenu() {
+  if (!toolMenu || !toolMenuToggle) return;
+  toolMenu.hidden = true;
+  toolMenuToggle.setAttribute("aria-expanded", "false");
+}
+
+function selectToolOption(stage) {
+  closeToolMenu();
+  selectBusinessStage(stage);
+  if (stage === "shopify") {
+    startShopifyLogin();
+    return;
+  }
+  form.naturalRequest.focus();
 }
 
 function selectBusinessStage(stage) {
@@ -253,9 +291,6 @@ function selectBusinessStage(stage) {
   if (!input) return;
   input.checked = true;
   updateStageUI();
-  if (stage === "shopify" || stage === "brand") {
-    (stage === "shopify" ? shopifyFields : brandFields)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }
 }
 
 function handleShopifyEntryParams() {
@@ -286,7 +321,7 @@ function handleShopifyCallbackParams() {
 }
 
 async function startShopifyLogin() {
-  const button = document.querySelector("#loginShopify");
+  const button = document.querySelector("#loginShopify") || document.querySelector("[data-tool-option='shopify']");
   if (button) button.disabled = true;
 
   try {
@@ -309,7 +344,7 @@ async function startShopifyLogin() {
 }
 
 function openManualShopifyFallback() {
-  document.querySelector(".manual-shopify")?.setAttribute("open", "");
+  form.naturalRequest.focus();
 }
 
 function selectedBusinessStage() {
@@ -317,17 +352,42 @@ function selectedBusinessStage() {
 }
 
 function updateStageUI() {
-  const isShopify = selectedBusinessStage() === "shopify";
-  const isBrand = selectedBusinessStage() === "brand";
-  if (brandFields) brandFields.hidden = !isBrand;
-  if (shopifyFields) shopifyFields.hidden = !isShopify;
+  const stage = selectedBusinessStage();
+  const isShopify = stage === "shopify";
+  const isBrand = stage === "brand";
+  if (brandFields) brandFields.hidden = true;
+  if (shopifyFields) shopifyFields.hidden = true;
   document.body.classList.toggle("shopify-mode", isShopify);
   document.body.classList.toggle("brand-mode", isBrand);
-  stageCards.forEach((card) => {
-    const active = card.dataset.stageCard === selectedBusinessStage();
-    card.classList.toggle("active", active);
-    card.setAttribute("aria-pressed", String(active));
+  toolOptionButtons.forEach((button) => {
+    const active = button.dataset.toolOption === stage;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+    if (button.dataset.toolOption === "starter") button.hidden = stage === "starter";
   });
+  updateActiveContextChip(stage);
+}
+
+function updateActiveContextChip(stage) {
+  if (!activeContextChip) return;
+  const config = {
+    brand: { icon: "store", label: "Analizar marca" },
+    shopify: { icon: "shopping-bag", label: "Shopify" },
+  }[stage];
+
+  if (!config) {
+    activeContextChip.hidden = true;
+    activeContextChip.innerHTML = "";
+    activeContextChip.removeAttribute("data-active-stage");
+    return;
+  }
+
+  activeContextChip.hidden = false;
+  activeContextChip.title = config.label;
+  activeContextChip.setAttribute("aria-label", `Contexto activo: ${config.label}`);
+  activeContextChip.dataset.activeStage = stage;
+  activeContextChip.innerHTML = `<i data-lucide="${config.icon}"></i>`;
+  lucide.createIcons();
 }
 
 async function loadShopifyStores() {
@@ -367,6 +427,8 @@ function renderShopifyStoreOptions() {
 
   if (state.shopifyStores.some((store) => store.shop === current)) {
     shopifyStoreSelect.value = current;
+  } else if (state.shopifyStores[0]?.shop) {
+    shopifyStoreSelect.value = state.shopifyStores[0].shop;
   }
   state.pendingShopifyShop = "";
 }
@@ -601,22 +663,74 @@ function readForm() {
   const naturalRequest = form.naturalRequest.value.trim() || "Quiero investigar una oportunidad ecommerce y necesito siguientes pasos claros.";
   const businessStage = selectedBusinessStage();
   const inferred = inferRequest(naturalRequest, businessStage);
+  const inferredBrand = businessStage === "brand" ? inferBrandContext(naturalRequest) : {};
   return {
     businessStage,
     naturalRequest,
     ...inferred,
     shopify: {
       shop: shopifyStoreSelect?.value || "",
-      focus: shopifyFocusInput?.value.trim() || "",
+      focus: shopifyFocusInput?.value.trim() || inferShopifyFocus(naturalRequest),
     },
     brand: {
-      name: brandNameInput?.value.trim() || "",
-      url: normalizeBrandUrl(brandUrlInput?.value.trim() || ""),
-      channels: brandChannelsInput?.value.trim() || "",
-      goal: brandGoalInput?.value.trim() || "",
+      name: brandNameInput?.value.trim() || inferredBrand.name || "",
+      url: normalizeBrandUrl(brandUrlInput?.value.trim() || inferredBrand.url || ""),
+      channels: brandChannelsInput?.value.trim() || inferredBrand.channels || "",
+      goal: brandGoalInput?.value.trim() || inferredBrand.goal || "",
     },
     accessKey: form.accessKey.value.trim(),
   };
+}
+
+function inferBrandContext(value) {
+  const text = String(value || "");
+  const lower = text.toLowerCase();
+  const url = inferUrlFromText(text);
+  const channels = inferChannelsFromText(lower);
+  const goal = inferBrandGoalFromText(lower);
+  const nameMatch = text.match(
+    /(?:marca|brand|tienda|store)\s+(?:se llama|llamada|llamado|es|de)?\s*([a-z0-9áéíóúñ& .'-]{2,60})/i,
+  );
+  const name = cleanBrandName(nameMatch?.[1] || inferBrandNameFromUrl(url));
+
+  return { name, url, channels, goal };
+}
+
+function inferUrlFromText(value) {
+  const match = String(value || "").match(/https?:\/\/[^\s,]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s,]*)?/i);
+  return match ? normalizeBrandUrl(match[0]) : "";
+}
+
+function inferChannelsFromText(value) {
+  const channels = [];
+  if (/meta|facebook|instagram|ig\b/.test(value)) channels.push("Meta Ads");
+  if (/tiktok/.test(value)) channels.push("TikTok");
+  if (/email|klaviyo|sms/.test(value)) channels.push("email/SMS");
+  if (/google|search|seo/.test(value)) channels.push("Google/Search");
+  if (/amazon|marketplace/.test(value)) channels.push("marketplace");
+  return channels.join(", ");
+}
+
+function inferBrandGoalFromText(value) {
+  if (/conversion|conversi[oó]n|cvr|checkout/.test(value)) return "mejorar conversion";
+  if (/retencion|retenci[oó]n|recompra|ltv|email/.test(value)) return "mejorar retencion";
+  if (/aov|ticket|bundle|paquete/.test(value)) return "subir AOV";
+  if (/ads|roas|cac|anuncios/.test(value)) return "mejorar adquisicion pagada";
+  if (/catalogo|cat[aá]logo|producto ganador|sku/.test(value)) return "ordenar catalogo";
+  if (/marca|brand|posicionamiento/.test(value)) return "mejorar posicionamiento";
+  return "";
+}
+
+function inferShopifyFocus(value) {
+  const goal = inferBrandGoalFromText(String(value || "").toLowerCase());
+  return goal || "";
+}
+
+function cleanBrandName(value) {
+  return String(value || "")
+    .replace(/\s+(que|para|con|en|y|,|\.).*$/i, "")
+    .trim()
+    .slice(0, 60);
 }
 
 function inferRequest(naturalRequest, businessStage = "starter") {
@@ -1612,17 +1726,20 @@ function renderBrandReport(report) {
 
 function normalizeBrandContext(report) {
   const brand = report.brand || {};
+  const promptBrand = inferBrandContext(report.naturalRequest || "");
+  const url = brand.url || promptBrand.url || "";
   const inferredName =
     brand.name ||
-    inferBrandNameFromUrl(brand.url) ||
+    promptBrand.name ||
+    inferBrandNameFromUrl(url) ||
     report.product?.split(/\s+/).slice(0, 4).join(" ") ||
     "Marca";
   return {
     name: inferredName,
-    url: brand.url || "",
-    channels: brand.channels || "canales no definidos",
-    goal: brand.goal || report.shopify?.focus || "crecer con mejor contexto",
-    stage: report.shopify?.shop ? "con tienda conectada" : brand.url ? "marca con presencia digital" : "contexto inicial",
+    url,
+    channels: brand.channels || promptBrand.channels || "canales no definidos",
+    goal: brand.goal || report.shopify?.focus || promptBrand.goal || "crecer con mejor contexto",
+    stage: report.shopify?.shop ? "con tienda conectada" : url ? "marca con presencia digital" : "contexto inicial",
   };
 }
 

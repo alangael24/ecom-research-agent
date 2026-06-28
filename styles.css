@@ -378,7 +378,7 @@ button {
   align-items: center;
   display: grid;
   gap: 16px;
-  grid-template-columns: 58px minmax(0, 1fr) auto;
+  grid-template-columns: 58px minmax(0, 1fr) auto auto;
   min-height: 112px;
   padding: 20px 22px 20px 26px;
 }
@@ -402,11 +402,16 @@ button {
 
 .plus-button,
 .send-button,
-.mic-button {
+.mic-button,
+.active-context-chip {
   align-items: center;
   border: 0;
   display: inline-flex;
   justify-content: center;
+}
+
+.tool-menu-wrap {
+  position: relative;
 }
 
 .plus-button {
@@ -414,6 +419,108 @@ button {
   color: var(--muted);
   height: 58px;
   width: 58px;
+}
+
+.plus-button:hover,
+.plus-button[aria-expanded="true"] {
+  color: var(--teal-dark);
+}
+
+.tool-menu {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 18px 44px rgba(22, 34, 29, 0.13);
+  display: grid;
+  gap: 4px;
+  left: 0;
+  min-width: 236px;
+  padding: 6px;
+  position: absolute;
+  top: calc(100% + 10px);
+  z-index: 20;
+}
+
+.tool-option {
+  appearance: none;
+  -webkit-appearance: none;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ink);
+  display: grid;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 850;
+  gap: 10px;
+  grid-template-columns: 30px minmax(0, 1fr) 18px;
+  min-height: 42px;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.tool-option:hover,
+.tool-option.active {
+  background: #eef6f3;
+}
+
+.tool-option.quiet {
+  color: var(--muted);
+}
+
+.tool-option-icon {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.tool-option-icon svg {
+  height: 20px;
+  width: 20px;
+}
+
+.brand-tool {
+  color: var(--blue);
+}
+
+.shopify-tool {
+  color: var(--teal);
+}
+
+.tool-option-check {
+  color: var(--teal);
+  display: none;
+  height: 18px;
+  width: 18px;
+}
+
+.tool-option.active .tool-option-check {
+  display: block;
+}
+
+.active-context-chip {
+  appearance: none;
+  -webkit-appearance: none;
+  background: #eef6f3;
+  border: 1px solid rgba(15, 123, 104, 0.18);
+  border-radius: 999px;
+  color: var(--teal-dark);
+  height: 40px;
+  padding: 0;
+  width: 40px;
+}
+
+.active-context-chip[data-active-stage="brand"] {
+  color: var(--blue);
+}
+
+.active-context-chip svg {
+  height: 20px;
+  width: 20px;
 }
 
 .input-actions {
@@ -442,227 +549,8 @@ button {
   cursor: wait;
 }
 
-.connector-dock {
-  display: grid;
-  margin: 10px auto 0;
-  max-width: 1040px;
-  text-align: left;
-  width: 100%;
-}
-
-.connector-cards {
-  display: flex;
-  gap: 8px;
-}
-
-.connector-card {
-  appearance: none;
-  -webkit-appearance: none;
-  align-items: center;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  box-shadow: none;
-  color: var(--muted);
-  display: inline-flex;
-  gap: 8px;
-  font: inherit;
-  line-height: 1;
-  margin: 0;
-  min-height: 40px;
-  outline: 0;
-  padding: 4px 12px 4px 5px;
-  text-align: left;
-}
-
-.connector-card:focus-visible {
-  box-shadow: 0 0 0 3px rgba(15, 123, 104, 0.16);
-}
-
-.connector-card:hover,
-.connector-card.active {
-  background: rgba(15, 123, 104, 0.08);
-  border-color: rgba(15, 123, 104, 0.18);
-  color: var(--teal-dark);
-}
-
-.connector-label {
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.connector-icon {
-  align-items: center;
-  background: rgba(15, 123, 104, 0.11);
-  border-radius: 999px;
-  display: inline-flex;
-  flex: 0 0 auto;
-  height: 30px;
-  justify-content: center;
-  width: 30px;
-}
-
-.connector-icon svg {
-  height: 16px;
-  width: 16px;
-}
-
-.shopify-icon {
-  color: var(--teal);
-}
-
-.brand-icon {
-  color: var(--blue);
-}
-
-.connector-check {
-  align-items: center;
-  background: var(--teal);
-  border-radius: 999px;
-  color: white;
+.context-store {
   display: none;
-  height: 18px;
-  justify-content: center;
-  width: 18px;
-}
-
-.connector-check svg {
-  height: 12px;
-  width: 12px;
-}
-
-.connector-card.active .connector-check {
-  display: flex;
-}
-
-.brand-panel,
-.shopify-panel {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  display: grid;
-  gap: 12px;
-  margin: 8px auto 0;
-  max-width: 680px;
-  padding: 14px;
-  text-align: left;
-  width: 100%;
-}
-
-.brand-panel {
-  max-width: 760px;
-}
-
-.shopify-panel-head {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.shopify-panel-head strong,
-.shopify-panel-head small {
-  display: block;
-}
-
-.shopify-panel-head strong {
-  font-size: 15px;
-  line-height: 1.15;
-}
-
-.shopify-panel-head small {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 750;
-  margin-top: 2px;
-}
-
-.panel-close {
-  align-items: center;
-  background: transparent;
-  border: 0;
-  color: var(--muted);
-  display: inline-flex;
-  height: 34px;
-  justify-content: center;
-  width: 34px;
-}
-
-.brand-grid {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.shopify-login-row {
-  display: grid;
-}
-
-.shopify-login-button {
-  align-items: center;
-  background: var(--teal);
-  border: 1px solid var(--teal);
-  border-radius: 12px;
-  color: white;
-  display: inline-flex;
-  font-weight: 850;
-  gap: 8px;
-  justify-content: center;
-  min-height: 46px;
-  padding: 0 16px;
-  width: 100%;
-}
-
-.shopify-login-button:disabled {
-  background: #87918d;
-  border-color: #87918d;
-  cursor: wait;
-}
-
-.manual-shopify {
-  border-top: 1px solid var(--line);
-  display: grid;
-  gap: 10px;
-  padding-top: 2px;
-}
-
-.manual-shopify summary {
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 800;
-  list-style: none;
-  padding: 8px 0 0;
-}
-
-.manual-shopify summary::-webkit-details-marker {
-  display: none;
-}
-
-.manual-shopify[open] {
-  padding-top: 10px;
-}
-
-.shopify-connect-row,
-.shopify-store-row {
-  align-items: end;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.shopify-store-row {
-  grid-template-columns: minmax(0, 1fr) 44px 44px;
-}
-
-.brand-panel label,
-.shopify-panel label {
-  color: var(--ink);
-  display: grid;
-  font-size: 13px;
-  font-weight: 850;
-  gap: 7px;
 }
 
 .secondary-button,
@@ -1444,28 +1332,9 @@ textarea:focus {
     max-width: 100%;
   }
 
-  .shopify-connect-row,
-  .shopify-store-row,
-  .brand-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .connector-dock {
-    margin-top: 10px;
-  }
-
-  .connector-card {
-    min-height: 40px;
-    padding: 4px 12px 4px 5px;
-  }
-
-  .shopify-store-row {
-    grid-template-columns: minmax(0, 1fr) 44px 44px;
-  }
-
   .prompt-row {
     gap: 8px;
-    grid-template-columns: 36px minmax(0, 1fr) auto;
+    grid-template-columns: 36px minmax(0, 1fr) auto auto;
     min-height: 74px;
     padding: 12px 12px 12px 10px;
   }
@@ -1480,6 +1349,22 @@ textarea:focus {
   .plus-button {
     height: 44px;
     width: 36px;
+  }
+
+  .tool-menu {
+    left: -2px;
+    min-width: min(236px, calc(100vw - 30px));
+    top: calc(100% + 8px);
+  }
+
+  .active-context-chip {
+    height: 34px;
+    width: 34px;
+  }
+
+  .active-context-chip svg {
+    height: 18px;
+    width: 18px;
   }
 
   .mic-button {
