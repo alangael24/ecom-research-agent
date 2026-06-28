@@ -104,6 +104,24 @@
       ],
       "additionalProperties": false
     },
+    "shopifyPlan": {
+      "type": "object",
+      "properties": {
+        "storeFindings": { "type": "array", "items": { "type": "string" } },
+        "catalogActions": { "type": "array", "items": { "type": "string" } },
+        "productPageActions": { "type": "array", "items": { "type": "string" } },
+        "nextShopifyTasks": { "type": "array", "items": { "type": "string" } },
+        "integrationGaps": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": [
+        "storeFindings",
+        "catalogActions",
+        "productPageActions",
+        "nextShopifyTasks",
+        "integrationGaps"
+      ],
+      "additionalProperties": false
+    },
     "limitations": { "type": "array", "items": { "type": "string" } },
     "nextSteps": { "type": "array", "items": { "type": "string" } }
   },
@@ -114,6 +132,7 @@
     "evidenceMatrix",
     "offerHookTests",
     "productRequirements",
+    "shopifyPlan",
     "limitations",
     "nextSteps"
   ],

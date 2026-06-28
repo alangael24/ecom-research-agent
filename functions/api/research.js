@@ -88,9 +88,13 @@ export async function onRequestOptions() {
 
 function validatePayload(payload) {
   if (!payload || typeof payload !== "object") return "Missing payload.";
+  if (payload.businessStage && !["starter", "shopify"].includes(payload.businessStage)) {
+    return "Invalid business stage.";
+  }
   if (!stringField(payload.reference, 500)) return "Missing or invalid reference.";
   if (!stringField(payload.problem, 2000)) return "Missing or invalid problem.";
   if (!Array.isArray(payload.sources) || payload.sources.length === 0) return "Select at least one source.";
+  if (payload.shopify && typeof payload.shopify !== "object") return "Invalid Shopify payload.";
   return "";
 }
 
@@ -113,6 +117,6 @@ function corsHeaders() {
   return {
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type,authorization",
+    "access-control-allow-headers": "content-type,authorization,x-app-password",
   };
 }

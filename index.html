@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Research guiado para validar oportunidades ecommerce con Meta Ads, Amazon Reviews y TikTok."
+      content="Research guiado para validar oportunidades ecommerce y auditar tiendas Shopify."
     />
     <title>Ecom Research Agent</title>
     <link rel="preconnect" href="https://unpkg.com" />
@@ -20,7 +20,7 @@
           </div>
           <div>
             <h1>Ecom Research</h1>
-            <p>Meta Ads + Amazon + TikTok</p>
+            <p>Shopify + Meta Ads + Amazon + TikTok</p>
           </div>
         </div>
         <div class="top-actions">
@@ -37,8 +37,30 @@
         <form class="control-panel" id="researchForm">
           <div class="panel-heading">
             <span class="eyebrow">Nuevo research</span>
-            <h2>Validar una idea ecom</h2>
+            <h2>Escoge el camino ecom</h2>
           </div>
+
+          <fieldset>
+            <legend>Camino</legend>
+            <div class="path-selector" role="radiogroup" aria-label="Camino ecommerce">
+              <label>
+                <input type="radio" name="businessStage" value="starter" checked />
+                <span>
+                  <i data-lucide="compass"></i>
+                  <strong>Empezar desde cero</strong>
+                  <small>Research, idea, avatar y primeros pasos</small>
+                </span>
+              </label>
+              <label>
+                <input type="radio" name="businessStage" value="shopify" />
+                <span>
+                  <i data-lucide="shopping-bag"></i>
+                  <strong>Tienda / Shopify</strong>
+                  <small>Auditoria, catalogo y acciones para vender</small>
+                </span>
+              </label>
+            </div>
+          </fieldset>
 
           <label>
             Marca o URL de referencia
@@ -46,7 +68,7 @@
               id="reference"
               name="reference"
               type="text"
-              placeholder="https://jolieskinco.com"
+              placeholder="Marca, URL de competidor o tienda Shopify"
               autocomplete="off"
             />
           </label>
@@ -57,9 +79,57 @@
               id="problem"
               name="problem"
               rows="4"
-              placeholder="Quiero empezar una marca parecida para skincare / belleza"
+              placeholder="Quiero vender online pero no se que producto elegir"
             ></textarea>
           </label>
+
+          <div class="shopify-fields" id="shopifyFields" hidden>
+            <div class="shopify-connect-card">
+              <label>
+                Dominio Shopify
+                <input
+                  id="shopifyDomain"
+                  name="shopifyDomain"
+                  type="text"
+                  placeholder="mi-tienda.myshopify.com"
+                  autocomplete="off"
+                />
+              </label>
+              <button class="secondary-button" id="connectShopify" type="button">
+                <i data-lucide="plug"></i>
+                Conectar tienda
+              </button>
+            </div>
+            <label>
+              Tienda conectada
+              <select id="shopifyStore" name="shopifyStore">
+                <option value="">Sin tiendas conectadas</option>
+              </select>
+            </label>
+            <div class="shopify-actions">
+              <button class="utility-button" id="refreshShopifyStores" type="button">
+                <i data-lucide="refresh-cw"></i>
+                Actualizar
+              </button>
+              <button class="utility-button danger" id="disconnectShopify" type="button">
+                <i data-lucide="unlink"></i>
+                Desconectar
+              </button>
+            </div>
+            <p class="field-note" id="shopifyConnectionStatus">
+              Conecta cada tienda una vez con OAuth de Shopify.
+            </p>
+            <label>
+              Foco de la tienda
+              <input
+                id="shopifyFocus"
+                name="shopifyFocus"
+                type="text"
+                placeholder="Conversion, catalogo o producto ganador"
+                autocomplete="off"
+              />
+            </label>
+          </div>
 
           <div class="field-grid">
             <label>
@@ -136,12 +206,14 @@
             <button class="tab" type="button" data-tab="sources">Fuentes</button>
             <button class="tab" type="button" data-tab="hooks">Hooks</button>
             <button class="tab" type="button" data-tab="product">Producto</button>
+            <button class="tab" type="button" data-tab="shopify">Shopify</button>
           </nav>
 
           <div class="report active" id="brief" data-panel="brief"></div>
           <div class="report" id="sources" data-panel="sources"></div>
           <div class="report" id="hooks" data-panel="hooks"></div>
           <div class="report" id="product" data-panel="product"></div>
+          <div class="report" id="shopify" data-panel="shopify"></div>
         </section>
       </main>
     </div>
@@ -149,13 +221,15 @@
     <template id="emptyState">
       <div class="empty-state">
         <div class="source-strip" aria-hidden="true">
+          <span><i data-lucide="compass"></i> Starter</span>
+          <span><i data-lucide="shopping-bag"></i> Shopify</span>
           <span><i data-lucide="megaphone"></i> Ads</span>
           <span><i data-lucide="star"></i> Reviews</span>
           <span><i data-lucide="message-circle"></i> Social</span>
         </div>
-        <h2>Empieza con una marca, URL o problema.</h2>
+        <h2>Empieza con una idea, problema o tienda.</h2>
         <p>
-          El reporte separa anuncios, reviews y voz organica para que las decisiones no salgan de ruido.
+          Elige research para principiantes o auditoria conectada a Shopify.
         </p>
       </div>
     </template>

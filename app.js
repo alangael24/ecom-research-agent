@@ -1,11 +1,27 @@
 const state = {
   latest: null,
+  shopifyStores: [],
+  pendingShopifyShop: "",
 };
 
 const form = document.querySelector("#researchForm");
 const panels = [...document.querySelectorAll("[data-panel]")];
 const tabs = [...document.querySelectorAll("[data-tab]")];
 const emptyState = document.querySelector("#emptyState");
+const shopifyFields = document.querySelector("#shopifyFields");
+
+const stageConfig = {
+  starter: {
+    label: "Empezar desde cero",
+    shortLabel: "Starter",
+    icon: "compass",
+  },
+  shopify: {
+    label: "Tienda / Shopify",
+    shortLabel: "Shopify",
+    icon: "shopping-bag",
+  },
+};
 
 const sourceConfig = {
   meta: {
@@ -107,17 +123,45 @@ function init() {
   renderEmptyState();
   form.accessKey.value = localStorage.getItem("ecomResearchAccessKey") || "";
   form.addEventListener("submit", handleSubmit);
+  form.querySelectorAll("input[name='businessStage']").forEach((input) => {
+    input.addEventListener("change", updateBusinessStage);
+  });
+  document.querySelector("#connectShopify").addEventListener("click", connectShopifyStore);
+  document.querySelector("#refreshShopifyStores").addEventListener("click", () => loadShopifyStores(true));
+  document.querySelector("#disconnectShopify").addEventListener("click", disconnectSelectedShopifyStore);
+  form.shopifyStore.addEventListener("change", syncSelectedShopifyStore);
   document.querySelector("#downloadBrief").addEventListener("click", downloadBrief);
   document.querySelector("#copySummary").addEventListener("click", copySummary);
   tabs.forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
+  applyShopifyCallbackState();
+  updateBusinessStage();
+  loadShopifyStores(false);
   lucide.createIcons();
 }
 
 async function handleSubmit(event) {
   event.preventDefault();
   const data = readForm();
-  const report = buildReport(data);
   setLoading(true);
+
+  if (data.businessStage === "shopify") {
+    if (data.shopify.shop) {
+      try {
+        const snapshot = await requestShopifySnapshot(data.shopify.shop);
+        if (snapshot?.ok) {
+          data.shopify.snapshot = snapshot.shopify;
+        } else {
+          data.shopify.error = snapshot?.message || "No se pudo leer la tienda Shopify.";
+        }
+      } catch {
+        data.shopify.error = "No se pudo leer la tienda conectada desde Shopify.";
+      }
+    } else {
+      data.shopify.error = "Conecta o selecciona una tienda Shopify antes de auditar catalogo.";
+    }
+  }
+
+  const report = buildReport(data);
 
   try {
     const backend = await requestBackendReport(data);
@@ -144,14 +188,31 @@ function readForm() {
   const selectedSources = [...form.querySelectorAll("input[name='source']:checked")].map(
     (input) => input.value,
   );
+  const businessStage = form.elements.businessStage.value || "starter";
+  const shopifyDomain = form.shopifyDomain.value.trim();
+  const selectedShop = form.shopifyStore.value.trim();
   return {
-    reference: form.reference.value.trim() || "marca de referencia",
-    problem: form.problem.value.trim() || "validar una nueva marca ecommerce",
+    businessStage,
+    reference:
+      form.reference.value.trim() ||
+      shopifyDomain ||
+      (businessStage === "shopify" ? "tienda Shopify" : "marca de referencia"),
+    problem:
+      form.problem.value.trim() ||
+      (businessStage === "shopify"
+        ? "auditar una tienda ecommerce y priorizar acciones para vender"
+        : "quiero vender online pero no se que producto elegir"),
     market: form.market.value,
     language: form.language.value,
     depth: form.depth.value,
     sources: selectedSources.length ? selectedSources : ["meta", "amazon", "tiktok"],
     accessKey: form.accessKey.value.trim(),
+    shopify: {
+      domain: shopifyDomain,
+      shop: selectedShop || normalizeShopifyDomain(shopifyDomain),
+      focus: form.shopifyFocus.value.trim(),
+      connected: Boolean(selectedShop),
+    },
   };
 }
 
@@ -163,6 +224,8 @@ function buildReport(data) {
   const query = cleanQuery(data.reference, data.problem, category.category);
   const sourceLinks = buildSourceLinks(query, data.market, data.sources, category);
   const rows = buildEvidenceRows(data, category);
+  const shopifySnapshot = data.shopify?.snapshot || null;
+  const stageGuidance = buildStageGuidance(data, category, shopifySnapshot);
 
   return {
     ...data,
@@ -170,6 +233,15 @@ function buildReport(data) {
     query,
     sourceLinks,
     rows,
+    shopify: {
+      domain: data.shopify?.domain || "",
+      shop: data.shopify?.shop || "",
+      focus: data.shopify?.focus || "",
+      connected: Boolean(shopifySnapshot),
+      snapshot: shopifySnapshot,
+      error: data.shopify?.error || "",
+    },
+    stageGuidance,
     createdAt: new Date().toLocaleString("es-US", {
       dateStyle: "medium",
       timeStyle: "short",
@@ -192,7 +264,7 @@ async function requestBackendReport(data) {
   const response = await fetch("./api/research", {
     method: "POST",
     headers,
-    body: JSON.stringify({ ...data, accessKey: undefined }),
+    body: JSON.stringify(toBackendPayload(data)),
   });
 
   if (response.status === 404) {
@@ -200,6 +272,202 @@ async function requestBackendReport(data) {
   }
 
   return response.json();
+}
+
+async function requestShopifySnapshot(shop) {
+  const response = await fetch("./api/shopify", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      shop,
+    }),
+  });
+
+  if (response.status === 404 || response.status === 501) {
+    return {
+      ok: false,
+      message: "La tienda no esta conectada o el endpoint Shopify no esta desplegado.",
+    };
+  }
+
+  return response.json();
+}
+
+async function loadShopifyStores(showFeedback) {
+  const status = document.querySelector("#shopifyConnectionStatus");
+  try {
+    const response = await fetch("./api/shopify");
+    if (!response.ok) throw new Error("Shopify API unavailable");
+    const body = await response.json();
+    state.shopifyStores = body.stores || [];
+    renderShopifyStoreOptions();
+    status.textContent = state.shopifyStores.length
+      ? `${state.shopifyStores.length} tienda(s) conectada(s).`
+      : "No hay tiendas conectadas todavia.";
+    if (showFeedback) showToast("Tiendas actualizadas");
+  } catch {
+    state.shopifyStores = [];
+    renderShopifyStoreOptions();
+    status.textContent = "Para conectar tiendas, despliega en Cloudflare Pages con OAuth configurado.";
+  }
+}
+
+function renderShopifyStoreOptions() {
+  const current = state.pendingShopifyShop || form.shopifyStore.value;
+  form.shopifyStore.innerHTML = state.shopifyStores.length
+    ? state.shopifyStores
+        .map((store) => {
+          const label = store.shopInfo?.name ? `${store.shopInfo.name} (${store.shop})` : store.shop;
+          return `<option value="${escapeHtml(store.shop)}">${escapeHtml(label)}</option>`;
+        })
+        .join("")
+    : '<option value="">Sin tiendas conectadas</option>';
+
+  if (state.shopifyStores.some((store) => store.shop === current)) {
+    form.shopifyStore.value = current;
+    state.pendingShopifyShop = "";
+  }
+  syncSelectedShopifyStore();
+}
+
+function syncSelectedShopifyStore() {
+  const shop = form.shopifyStore.value;
+  if (shop) {
+    form.shopifyDomain.value = shop;
+  }
+}
+
+function connectShopifyStore() {
+  const shop = normalizeShopifyDomain(form.shopifyDomain.value || form.shopifyStore.value);
+  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop)) {
+    showToast("Usa el dominio .myshopify.com de la tienda");
+    return;
+  }
+  window.location.href = `./api/shopify/connect?shop=${encodeURIComponent(shop)}`;
+}
+
+async function disconnectSelectedShopifyStore() {
+  const shop = form.shopifyStore.value;
+  if (!shop) {
+    showToast("Selecciona una tienda conectada");
+    return;
+  }
+
+  try {
+    const response = await fetch("./api/shopify", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ shop }),
+    });
+    if (!response.ok) throw new Error("Disconnect failed");
+    showToast("Tienda desconectada");
+    await loadShopifyStores(false);
+  } catch {
+    showToast("No se pudo desconectar la tienda");
+  }
+}
+
+function applyShopifyCallbackState() {
+  const params = new URLSearchParams(window.location.search);
+  const connectedShop = params.get("shopify_connected");
+  if (!connectedShop) return;
+
+  form.elements.businessStage.value = "shopify";
+  form.shopifyDomain.value = connectedShop;
+  state.pendingShopifyShop = connectedShop;
+  showToast("Tienda Shopify conectada");
+  window.history.replaceState({}, document.title, window.location.pathname);
+}
+
+function toBackendPayload(data) {
+  return {
+    businessStage: data.businessStage,
+    reference: data.reference,
+    problem: data.problem,
+    market: data.market,
+    language: data.language,
+    depth: data.depth,
+    sources: data.sources,
+    shopify: {
+      domain: data.shopify?.domain || "",
+      shop: data.shopify?.shop || "",
+      focus: data.shopify?.focus || "",
+      connected: Boolean(data.shopify?.snapshot),
+      snapshot: data.shopify?.snapshot || null,
+      error: data.shopify?.error || "",
+    },
+  };
+}
+
+function updateBusinessStage() {
+  const businessStage = form.elements.businessStage.value || "starter";
+  const isShopify = businessStage === "shopify";
+  shopifyFields.hidden = !isShopify;
+  form.problem.placeholder = isShopify
+    ? "Quiero mejorar conversion, catalogo y oferta de mi tienda"
+    : "Quiero vender online pero no se que producto elegir";
+  form.reference.placeholder = isShopify
+    ? "tienda Shopify o competidor"
+    : "Marca, URL de competidor o categoria que te llama la atencion";
+}
+
+function buildStageGuidance(data, category, shopifySnapshot) {
+  if (data.businessStage === "shopify") {
+    const products = shopifySnapshot?.products || [];
+    const productNames = products.slice(0, 5).map((product) => product.title);
+    return {
+      decision:
+        "Primero audita catalogo, paginas de producto y oferta antes de invertir mas en ads. La investigacion externa debe explicar que promesa probar; Shopify debe mostrar que producto, precio y pagina tienen mayor prioridad.",
+      focusTitle: "Prioridades Shopify",
+      focusItems: [
+        data.shopify?.focus || "definir producto ganador y mejorar conversion",
+        products.length
+          ? `revisar ${products.length} productos leidos desde Shopify`
+          : "conectar catalogo para cruzar productos con dolores reales",
+        "convertir quejas de reviews en mejoras de pagina, bundle, garantia y FAQ",
+        "separar acciones de catalogo, acciones de landing y acciones de research",
+      ],
+      antiNoise: [
+        "No decidir solo con sesiones o ventas: cruzar productos con dolores repetidos del mercado.",
+        "No instalar apps antes de saber si la oferta y la pagina explican el valor.",
+        "No cambiar todo el catalogo al mismo tiempo; priorizar 1 a 3 productos.",
+        "No usar claims de competidores sin evidencia o permiso de uso.",
+      ],
+      shopifyActions: [
+        productNames.length
+          ? `Elegir 1 producto para auditar primero: ${productNames[0]}.`
+          : "Conectar Shopify para detectar productos activos, estado y precios.",
+        "Crear checklist por producto: promesa, objeciones, prueba social, precio, bundle, garantia y FAQ.",
+        "Mapear cada hook ganador a una seccion concreta de la pagina de producto.",
+        "Preparar un test simple: misma pagina, una promesa primaria y una objecion resuelta.",
+      ],
+    };
+  }
+
+  return {
+    decision:
+      "No empieces comprando inventario ni abriendo tienda a ciegas. Primero convierte tus gustos en 3 nichos posibles, valida dolores reales, revisa si hay disposicion a pagar y termina con un producto candidato simple.",
+    focusTitle: "Primeros pasos",
+    focusItems: [
+      "convertir intereses personales en categorias vendibles",
+      "encontrar dolores repetidos en reviews y comentarios organicos",
+      "comparar competidores sin copiar claims ni productos al azar",
+      "elegir una idea con avatar, dolor, oferta y siguiente test",
+    ],
+    antiNoise: [
+      "No confundir productos virales con problemas urgentes.",
+      "No comprar curso, inventario o logo antes de validar el dolor.",
+      "No mezclar opiniones personales con evidencia de clientes.",
+      "No elegir proveedor hasta tener requisitos claros de producto.",
+    ],
+    shopifyActions: [
+      "Cuando exista una idea validada, crear Shopify solo con el producto candidato y una oferta simple.",
+      "Usar el research para escribir pagina, FAQs, bundles y mensajes de anuncios.",
+      "Medir interes con una landing o preorder antes de comprar volumen.",
+    ],
+  };
 }
 
 function genericCategory(problem) {
@@ -240,6 +508,15 @@ function cleanQuery(reference, problem, category) {
   return value.replace(/\s+/g, " ").slice(0, 80);
 }
 
+function normalizeShopifyDomain(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .split(/[/?#]/)[0]
+    .toLowerCase();
+}
+
 function buildSourceLinks(query, market, sources, category) {
   const country = market === "MX" ? "MX" : "US";
   const metaQuery = encodeURIComponent(query);
@@ -277,6 +554,35 @@ function buildSourceLinks(query, market, sources, category) {
 }
 
 function buildEvidenceRows(data, category) {
+  if (data.businessStage === "shopify") {
+    return [
+      {
+        insight: "Shopify muestra que productos existen; el research explica por que alguien compraria.",
+        decision: "Priorizar productos que conecten con dolores repetidos en reviews o comentarios organicos.",
+        source: "Shopify + Amazon + TikTok",
+        confidence: "media",
+      },
+      {
+        insight: "La pagina de producto debe responder objeciones antes de pedir trafico pagado.",
+        decision: "Actualizar promesa, pruebas, FAQ, bundle y garantia antes de escalar anuncios.",
+        source: "Product page audit",
+        confidence: "alta",
+      },
+      {
+        insight: "Meta Ads ayuda a encontrar hooks y oferta, pero no reemplaza datos de conversion.",
+        decision: "Usar hooks externos como tests concretos dentro de Shopify, no como verdad final.",
+        source: "Meta Ads",
+        confidence: "alta",
+      },
+      {
+        insight: `Las reviews negativas deben traducirse en cambios de pagina o producto: ${category.requirements[0]}.`,
+        decision: "Crear un backlog por producto con fixes de copy, calidad, empaque y claims.",
+        source: "Amazon Reviews",
+        confidence: "alta",
+      },
+    ];
+  }
+
   return [
     {
       insight: `El research debe validar si "${category.pains[0]}" aparece fuera de anuncios.`,
@@ -313,12 +619,14 @@ function renderEmptyState() {
 function renderReport(report) {
   const sourceLabels = report.sources.map((key) => sourceConfig[key].label).join(", ");
   const ai = report.ai || null;
+  const stage = stageConfig[report.businessStage] || stageConfig.starter;
+  const shopifyProductCount = report.shopify?.snapshot?.products?.length || 0;
   const decisionText =
     ai?.executiveBrief?.decision ||
-    "No tomar esto como validacion final todavia. Primero hay que confirmar si el problema aparece en al menos dos fuentes: reviews/comentarios organicos y senales comerciales en anuncios. Si solo aparece en anuncios, es hype; si solo aparece en quejas, falta probar disposicion a pagar.";
+    report.stageGuidance.decision;
   const problemPains = ai?.problemAvatarMap?.painLanguage?.length
     ? ai.problemAvatarMap.painLanguage
-    : report.category.pains;
+    : report.stageGuidance.focusItems;
   const evidenceRows = ai?.evidenceMatrix?.length
     ? ai.evidenceMatrix.map((row) => ({
         confidence: row.confidence,
@@ -335,18 +643,20 @@ function renderReport(report) {
 
   document.querySelector("#brief").innerHTML = `
     <div class="metric-row">
-      <article class="metric-card"><strong>${report.sources.length}</strong><p>fuentes activas</p></article>
+      <article class="metric-card"><strong>${escapeHtml(stage.shortLabel)}</strong><p>camino elegido</p></article>
       <article class="metric-card"><strong>${ai ? "IA" : report.depth === "profundo" ? "12+" : "6+"}</strong><p>${ai ? "codex harness" : "senales a validar"}</p></article>
-      <article class="metric-card"><strong>${report.market}</strong><p>mercado objetivo</p></article>
+      <article class="metric-card"><strong>${report.businessStage === "shopify" ? shopifyProductCount || "0" : report.sources.length}</strong><p>${report.businessStage === "shopify" ? "productos Shopify" : "fuentes activas"}</p></article>
     </div>
     <div class="report-grid">
       <article class="report-card full-span">
         <h3>Decision inicial</h3>
         <p>${escapeHtml(decisionText)}</p>
         <div class="pill-row">
+          <span class="pill"><i data-lucide="${stage.icon}"></i>${escapeHtml(stage.label)}</span>
           <span class="pill"><i data-lucide="target"></i>${escapeHtml(report.category.category)}</span>
           <span class="pill"><i data-lucide="map-pin"></i>${escapeHtml(report.market)}</span>
           <span class="pill"><i data-lucide="database"></i>${escapeHtml(sourceLabels)}</span>
+          ${report.shopify?.connected ? '<span class="pill"><i data-lucide="plug"></i>Shopify conectado</span>' : ""}
           ${ai ? '<span class="pill"><i data-lucide="cpu"></i>Codex harness</span>' : ""}
         </div>
       </article>
@@ -355,17 +665,12 @@ function renderReport(report) {
         <p>${escapeHtml(ai.executiveBrief.opportunity)}</p>
       </article>` : ""}
       <article class="report-card">
-        <h3>Problema a validar</h3>
+        <h3>${escapeHtml(report.stageGuidance.focusTitle)}</h3>
         <ul>${problemPains.map((pain) => `<li>${escapeHtml(pain)}</li>`).join("")}</ul>
       </article>
       <article class="report-card">
         <h3>Criterios anti-ruido</h3>
-        <ul>
-          <li>Separar afiliados, tiendas y anuncios de voz organica.</li>
-          <li>No mezclar ratings globales con reviews escritas.</li>
-          <li>No convertir claims de competidores en hechos.</li>
-          <li>Guardar fuente, URL, fecha y motivo de inclusion.</li>
-        </ul>
+        <ul>${report.stageGuidance.antiNoise.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       </article>
       ${ai?.executiveBrief?.bestAvatar ? `<article class="report-card full-span">
         <h3>Mejor avatar</h3>
@@ -483,7 +788,128 @@ function renderReport(report) {
       </article>
     </div>`;
 
+  renderShopifyPanel(report, ai);
+
   lucide.createIcons();
+}
+
+function renderShopifyPanel(report, ai) {
+  const panel = document.querySelector("#shopify");
+  const snapshot = report.shopify?.snapshot || null;
+  const products = snapshot?.products || [];
+  const errorNotice = report.shopify?.error
+    ? `<article class="report-card full-span notice-card">
+        <h3>Conexion Shopify</h3>
+        <p>${escapeHtml(report.shopify.error)}</p>
+      </article>`
+    : "";
+  const aiShopifyPlan = ai?.shopifyPlan
+    ? `<article class="report-card full-span">
+        <h3>Plan Shopify del harness</h3>
+        ${renderCompactSections([
+          ["Hallazgos de tienda", ai.shopifyPlan.storeFindings],
+          ["Acciones de catalogo", ai.shopifyPlan.catalogActions],
+          ["Paginas de producto", ai.shopifyPlan.productPageActions],
+          ["Siguientes tareas", ai.shopifyPlan.nextShopifyTasks],
+          ["Gaps de integracion", ai.shopifyPlan.integrationGaps],
+        ])}
+      </article>`
+    : "";
+
+  if (report.businessStage !== "shopify") {
+    panel.innerHTML = `
+      <div class="report-grid">
+        <article class="report-card full-span">
+          <h3>Despues de validar</h3>
+          <p>Este camino todavia esta en investigacion. Cuando la idea tenga avatar, dolor y oferta, Shopify se usa para lanzar una pagina simple y medir interes real.</p>
+        </article>
+        <article class="report-card">
+          <h3>Preparar Shopify</h3>
+          <ul>${report.stageGuidance.shopifyActions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        </article>
+        <article class="report-card">
+          <h3>Datos que necesitaras</h3>
+          <ul>
+            <li>producto candidato y promesa principal</li>
+            <li>precio, bundle o garantia a probar</li>
+            <li>objeciones frecuentes para FAQ</li>
+            <li>requisitos de proveedor antes de comprar inventario</li>
+          </ul>
+        </article>
+      </div>`;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="metric-row">
+      <article class="metric-card"><strong>${snapshot ? "Si" : "No"}</strong><p>conexion activa</p></article>
+      <article class="metric-card"><strong>${products.length}</strong><p>productos leidos</p></article>
+      <article class="metric-card"><strong>${escapeHtml(snapshot?.shop?.currencyCode || report.market)}</strong><p>moneda / mercado</p></article>
+    </div>
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>${snapshot?.shop?.name ? escapeHtml(snapshot.shop.name) : "Auditoria Shopify"}</h3>
+        <p>${escapeHtml(report.stageGuidance.decision)}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="shopping-bag"></i>${escapeHtml(report.shopify?.shop || report.shopify?.domain || "Shopify")}</span>
+          <span class="pill"><i data-lucide="target"></i>${escapeHtml(report.shopify?.focus || "priorizar acciones")}</span>
+        </div>
+      </article>
+      ${errorNotice}
+      <article class="report-card">
+        <h3>Acciones inmediatas</h3>
+        <ul>${report.stageGuidance.shopifyActions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card">
+        <h3>Checklist de pagina</h3>
+        <ul>
+          <li>promesa primaria visible y especifica</li>
+          <li>objeciones resueltas antes del boton de compra</li>
+          <li>prueba social con contexto real</li>
+          <li>FAQ basada en reviews negativas y dudas de TikTok</li>
+        </ul>
+      </article>
+      ${
+        products.length
+          ? `<article class="report-card full-span">
+              <h3>Catalogo leido</h3>
+              <div class="shopify-product-list">
+                ${products
+                  .map(
+                    (product) => `<div class="shopify-product">
+                      <div>
+                        <h4>${escapeHtml(product.title)}</h4>
+                        <p>${escapeHtml(formatShopifyProductDetails(product))}</p>
+                      </div>
+                      ${
+                        product.onlineStoreUrl
+                          ? `<a href="${escapeHtml(product.onlineStoreUrl)}" target="_blank" rel="noreferrer">Abrir</a>`
+                          : ""
+                      }
+                    </div>`,
+                  )
+                  .join("")}
+              </div>
+            </article>`
+          : `<article class="report-card full-span">
+              <h3>Conexion pendiente</h3>
+              <p>Conecta una tienda con OAuth de Shopify para leer productos activos, precios y estado del catalogo sin pedir tokens manuales.</p>
+            </article>`
+      }
+      ${aiShopifyPlan}
+    </div>`;
+}
+
+function formatShopifyProductDetails(product) {
+  const pieces = [
+    product.status,
+    product.productType,
+    product.vendor,
+    product.priceRange,
+    Number.isFinite(product.totalInventory) ? `${product.totalInventory} en inventario` : "",
+    product.variantsCount ? `${product.variantsCount} variantes` : "",
+  ].filter(Boolean);
+  return pieces.join(" | ") || "sin detalles de catalogo";
 }
 
 function activateTab(name) {
@@ -513,7 +939,17 @@ function setLoading(isLoading) {
 }
 
 function buildPrompt(report) {
-  return `Investiga una oportunidad ecommerce basada en ${report.reference}. Problema: ${report.problem}. Mercado: ${report.market}. Categoria inferida: ${report.category.category}. Usa Meta Ads para ofertas/hooks, Amazon Reviews para quejas y requisitos de producto, y TikTok organico para lenguaje real del cliente. Separa ruido, evidencia e hipotesis. Entrega avatar, dolores, objeciones, hooks, requisitos del producto, claims riesgosos y siguientes tests.`;
+  const stageLine =
+    report.businessStage === "shopify"
+      ? `Camino: tienda / Shopify. Tienda conectada: ${report.shopify?.shop || report.shopify?.domain || "sin tienda conectada"}. Foco: ${report.shopify?.focus || "priorizar conversion, catalogo y oferta"}. Snapshot Shopify: ${summarizeShopifySnapshot(report.shopify?.snapshot)}.`
+      : "Camino: empezar desde cero. La persona quiere vender online pero necesita descubrir nicho, producto, avatar, dolor y primeros pasos.";
+  return `Investiga una oportunidad ecommerce basada en ${report.reference}. Problema: ${report.problem}. Mercado: ${report.market}. Categoria inferida: ${report.category.category}. ${stageLine} Usa Meta Ads para ofertas/hooks, Amazon Reviews para quejas y requisitos de producto, y TikTok organico para lenguaje real del cliente. Separa ruido, evidencia e hipotesis. Entrega avatar, dolores, objeciones, hooks, requisitos del producto, claims riesgosos, siguientes tests y acciones Shopify cuando aplique.`;
+}
+
+function summarizeShopifySnapshot(snapshot) {
+  if (!snapshot) return "no conectado";
+  const names = (snapshot.products || []).slice(0, 5).map((product) => product.title).join(", ");
+  return `${snapshot.shop?.name || "tienda"} con ${(snapshot.products || []).length} productos leidos${names ? `: ${names}` : ""}`;
 }
 
 function buildMarkdown(report) {
@@ -524,6 +960,7 @@ function buildMarkdown(report) {
   return `# Ecom Research Brief
 
 Fecha: ${report.createdAt}
+Camino: ${(stageConfig[report.businessStage] || stageConfig.starter).label}
 Referencia: ${report.reference}
 Problema: ${report.problem}
 Mercado: ${report.market}
@@ -531,11 +968,11 @@ Categoria: ${report.category.category}
 
 ## Decision inicial
 
-No comprar inventario todavia. Validar que el dolor aparece en voz organica o reviews y que Meta Ads muestra senales comerciales aprovechables.
+${report.stageGuidance.decision}
 
-## Problemas a validar
+## ${(report.stageGuidance.focusTitle || "Problemas a validar")}
 
-${report.category.pains.map((pain) => `- ${pain}`).join("\n")}
+${report.stageGuidance.focusItems.map((item) => `- ${item}`).join("\n")}
 
 ## Fuentes
 
@@ -549,6 +986,10 @@ ${report.category.hooks.map((hook) => `- ${hook}`).join("\n")}
 
 ${report.category.requirements.map((item) => `- ${item}`).join("\n")}
 
+## Shopify
+
+${report.stageGuidance.shopifyActions.map((item) => `- ${item}`).join("\n")}
+
 ## Prompt profundo
 
 ${buildPrompt(report)}
@@ -560,6 +1001,7 @@ function buildAiMarkdown(report) {
   return `# Ecom Research Brief
 
 Fecha: ${report.createdAt}
+Camino: ${(stageConfig[report.businessStage] || stageConfig.starter).label}
 Referencia: ${report.reference}
 Problema: ${report.problem}
 Mercado: ${report.market}
@@ -602,6 +1044,16 @@ ${ai.limitations.map((item) => `- ${item}`).join("\n")}
 ## Siguientes pasos
 
 ${ai.nextSteps.map((item) => `- ${item}`).join("\n")}
+
+${ai.shopifyPlan ? `## Shopify
+
+${[
+  ...(ai.shopifyPlan.storeFindings || []),
+  ...(ai.shopifyPlan.catalogActions || []),
+  ...(ai.shopifyPlan.productPageActions || []),
+  ...(ai.shopifyPlan.nextShopifyTasks || []),
+].map((item) => `- ${item}`).join("\n")}
+` : ""}
 `;
 }
 

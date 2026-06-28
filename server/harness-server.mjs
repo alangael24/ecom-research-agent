@@ -67,9 +67,13 @@ async function readJson(request) {
 
 function validatePayload(payload) {
   if (!payload || typeof payload !== "object") return "Missing payload.";
+  if (payload.businessStage && !["starter", "shopify"].includes(payload.businessStage)) {
+    return "Invalid business stage.";
+  }
   if (!stringField(payload.reference, 500)) return "Missing or invalid reference.";
   if (!stringField(payload.problem, 2000)) return "Missing or invalid problem.";
   if (!Array.isArray(payload.sources) || payload.sources.length === 0) return "Select at least one source.";
+  if (payload.shopify && typeof payload.shopify !== "object") return "Invalid Shopify payload.";
   return "";
 }
 
@@ -118,8 +122,19 @@ async function runCodexResearch(payload) {
 }
 
 function buildPrompt(payload) {
+  const businessStage = payload.businessStage || "starter";
+  const shopify = payload.shopify || {};
+  const shopifySnapshot = shopify.snapshot
+    ? JSON.stringify(shopify.snapshot).slice(0, 12000)
+    : "No Shopify snapshot connected.";
+  const stageInstructions =
+    businessStage === "shopify"
+      ? `La persona ya tiene o quiere abrir tienda Shopify. Debes conectar el research con acciones dentro de Shopify: catalogo, producto prioritario, pagina de producto, oferta, FAQ, bundles, claims, objeciones y siguientes tests. Si hay snapshot, usalo como evidencia operativa; si no hay snapshot, explica los gaps de conexion. Dominio Shopify: ${shopify.domain || "no indicado"}. Foco: ${shopify.focus || "priorizar conversion y catalogo"}. Snapshot Shopify saneado: ${shopifySnapshot}`
+      : "La persona esta empezando desde cero y puede no tener producto, tienda, proveedor ni idea clara. Debes actuar como guia para convertir intereses en nichos, problemas, avatar, oportunidad, primeros tests y solo despues pasos Shopify.";
+
   return `Eres un agente senior de ecommerce research. Tu trabajo es ayudar a una persona no tecnica a decidir si vale la pena empezar una marca ecommerce basada en una referencia, sin llenarla de ruido.
 
+Camino del usuario: ${businessStage}
 Referencia o marca: ${payload.reference}
 Problema o producto: ${payload.problem}
 Mercado: ${payload.market || "US"}
@@ -127,12 +142,16 @@ Idioma de salida: ${payload.language || "es"}
 Profundidad: ${payload.depth || "rapido"}
 Fuentes solicitadas: ${(payload.sources || []).join(", ")}
 
+Instrucciones por camino:
+${stageInstructions}
+
 Reglas:
 - Separa Meta Ads, Amazon Reviews y TikTok organico como fuentes distintas.
 - No presentes claims de anuncios como hechos.
 - Si no puedes verificar datos vivos, dilo como limitacion y entrega un plan preciso de busqueda.
 - Para piel, cabello, salud, suplementos o efectos corporales, incluye limites de claims y riesgos de compliance.
 - Da recomendaciones accionables para ecom: avatar, dolor, oferta, hooks, objeciones, requisitos de producto, que evitar y siguientes tests.
+- Si el camino es Shopify, llena shopifyPlan con acciones especificas y priorizadas. Si el camino es starter, puedes dejar shopifyPlan como preparacion futura.
 - Prioriza precision y utilidad. Evita volumen sin decision.
 - Responde solo en JSON conforme al schema de salida.
 `;
