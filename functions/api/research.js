@@ -74,6 +74,16 @@ export async function onRequestPost(context) {
       return json({ ok: true, report, diagnostics, runId: runContext.id });
     }
 
+    if (shouldUseRetailToOnlineTool(agentPayload)) {
+      const report = await runRetailToOnlineTool(agentPayload, env);
+      const diagnostics = {
+        tool: "retail_to_online_agent",
+        mode: "internal_tool",
+      };
+      await persistReport(auth.config, auth.accessToken, auth.user.id, runContext.id, agentPayload, report);
+      return json({ ok: true, report, diagnostics, runId: runContext.id });
+    }
+
     if (shouldUseShippingRateTool(agentPayload)) {
       const report = await runShippingRateTool(agentPayload, env);
       const diagnostics = {
@@ -447,6 +457,17 @@ function optionalString(value, maxLength) {
 function payloadText(payload) {
   const brand = payload.brand || {};
   return `${payload.naturalRequest || ""} ${payload.reference || ""} ${payload.problem || ""} ${payload.product || ""} ${payload.productDetails || ""} ${brand.name || ""} ${brand.url || ""} ${brand.channels || ""} ${brand.goal || ""}`;
+}
+
+function shouldUseRetailToOnlineTool(payload) {
+  if (payload.selectedInternalTool === "retail-to-online-agent") return true;
+  const text = payloadText(payload).toLowerCase();
+  const physicalStoreIntent =
+    /tienda f[ií]sica|negocio f[ií]sico|negocio local|local comercial|mostrador|sucursal|boutique|tienda de barrio|retail/.test(text);
+  const onlineIntent =
+    /vender (en|por) internet|vender online|e-?commerce|tienda online|p[aá]gina web|crear web/.test(text);
+  const channelPlanningIntent = /tiktok org[aá]nico|paid ads|anuncios pagados|competencia|contenido|ads/.test(text);
+  return physicalStoreIntent || (onlineIntent && channelPlanningIntent) || (onlineIntent && /tienda|local|negocio|producto|productos/.test(text));
 }
 
 function shouldUseProfitabilityTool(payload) {

@@ -140,6 +140,121 @@
       "required": ["storeSummary", "catalogOpportunities", "priorityActions", "conversionRisks", "nextDataToCollect"],
       "additionalProperties": false
     },
+    "brandPlan": {
+      "type": "object",
+      "properties": {
+        "namingBrief": { "type": "string" },
+        "selectedName": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "rationale": { "type": "string" },
+            "problemFit": { "type": "string" },
+            "nicheFit": { "type": "string" },
+            "tone": { "type": "string" },
+            "risk": { "type": "string" }
+          },
+          "required": ["name", "rationale", "problemFit", "nicheFit", "tone", "risk"],
+          "additionalProperties": false
+        },
+        "nameOptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "rationale": { "type": "string" },
+              "problemFit": { "type": "string" },
+              "nicheFit": { "type": "string" },
+              "tone": { "type": "string" },
+              "risk": { "type": "string" }
+            },
+            "required": ["name", "rationale", "problemFit", "nicheFit", "tone", "risk"],
+            "additionalProperties": false
+          }
+        },
+        "colorPalette": {
+          "type": "object",
+          "properties": {
+            "strategy": { "type": "string" },
+            "primary": { "type": "string" },
+            "secondary": { "type": "string" },
+            "accent": { "type": "string" },
+            "background": { "type": "string" },
+            "text": { "type": "string" },
+            "rationale": { "type": "string" },
+            "accessibilityNotes": { "type": "string" }
+          },
+          "required": ["strategy", "primary", "secondary", "accent", "background", "text", "rationale", "accessibilityNotes"],
+          "additionalProperties": false
+        },
+        "visualDirection": { "type": "array", "items": { "type": "string" } },
+        "taglineOptions": { "type": "array", "items": { "type": "string" } },
+        "namingRules": { "type": "array", "items": { "type": "string" } },
+        "nextChecks": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": [
+        "namingBrief",
+        "selectedName",
+        "nameOptions",
+        "colorPalette",
+        "visualDirection",
+        "taglineOptions",
+        "namingRules",
+        "nextChecks"
+      ],
+      "additionalProperties": false
+    },
+    "websitePlan": {
+      "type": "object",
+      "properties": {
+        "recommendation": { "type": "string" },
+        "firstBuild": { "type": "string" },
+        "stackSuggestion": { "type": "string" },
+        "hero": {
+          "type": "object",
+          "properties": {
+            "headline": { "type": "string" },
+            "subheadline": { "type": "string" },
+            "primaryCta": { "type": "string" },
+            "secondaryCta": { "type": "string" }
+          },
+          "required": ["headline", "subheadline", "primaryCta", "secondaryCta"],
+          "additionalProperties": false
+        },
+        "brandApplication": { "type": "array", "items": { "type": "string" } },
+        "requiredSections": { "type": "array", "items": { "type": "string" } },
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "goal": { "type": "string" },
+              "copyAngle": { "type": "string" }
+            },
+            "required": ["name", "goal", "copyAngle"],
+            "additionalProperties": false
+          }
+        },
+        "copyBlocks": { "type": "array", "items": { "type": "string" } },
+        "launchGuardrails": { "type": "array", "items": { "type": "string" } },
+        "nextBuildSteps": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": [
+        "recommendation",
+        "firstBuild",
+        "stackSuggestion",
+        "hero",
+        "brandApplication",
+        "requiredSections",
+        "sections",
+        "copyBlocks",
+        "launchGuardrails",
+        "nextBuildSteps"
+      ],
+      "additionalProperties": false
+    },
     "beginnerNextSteps": { "type": "array", "items": { "type": "string" } },
     "limitations": { "type": "array", "items": { "type": "string" } }
   },
