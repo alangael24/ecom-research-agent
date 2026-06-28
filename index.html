@@ -9,7 +9,7 @@
     />
     <title>Agent Genia Research</title>
     <link rel="preconnect" href="https://unpkg.com" />
-    <link rel="stylesheet" href="./styles.css?v=20260628-brand-whitespace" />
+    <link rel="stylesheet" href="./styles.css?v=20260628-natural-tools" />
   </head>
   <body>
     <div class="app-shell">
@@ -83,9 +83,38 @@
               hidden
             />
             <div class="prompt-row">
-              <button class="plus-button" type="button" title="Subir archivo o imagen" aria-label="Subir archivo o imagen">
-                <i data-lucide="plus"></i>
-              </button>
+              <div class="tool-menu-wrap">
+                <button
+                  class="plus-button"
+                  id="toolMenuToggle"
+                  type="button"
+                  title="Agregar contexto"
+                  aria-expanded="false"
+                  aria-controls="toolMenu"
+                >
+                  <i data-lucide="plus"></i>
+                </button>
+                <div class="tool-menu" id="toolMenu" role="menu" hidden>
+                  <button class="tool-option" type="button" role="menuitem" data-tool-action="upload">
+                    <span class="tool-option-icon"><i data-lucide="paperclip"></i></span>
+                    <span>Subir archivo</span>
+                  </button>
+                  <button class="tool-option" type="button" role="menuitem" data-tool-option="brand">
+                    <span class="tool-option-icon brand-tool"><i data-lucide="store"></i></span>
+                    <span>Analizar marca</span>
+                    <i class="tool-option-check" data-lucide="check"></i>
+                  </button>
+                  <button class="tool-option" type="button" role="menuitem" data-tool-option="shopify">
+                    <span class="tool-option-icon shopify-tool"><i data-lucide="shopping-bag"></i></span>
+                    <span>Conectar Shopify</span>
+                    <i class="tool-option-check" data-lucide="check"></i>
+                  </button>
+                  <button class="tool-option quiet" type="button" role="menuitem" data-tool-option="starter" hidden>
+                    <span class="tool-option-icon"><i data-lucide="x"></i></span>
+                    <span>Quitar contexto</span>
+                  </button>
+                </div>
+              </div>
               <textarea
                 id="naturalRequest"
                 name="naturalRequest"
@@ -93,6 +122,7 @@
                 placeholder="Pide research, producto o proveedor..."
                 autocomplete="off"
               ></textarea>
+              <button class="active-context-chip" id="activeContextChip" type="button" hidden></button>
               <div class="input-actions">
                 <button class="mic-button" type="button" title="Dictar">
                   <i data-lucide="mic"></i>
@@ -105,139 +135,20 @@
             <div class="attachment-tray" id="attachmentTray" aria-live="polite" hidden></div>
           </form>
 
-          <div class="connector-dock" aria-label="Opciones ecommerce">
-            <div class="connector-cards" role="radiogroup" aria-label="Camino ecommerce">
-              <button class="connector-card" type="button" data-stage-card="brand" aria-pressed="false">
-                <span class="connector-icon brand-icon"><i data-lucide="store"></i></span>
-                <span class="connector-label">Analizar marca</span>
-                <span class="connector-check"><i data-lucide="check"></i></span>
-              </button>
-              <button class="connector-card" type="button" data-stage-card="shopify" aria-pressed="false">
-                <span class="connector-icon shopify-icon"><i data-lucide="shopping-bag"></i></span>
-                <span class="connector-label">Conectar Shopify</span>
-                <span class="connector-check"><i data-lucide="check"></i></span>
-              </button>
-            </div>
+          <div class="context-store" id="brandFields" hidden aria-hidden="true">
+            <input id="brandName" name="brandName" type="hidden" />
+            <input id="brandUrl" name="brandUrl" type="hidden" />
+            <input id="brandChannels" name="brandChannels" type="hidden" />
+            <input id="brandGoal" name="brandGoal" type="hidden" />
           </div>
 
-          <div class="brand-panel" id="brandFields" hidden>
-            <div class="shopify-panel-head">
-              <div>
-                <strong>Marca existente</strong>
-                <small>Contexto para decisiones</small>
-              </div>
-              <button class="panel-close" id="closeBrandPanel" type="button" title="Cerrar marca">
-                <i data-lucide="x"></i>
-              </button>
-            </div>
-            <div class="brand-grid">
-              <label>
-                Marca
-                <input
-                  id="brandName"
-                  name="brandName"
-                  type="text"
-                  placeholder="nombre de la marca"
-                  autocomplete="off"
-                />
-              </label>
-              <label>
-                Sitio o tienda
-                <input
-                  id="brandUrl"
-                  name="brandUrl"
-                  type="text"
-                  placeholder="https://..."
-                  autocomplete="off"
-                />
-              </label>
-            </div>
-            <div class="brand-grid">
-              <label>
-                Canales
-                <input
-                  id="brandChannels"
-                  name="brandChannels"
-                  type="text"
-                  placeholder="Meta Ads, TikTok, email, Amazon..."
-                  autocomplete="off"
-                />
-              </label>
-              <label>
-                Objetivo
-                <input
-                  id="brandGoal"
-                  name="brandGoal"
-                  type="text"
-                  placeholder="subir conversion, retencion, AOV..."
-                  autocomplete="off"
-                />
-              </label>
-            </div>
-          </div>
-
-          <div class="shopify-panel" id="shopifyFields" hidden>
-            <div class="shopify-panel-head">
-              <div>
-                <strong>Shopify</strong>
-                <small>Conexión OAuth segura</small>
-              </div>
-              <button class="panel-close" id="closeShopifyPanel" type="button" title="Cerrar Shopify">
-                <i data-lucide="x"></i>
-              </button>
-            </div>
-            <div class="shopify-login-row">
-              <button class="shopify-login-button" id="loginShopify" type="button">
-                <i data-lucide="log-in"></i>
-                Iniciar sesión con Shopify
-              </button>
-            </div>
-            <details class="manual-shopify">
-              <summary>Usar dominio manual</summary>
-              <div class="shopify-connect-row">
-                <label>
-                  Dominio Shopify
-                  <input
-                    id="shopifyDomain"
-                    name="shopifyDomain"
-                    type="text"
-                    placeholder="mi-tienda.myshopify.com"
-                    autocomplete="off"
-                  />
-                </label>
-                <button class="secondary-button" id="connectShopify" type="button">
-                  <i data-lucide="plug"></i>
-                  Conectar
-                </button>
-              </div>
-            </details>
-            <div class="shopify-store-row">
-              <label>
-                Tienda conectada
-                <select id="shopifyStore" name="shopifyStore">
-                  <option value="">Sin tiendas conectadas</option>
-                </select>
-              </label>
-              <button class="utility-button" id="refreshShopifyStores" type="button" title="Actualizar tiendas">
-                <i data-lucide="refresh-cw"></i>
-              </button>
-              <button class="utility-button danger" id="disconnectShopify" type="button" title="Desconectar tienda">
-                <i data-lucide="unlink"></i>
-              </button>
-            </div>
-            <p class="field-note" id="shopifyConnectionStatus">
-              Conecta cada tienda una vez con OAuth de Shopify.
-            </p>
-            <label>
-              Foco de auditoria
-              <input
-                id="shopifyFocus"
-                name="shopifyFocus"
-                type="text"
-                placeholder="conversion, catalogo, producto ganador o pricing"
-                autocomplete="off"
-              />
-            </label>
+          <div class="context-store" id="shopifyFields" hidden aria-hidden="true">
+            <input id="shopifyDomain" name="shopifyDomain" type="hidden" />
+            <input id="shopifyFocus" name="shopifyFocus" type="hidden" />
+            <select id="shopifyStore" name="shopifyStore" tabindex="-1">
+              <option value="">Sin tiendas conectadas</option>
+            </select>
+            <p id="shopifyConnectionStatus" hidden></p>
           </div>
         </section>
 
@@ -325,6 +236,6 @@
     </template>
 
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-    <script src="./app.js?v=20260628-brand-whitespace"></script>
+    <script src="./app.js?v=20260628-natural-tools"></script>
   </body>
 </html>
