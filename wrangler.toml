@@ -5,3 +5,7 @@ pages_build_output_dir = "dist"
 [[kv_namespaces]]
 binding = "SHOPIFY_STORES"
 id = "99dccfdc1fa3450a92eb0833869dfc23"
+
+[vars]
+SUPABASE_URL = "https://jzwdskeqqfptazvrwgpm.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_SZmpi6Vup0D4kFPdcldpag_YzNUzxxh"

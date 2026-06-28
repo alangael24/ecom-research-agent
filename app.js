@@ -1,12 +1,28 @@
 const state = {
   latest: null,
+  attachments: [],
+  config: null,
+  session: null,
+  runs: [],
   shopifyStores: [],
   pendingShopifyShop: "",
   user: null,
 };
 
+const MAX_ATTACHMENTS = 6;
+const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const TEXT_ATTACHMENT_LIMIT = 60000;
+
 const form = document.querySelector("#researchForm");
 const resultPanel = document.querySelector(".result-panel");
+const attachmentInput = document.querySelector("#attachmentInput");
+const attachmentTray = document.querySelector("#attachmentTray");
+const authGate = document.querySelector("#authGate");
+const signInForm = document.querySelector("#signInForm");
+const authStatus = document.querySelector("#authStatus");
+const historyDrawer = document.querySelector("#historyDrawer");
+const historyList = document.querySelector("#historyList");
 const panels = [...document.querySelectorAll("[data-panel]")];
 const tabs = [...document.querySelectorAll("[data-tab]")];
 const emptyState = document.querySelector("#emptyState");
@@ -217,7 +233,7 @@ async function init() {
   renderEmptyState();
   form.accessKey.value = localStorage.getItem("alibabaSourcingAccessKey") || "";
   setupStageControls();
-  state.user = await fetchSession();
+  await bootAuth();
   renderAuthState();
   renderRoute();
   if (handleShopifyEntryParams()) return;
@@ -225,6 +241,14 @@ async function init() {
   loadShopifyStores();
   form.addEventListener("submit", handleSubmit);
   shopifyLoginForm?.addEventListener("submit", handleShopifyLogin);
+  form.querySelector(".plus-button")?.addEventListener("click", () => attachmentInput?.click());
+  attachmentInput?.addEventListener("change", (event) => void handleAttachmentInput(event));
+  attachmentTray?.addEventListener("click", handleAttachmentTrayClick);
+  signInForm?.addEventListener("submit", handleSignIn);
+  document.querySelector("#signOut")?.addEventListener("click", signOut);
+  document.querySelector("#toggleHistory")?.addEventListener("click", toggleHistory);
+  document.querySelector("#closeHistory")?.addEventListener("click", () => closeHistory());
+  historyList?.addEventListener("click", (event) => void handleHistoryClick(event));
   document.querySelector("#downloadBrief").addEventListener("click", downloadBrief);
   document.querySelector("#copySummary").addEventListener("click", copySummary);
   tabs.forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
@@ -442,11 +466,296 @@ function usesLocalPreview() {
   return ["", "localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
 }
 
+async function bootAuth() {
+  document.body.classList.add("auth-required");
+  if (authGate) authGate.hidden = false;
+  setAuthStatus("Conectando con Supabase...");
+
+  try {
+    const response = await fetch("./api/config", { headers: { "cache-control": "no-store" } });
+    const config = await response.json();
+    if (!response.ok || !config?.ok) {
+      throw new Error(config?.message || "Supabase no esta configurado.");
+    }
+
+    state.config = {
+      supabaseUrl: config.supabaseUrl,
+      supabaseAnonKey: config.supabaseAnonKey,
+    };
+
+    const restored = await restoreSession();
+    if (restored) {
+      await enterAuthenticatedApp();
+    } else {
+      setAuthStatus("Usa una cuenta invitada para entrar.");
+    }
+  } catch (error) {
+    setAuthStatus(error.message || "No se pudo conectar Supabase.");
+  }
+}
+
+async function handleSignIn(event) {
+  event.preventDefault();
+  if (!state.config) {
+    setAuthStatus("Supabase todavia no esta configurado.");
+    return;
+  }
+
+  const button = signInForm.querySelector("button[type='submit']");
+  button.disabled = true;
+  setAuthStatus("Entrando...");
+
+  try {
+    const email = signInForm.email.value.trim();
+    const password = signInForm.password.value;
+    const session = await supabaseAuthRequest("token?grant_type=password", {
+      method: "POST",
+      body: { email, password },
+    });
+    setSession(session);
+    await enterAuthenticatedApp();
+    renderAuthState();
+  } catch (error) {
+    clearSession();
+    renderAuthState();
+    setAuthStatus(error.message || "No se pudo iniciar sesion.");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function enterAuthenticatedApp() {
+  document.body.classList.remove("auth-required");
+  document.body.classList.add("authenticated");
+  if (authGate) authGate.hidden = true;
+  setAuthStatus("");
+  await loadHistory();
+}
+
+async function restoreSession() {
+  const stored = readStoredSession();
+  if (!stored?.access_token) return false;
+  state.session = stored;
+
+  try {
+    if (stored.expires_at && Date.now() > stored.expires_at - 60000 && stored.refresh_token) {
+      const refreshed = await supabaseAuthRequest("token?grant_type=refresh_token", {
+        method: "POST",
+        useSession: false,
+        body: { refresh_token: stored.refresh_token },
+      });
+      setSession(refreshed);
+    }
+
+    const user = await supabaseAuthRequest("user", { method: "GET" });
+    state.user = user.user || user;
+    return Boolean(state.user?.id);
+  } catch {
+    clearSession();
+    return false;
+  }
+}
+
+async function signOut() {
+  if (state.session?.access_token && state.config) {
+    await fetch(`${state.config.supabaseUrl}/auth/v1/logout`, {
+      method: "POST",
+      headers: authHeaders(),
+    }).catch(() => null);
+  }
+  clearSession();
+  state.latest = null;
+  state.runs = [];
+  closeHistory();
+  renderAuthState();
+  document.body.classList.remove("authenticated", "report-ready");
+  document.body.classList.add("auth-required");
+  resultPanel.hidden = true;
+  if (authGate) authGate.hidden = false;
+  setAuthStatus("Sesion cerrada.");
+}
+
+async function supabaseAuthRequest(path, options = {}) {
+  const response = await fetch(`${state.config.supabaseUrl}/auth/v1/${path}`, {
+    method: options.method || "GET",
+    headers: authHeaders({}, options.useSession !== false),
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : {};
+
+  if (!response.ok) {
+    throw new Error(body.msg || body.message || body.error_description || "Error de autenticacion.");
+  }
+  return body;
+}
+
+function authHeaders(extra = {}, useSession = true) {
+  return {
+    apikey: state.config.supabaseAnonKey,
+    authorization: useSession && state.session?.access_token ? `Bearer ${state.session.access_token}` : `Bearer ${state.config.supabaseAnonKey}`,
+    "content-type": "application/json",
+    ...extra,
+  };
+}
+
+function setSession(session) {
+  const expiresAt = session.expires_at ? session.expires_at * 1000 : Date.now() + Number(session.expires_in || 3600) * 1000;
+  state.session = { ...session, expires_at: expiresAt };
+  state.user = session.user || state.user;
+  localStorage.setItem("agentGeniaSession", JSON.stringify(state.session));
+}
+
+function readStoredSession() {
+  try {
+    return JSON.parse(localStorage.getItem("agentGeniaSession") || "null");
+  } catch {
+    return null;
+  }
+}
+
+function clearSession() {
+  state.session = null;
+  state.user = null;
+  localStorage.removeItem("agentGeniaSession");
+}
+
+function setAuthStatus(message) {
+  if (authStatus) authStatus.textContent = message;
+}
+
+async function handleAttachmentInput(event) {
+  const files = [...(event.target.files || [])];
+  event.target.value = "";
+  await addAttachments(files);
+}
+
+async function addAttachments(files) {
+  if (!files.length) return;
+
+  const slots = MAX_ATTACHMENTS - state.attachments.length;
+  if (slots <= 0) {
+    showToast(`Maximo ${MAX_ATTACHMENTS} adjuntos`);
+    return;
+  }
+
+  let added = 0;
+  for (const file of files.slice(0, slots)) {
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      showToast(`${file.name} pesa mas de ${formatBytes(MAX_ATTACHMENT_BYTES)}`);
+      continue;
+    }
+
+    const totalBytes = state.attachments.reduce((sum, item) => sum + item.size, 0) + file.size;
+    if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+      showToast(`Adjuntos maximo ${formatBytes(MAX_TOTAL_ATTACHMENT_BYTES)} en total`);
+      break;
+    }
+
+    try {
+      state.attachments.push(await fileToAttachment(file));
+      added += 1;
+    } catch {
+      showToast(`No pude leer ${file.name}`);
+    }
+  }
+
+  if (files.length > slots && added) {
+    showToast(`${added} adjuntos agregados. Maximo ${MAX_ATTACHMENTS}.`);
+  } else if (files.length > slots) {
+    showToast(`Maximo ${MAX_ATTACHMENTS} adjuntos`);
+  } else if (added) {
+    showToast(added === 1 ? "Adjunto agregado" : `${added} adjuntos agregados`);
+  }
+
+  renderAttachments();
+}
+
+async function fileToAttachment(file) {
+  const kind = attachmentKind(file);
+  const attachment = {
+    id: createAttachmentId(),
+    name: file.name || "archivo",
+    type: file.type || fallbackMimeType(file.name),
+    size: file.size,
+    sizeLabel: formatBytes(file.size),
+    kind,
+    contentMode: "metadata-only",
+  };
+
+  if (kind === "image") {
+    attachment.previewUrl = URL.createObjectURL(file);
+    attachment.dataUrl = await readFileAsDataUrl(file);
+    attachment.contentMode = "image-data-url";
+    return attachment;
+  }
+
+  if (isTextAttachment(file)) {
+    const text = await readFileAsText(file);
+    attachment.content = text.slice(0, TEXT_ATTACHMENT_LIMIT);
+    attachment.truncated = text.length > TEXT_ATTACHMENT_LIMIT;
+    attachment.contentMode = "text";
+    return attachment;
+  }
+
+  attachment.dataUrl = await readFileAsDataUrl(file);
+  attachment.contentMode = "binary-data-url";
+  return attachment;
+}
+
+function renderAttachments() {
+  if (!attachmentTray) return;
+  attachmentTray.hidden = state.attachments.length === 0;
+  attachmentTray.innerHTML = state.attachments.map(renderAttachmentChip).join("");
+  lucide.createIcons();
+}
+
+function renderAttachmentChip(attachment) {
+  const visual =
+    attachment.kind === "image" && attachment.previewUrl
+      ? `<img class="attachment-thumb" src="${escapeHtml(attachment.previewUrl)}" alt="" />`
+      : `<span class="attachment-icon"><i data-lucide="${iconForAttachment(attachment)}"></i></span>`;
+
+  return `<article class="attachment-chip">
+    ${visual}
+    <div class="attachment-copy">
+      <strong>${escapeHtml(attachment.name)}</strong>
+      <span>${escapeHtml(attachment.sizeLabel)} · ${escapeHtml(attachmentLabel(attachment))}</span>
+    </div>
+    <button class="attachment-remove" type="button" data-attachment-id="${escapeHtml(attachment.id)}" title="Quitar adjunto" aria-label="Quitar ${escapeHtml(attachment.name)}">
+      <i data-lucide="x"></i>
+    </button>
+  </article>`;
+}
+
+function handleAttachmentTrayClick(event) {
+  const button = event.target.closest("[data-attachment-id]");
+  if (!button) return;
+  const id = button.dataset.attachmentId;
+  const attachment = state.attachments.find((item) => item.id === id);
+  if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+  state.attachments = state.attachments.filter((item) => item.id !== id);
+  renderAttachments();
+}
+
+function serializeAttachments() {
+  return state.attachments.map(({ previewUrl, ...attachment }) => attachment);
+}
+
 async function handleSubmit(event) {
   event.preventDefault();
+  if (!state.session?.access_token) {
+    document.body.classList.add("auth-required");
+    if (authGate) authGate.hidden = false;
+    setAuthStatus("Inicia sesion para usar el agente.");
+    return;
+  }
+
   const data = readForm();
   if (!state.user) {
-    queueLogin(data.naturalRequest);
+    document.body.classList.add("auth-required");
+    if (authGate) authGate.hidden = false;
+    setAuthStatus("Inicia sesion para usar el agente.");
     return;
   }
   await runResearch(data);
@@ -475,6 +784,7 @@ async function runResearch(data) {
         activateTab("brief");
         saveState(backend.report);
         setLoading(false);
+        await loadHistory();
         resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
         showToast("Analisis de rentabilidad listo");
         return;
@@ -486,6 +796,7 @@ async function runResearch(data) {
         activateTab("brief");
         saveState(backend.report);
         setLoading(false);
+        await loadHistory();
         resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
         showToast("Cotizacion de envio lista");
         return;
@@ -497,8 +808,7 @@ async function runResearch(data) {
       report.backendError = backend.message;
     }
   } catch (error) {
-    report.backendError =
-      "Preview local sin harness conectado. En produccion, el agente ejecuta busqueda, comparacion y cola de negociacion desde esta misma pagina.";
+    report.backendError = error.message || "No se pudo conectar con el backend.";
   }
 
   state.latest = report;
@@ -508,6 +818,7 @@ async function runResearch(data) {
   activateTab("brief");
   saveState(report);
   setLoading(false);
+  await loadHistory();
   showToast(report.ai ? "Sourcing generado con Codex" : "Plan guiado generado");
 }
 
@@ -530,10 +841,7 @@ function renderAuthState() {
   }
 
   userPill.hidden = false;
-  userPill.innerHTML = `
-    <span>${escapeHtml(state.user.name || state.user.email)}</span>
-    <a href="/api/logout">Salir</a>
-  `;
+  userPill.innerHTML = `<span>${escapeHtml(state.user.email || state.user.name || "Cuenta activa")}</span>`;
 }
 
 function renderRoute() {
@@ -615,6 +923,7 @@ function readForm() {
       channels: brandChannelsInput?.value.trim() || "",
       goal: brandGoalInput?.value.trim() || "",
     },
+    attachments: serializeAttachments(),
     accessKey: form.accessKey.value.trim(),
   };
 }
@@ -711,16 +1020,10 @@ function buildReport(data) {
 }
 
 async function requestBackendReport(data) {
-  if (data.accessKey) {
-    localStorage.setItem("alibabaSourcingAccessKey", data.accessKey);
-  }
-
   const headers = {
     "content-type": "application/json",
+    authorization: `Bearer ${state.session.access_token}`,
   };
-  if (data.accessKey) {
-    headers["x-app-password"] = data.accessKey;
-  }
 
   const response = await fetch("./api/research", {
     method: "POST",
@@ -733,12 +1036,18 @@ async function requestBackendReport(data) {
     throw new Error("Backend not deployed");
   }
 
-  if (response.status === 401) {
-    queueLogin(data.naturalRequest);
-    return null;
+  const body = await response.json();
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearSession();
+      renderAuthState();
+      document.body.classList.add("auth-required");
+      if (authGate) authGate.hidden = false;
+    }
+    throw new Error(body.message || "No se pudo generar el research.");
   }
 
-  return response.json();
+  return body;
 }
 
 function defaultDestination(market) {
@@ -2057,6 +2366,93 @@ function setTabLabels(labels) {
   });
 }
 
+async function loadHistory() {
+  if (!state.session?.access_token || !historyList) return;
+  try {
+    const response = await fetch("./api/runs", {
+      headers: {
+        authorization: `Bearer ${state.session.access_token}`,
+      },
+    });
+    const body = await response.json();
+    if (!response.ok || !body.ok) throw new Error(body.message || "No se pudo cargar historial.");
+    state.runs = body.runs || [];
+    renderHistory();
+  } catch (error) {
+    historyList.innerHTML = `<p class="auth-status">${escapeHtml(error.message || "No se pudo cargar historial.")}</p>`;
+  }
+}
+
+function renderHistory() {
+  if (!historyList) return;
+  if (!state.runs.length) {
+    historyList.innerHTML = '<p class="auth-status">Todavia no hay research guardado.</p>';
+    return;
+  }
+
+  historyList.innerHTML = state.runs
+    .map(
+      (run) => `<button class="history-item" type="button" data-run-id="${escapeHtml(run.id)}">
+        <strong>${escapeHtml(run.natural_request || "Research")}</strong>
+        <span>${escapeHtml(run.status || "sin estado")} · ${escapeHtml(formatRunDate(run.created_at))}</span>
+      </button>`,
+    )
+    .join("");
+}
+
+async function toggleHistory() {
+  if (!historyDrawer) return;
+  if (historyDrawer.hidden) {
+    await loadHistory();
+    historyDrawer.hidden = false;
+  } else {
+    closeHistory();
+  }
+}
+
+function closeHistory() {
+  if (historyDrawer) historyDrawer.hidden = true;
+}
+
+async function handleHistoryClick(event) {
+  const button = event.target.closest("[data-run-id]");
+  if (!button) return;
+  const runId = button.dataset.runId;
+  button.disabled = true;
+
+  try {
+    const response = await fetch(`./api/runs/${encodeURIComponent(runId)}`, {
+      headers: {
+        authorization: `Bearer ${state.session.access_token}`,
+      },
+    });
+    const body = await response.json();
+    if (!response.ok || !body.ok) throw new Error(body.message || "No se pudo abrir el research.");
+
+    const run = body.run;
+    const input = run.input_json || {};
+    const report = buildReport({
+      ...input,
+      naturalRequest: run.natural_request || input.naturalRequest || "Research guardado",
+      attachments: input.attachments || [],
+      accessKey: "",
+    });
+    report.ai = run.result_json || null;
+    report.backendMode = "supabase";
+    report.runId = run.id;
+    state.latest = report;
+    document.body.classList.add("report-ready");
+    resultPanel.hidden = false;
+    renderReport(report);
+    activateTab("brief");
+    closeHistory();
+  } catch (error) {
+    showToast(error.message || "No se pudo abrir");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function renderCompactSections(sections) {
   return sections
     .filter(([, items]) => Array.isArray(items) && items.length)
@@ -2071,7 +2467,9 @@ function renderCompactSections(sections) {
 
 function setLoading(isLoading) {
   const button = form.querySelector("button[type='submit']");
+  const uploadButton = form.querySelector(".plus-button");
   button.disabled = isLoading;
+  if (uploadButton) uploadButton.disabled = isLoading;
   button.title = isLoading ? "Trabajando" : "Ejecutar agente";
   button.innerHTML = isLoading
     ? '<i data-lucide="loader-circle"></i>'
@@ -2080,11 +2478,12 @@ function setLoading(isLoading) {
 }
 
 function buildPrompt(report) {
+  const attachments = attachmentSummary(report.attachments);
   if (report.businessStage === "brand") {
     const brand = normalizeBrandContext(report);
-    return `Actua como Agent Genia. El usuario tiene una marca existente: ${brand.name}. Solicitud: "${report.naturalRequest}". Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
+    return `Actua como Agent Genia. El usuario tiene una marca existente: ${brand.name}. Solicitud: "${report.naturalRequest}". Adjuntos: ${attachments}. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
   }
-  return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Decide que herramienta interna usar. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
+  return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Adjuntos: ${attachments}. Decide que herramienta interna usar. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
 }
 
 function buildMarkdown(report) {
@@ -2118,6 +2517,7 @@ Destino DDP: ${report.destination}
 Presupuesto: ${report.budget || "no definido"}
 Cantidad: ${report.orderQuantity || "no definida"}
 Costo objetivo: ${report.targetUnitCost ? formatMoney(report.targetUnitCost) : "no definido"}
+Adjuntos: ${attachmentSummary(report.attachments)}
 ${shopifySection}
 
 ## Decision
@@ -2336,6 +2736,7 @@ Producto: ${report.product}
 Mercado: ${report.market}
 Destino DDP: ${report.destination}
 Modo: Codex harness
+Adjuntos: ${attachmentSummary(report.attachments)}
 ${shopifySection}
 
 ## Decision
@@ -2404,7 +2805,94 @@ async function copySummary() {
 }
 
 function saveState(report) {
-  localStorage.setItem("alibabaSourcingLatest", JSON.stringify(report));
+  localStorage.setItem(
+    "alibabaSourcingLatest",
+    JSON.stringify({
+      ...report,
+      attachments: (report.attachments || []).map(({ dataUrl, content, ...attachment }) => ({
+        ...attachment,
+        contentMode: attachment.contentMode || "metadata-only",
+      })),
+    }),
+  );
+}
+
+function attachmentKind(file) {
+  const type = file.type || "";
+  const name = file.name || "";
+  if (type.startsWith("image/")) return "image";
+  if (type === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
+  if (/\.(docx?|xlsx?|csv|json)$/i.test(name)) return "document";
+  if (isTextAttachment(file)) return "text";
+  return "file";
+}
+
+function attachmentLabel(attachment) {
+  if (attachment.kind === "image") return "imagen";
+  if (attachment.kind === "pdf") return "PDF";
+  if (attachment.contentMode === "text" || attachment.kind === "text") return "texto";
+  if (attachment.kind === "document") return "documento";
+  return "archivo";
+}
+
+function attachmentSummary(attachments = []) {
+  if (!attachments.length) return "ninguno";
+  return attachments
+    .map((item) => `${item.name} (${item.sizeLabel || formatBytes(item.size)}, ${attachmentLabel(item)})`)
+    .join("; ");
+}
+
+function iconForAttachment(attachment) {
+  if (attachment.kind === "image") return "image";
+  if (attachment.kind === "pdf") return "file-text";
+  if (attachment.contentMode === "text" || attachment.kind === "text") return "file-type";
+  if (attachment.kind === "document") return "file-spreadsheet";
+  return "paperclip";
+}
+
+function isTextAttachment(file) {
+  return (
+    (file.type && file.type.startsWith("text/")) ||
+    ["application/json", "text/csv"].includes(file.type) ||
+    /\.(txt|csv|json|md)$/i.test(file.name || "")
+  );
+}
+
+function fallbackMimeType(name = "") {
+  if (/\.pdf$/i.test(name)) return "application/pdf";
+  if (/\.json$/i.test(name)) return "application/json";
+  if (/\.csv$/i.test(name)) return "text/csv";
+  if (/\.txt$/i.test(name)) return "text/plain";
+  return "application/octet-stream";
+}
+
+function readFileAsDataUrl(file) {
+  return readFile(file, "readAsDataURL");
+}
+
+function readFileAsText(file) {
+  return readFile(file, "readAsText");
+}
+
+function readFile(file, method) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("No se pudo leer el archivo."));
+    reader[method](file);
+  });
+}
+
+function createAttachmentId() {
+  const random = crypto.getRandomValues(new Uint32Array(2));
+  return `${Date.now().toString(36)}-${random[0].toString(36)}${random[1].toString(36)}`;
+}
+
+function formatBytes(bytes) {
+  const size = Number(bytes) || 0;
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function numberValue(value) {
@@ -2448,6 +2936,10 @@ function formatDate(value) {
     month: "short",
     day: "numeric",
   }).format(date);
+}
+
+function formatRunDate(value) {
+  return formatDate(value);
 }
 
 function toolLabel(value) {

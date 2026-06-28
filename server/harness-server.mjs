@@ -71,8 +71,9 @@ function validatePayload(payload) {
   if (payload.product && !stringField(payload.product, 500)) return "Invalid product.";
   if (payload.productDetails && !stringField(payload.productDetails, 2000)) return "Invalid product details.";
   if (payload.goals && !Array.isArray(payload.goals)) return "Invalid goals.";
-  if (payload.businessStage && !["starter", "shopify"].includes(payload.businessStage)) return "Invalid business stage.";
+  if (payload.businessStage && !["starter", "brand", "shopify"].includes(payload.businessStage)) return "Invalid business stage.";
   if (payload.shopify && typeof payload.shopify !== "object") return "Invalid Shopify payload.";
+  if (payload.attachments && !validAttachments(payload.attachments)) return "Invalid attachments.";
   return "";
 }
 
@@ -80,11 +81,32 @@ function stringField(value, maxLength) {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
 }
 
+function validAttachments(value) {
+  if (!Array.isArray(value) || value.length > 6) return false;
+  return value.every((item) => {
+    if (!item || typeof item !== "object") return false;
+    if (!optionalString(item.id, 120)) return false;
+    if (!optionalString(item.name, 180)) return false;
+    if (!optionalString(item.type, 160)) return false;
+    if (!optionalString(item.kind, 40)) return false;
+    if (!optionalString(item.contentMode, 40)) return false;
+    if (typeof item.size !== "number" || item.size < 0 || item.size > 4 * 1024 * 1024) return false;
+    if (item.dataUrl && !optionalString(item.dataUrl, 6 * 1024 * 1024)) return false;
+    if (item.content && !optionalString(item.content, 80000)) return false;
+    return true;
+  });
+}
+
+function optionalString(value, maxLength) {
+  return value === undefined || (typeof value === "string" && value.length <= maxLength);
+}
+
 async function runCodexResearch(payload) {
   const runDir = await mkdtemp(join(tmpdir(), "alibaba-sourcing-"));
   await mkdir(runDir, { recursive: true });
+  const attachmentFiles = await writeAttachments(runDir, payload.attachments || []);
   await writeFile(join(runDir, "request.json"), JSON.stringify(payload, null, 2));
-  await writeFile(join(runDir, "prompt.md"), buildPrompt(payload));
+  await writeFile(join(runDir, "prompt.md"), buildPrompt(payload, attachmentFiles));
 
   const outputPath = join(runDir, "result.json");
   const args = [
@@ -120,7 +142,57 @@ async function runCodexResearch(payload) {
   };
 }
 
-function buildPrompt(payload) {
+async function writeAttachments(runDir, attachments) {
+  if (!attachments.length) return [];
+
+  const attachmentDir = join(runDir, "attachments");
+  await mkdir(attachmentDir, { recursive: true });
+
+  const written = [];
+  for (const [index, attachment] of attachments.entries()) {
+    const fileName = `${String(index + 1).padStart(2, "0")}-${safeFileName(attachment.name || "attachment")}`;
+    const filePath = join(attachmentDir, fileName);
+
+    if (attachment.dataUrl) {
+      const buffer = decodeDataUrl(attachment.dataUrl);
+      if (!buffer) {
+        written.push({ ...attachment, path: "", note: "data URL invalida; solo metadata disponible" });
+        continue;
+      }
+      await writeFile(filePath, buffer);
+      written.push({ ...attachment, path: `attachments/${fileName}`, note: "archivo escrito desde upload" });
+      continue;
+    }
+
+    if (attachment.content) {
+      await writeFile(filePath, attachment.content);
+      written.push({ ...attachment, path: `attachments/${fileName}`, note: "texto escrito desde upload" });
+      continue;
+    }
+
+    written.push({ ...attachment, path: "", note: "solo metadata disponible" });
+  }
+
+  return written;
+}
+
+function decodeDataUrl(value) {
+  const match = String(value).match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.+)$/);
+  if (!match) return null;
+  return Buffer.from(match[2], "base64");
+}
+
+function safeFileName(value) {
+  const cleaned = String(value)
+    .normalize("NFKD")
+    .replace(/[^\w.\-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 120);
+  return cleaned || "attachment";
+}
+
+function buildPrompt(payload, attachmentFiles = []) {
   return `Eres Agent Genia. El usuario escribe una solicitud natural en la main page y tu trabajo es decidir que herramientas internas usar, como Cursor cuando llama tools durante su flujo.
 
 Instruccion de aislamiento:
@@ -130,6 +202,8 @@ Instruccion de aislamiento:
 - Si el usuario menciona una categoria como suplementos, skincare o cualquier otra, no la favorezcas por historial: valida evidencia, unit economics y riesgos desde cero.
 
 Solicitud del usuario: ${payload.naturalRequest}
+
+${buildAttachmentPrompt(payload.attachments || [], attachmentFiles)}
 
 Inferencias del frontend, revisalas y corrigelas si hace falta:
 - Producto inferido: ${payload.product || "no especificado"}
@@ -171,6 +245,27 @@ Reglas:
 - Entrega mensajes listos para enviar al proveedor en ingles, con terminos claros y profesionales.
 - Responde solo en JSON conforme al schema de salida.
 `;
+}
+
+function buildAttachmentPrompt(attachments, files) {
+  if (!attachments.length) return "Adjuntos subidos por el usuario: ninguno.";
+
+  const fileLines = attachments.map((attachment, index) => {
+    const written = files[index];
+    const localPath = written?.path ? ` | archivo local: ${written.path}` : "";
+    const mode = attachment.contentMode || "metadata-only";
+    const size = attachment.sizeLabel || `${attachment.size || 0} bytes`;
+    return `- ${attachment.name || "archivo"} | tipo: ${attachment.type || "desconocido"} | tamano: ${size} | modo: ${mode}${localPath}`;
+  });
+
+  return `Adjuntos subidos por el usuario:
+${fileLines.join("\n")}
+
+Reglas para adjuntos:
+- Usa los adjuntos como contexto de producto, proveedor, empaque, capturas de Alibaba, listas de precios o especificaciones.
+- Si existe archivo local, puedes inspeccionarlo desde el directorio de trabajo antes de responder.
+- Si un adjunto solo tiene metadata o no puedes leerlo, dilo en limitations y no inventes contenido visual, precios ni specs.
+- Incorpora insights relevantes de los adjuntos en supplierSearchPlan, qualityPlan, negotiationPlan y beginnerNextSteps.`;
 }
 
 function runProcess(command, args, stdin, timeoutMs) {

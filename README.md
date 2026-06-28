@@ -6,11 +6,48 @@ The app can run in two modes:
 
 - Guided static mode: works in any static host and shows the same main-page cockpit with inferred tool routing.
 - Codex harness mode: Cloudflare Pages calls `/api/research`, which proxies to a private harness server that runs `codex exec` with the local Codex authentication and the local `$alibaba-sourcing-agent` skill. This is the production mode where Agent Genia decides whether to call Alibaba sourcing as an internal tool and returns results to the main page.
+- Supabase production mode: users sign in with Supabase Auth, uploads are stored in Supabase Storage, and each research run is persisted in Postgres before/after the Codex harness or internal tools execute.
 
 The main page has two ecommerce paths without changing the cockpit structure:
 
 - `Empezar desde cero`: for beginners who only know they want to sell online.
 - `Tienda Shopify`: connects one or more Shopify stores with OAuth, stores encrypted offline tokens in Cloudflare KV, and lets Agent Genia audit the real catalog without asking merchants to paste tokens.
+
+## Supabase
+
+Production Supabase project:
+
+```text
+agent-genia-prod
+Project ref: jzwdskeqqfptazvrwgpm
+Region: us-east-1
+URL: https://jzwdskeqqfptazvrwgpm.supabase.co
+```
+
+Schema and RLS live in:
+
+```bash
+supabase/migrations/20260628125100_agent_genia_core.sql
+```
+
+The frontend reads `SUPABASE_URL` and `SUPABASE_ANON_KEY` from `/api/config`. `SUPABASE_ANON_KEY` is publishable. `SUPABASE_SERVICE_ROLE_KEY` must only exist as a Cloudflare/server secret, never in frontend code.
+
+Initial access is invite/admin-only:
+
+1. Create a user manually in Supabase Auth.
+2. Insert or update `public.profiles` with `id = auth.users.id` and `is_active = true`.
+3. The user signs in from the main page with email/password.
+
+Activation SQL:
+
+```sql
+insert into public.profiles (id, email, is_active)
+values ('<auth-user-id>', '<email>', true)
+on conflict (id) do update set
+  email = excluded.email,
+  is_active = true,
+  updated_at = now();
+```
 
 ## Local skill
 
@@ -52,6 +89,7 @@ Set Cloudflare Pages secrets:
 ```bash
 pnpm dlx wrangler pages secret put HARNESS_URL --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put HARNESS_TOKEN --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put AUTH_SECRET --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put GOOGLE_CLIENT_ID --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put GOOGLE_CLIENT_SECRET --project-name ecom-research-agent
@@ -76,11 +114,13 @@ pnpm dlx wrangler pages secret put SHIP_FROM_STATE --project-name ecom-research-
 
 The Envia integration is rate-only. The Cloudflare Function only calls the quote endpoint (`/ship/rate/`) to compare shipping prices; it does not create labels, buy shipping guides, schedule pickups, or charge shipments.
 
-`AUTH_SECRET` signs browser sessions. `APP_PASSWORD` is only a legacy/testing bypass for direct API calls and is not shown in the UI.
+`AUTH_SECRET` signs legacy browser sessions. `APP_PASSWORD` is only a legacy/testing bypass for direct API calls and is not shown in the UI. Supabase email/password is the primary production auth gate for `/api/research`, `/api/runs`, and `/api/runs/:id`.
 
 ## Browser login
 
-The main page is public enough to type a prompt. When someone sends the prompt, the browser must have an Agent Genia session cookie. If there is no session, the app saves the prompt in `sessionStorage`, sends the user to `/login`, and resumes the same prompt after OAuth succeeds.
+The main page uses a minimal Supabase email/password gate before the agent can run. The browser sends `Authorization: Bearer <supabase_access_token>` to `/api/research`, `/api/runs`, and `/api/runs/:id`.
+
+Google/Shopify OAuth endpoints remain in the repo for connector/login experiments, but they are not the primary production auth path for the research agent.
 
 Configure Google OAuth with:
 
