@@ -5,24 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Research guiado para validar oportunidades ecommerce con Meta Ads, Amazon Reviews y TikTok."
+      content="Asistente simple para validar oportunidades ecommerce con Meta Ads, Amazon Reviews y TikTok."
     />
-    <title>Ecom Research Agent</title>
+    <title>Agent Genia Research</title>
     <link rel="preconnect" href="https://unpkg.com" />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260628-internal-tools" />
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div class="brand">
-          <div class="brand-mark" aria-hidden="true">
-            <i data-lucide="radar"></i>
-          </div>
-          <div>
-            <h1>Ecom Research</h1>
-            <p>Meta Ads + Amazon + TikTok</p>
-          </div>
-        </div>
+        <a class="brand" href="./" aria-label="Agent Genia">
+          <span class="brand-mark" aria-hidden="true">
+            <i data-lucide="sparkles"></i>
+          </span>
+          <span>
+            <strong>Agent Genia</strong>
+            <small>Research ecom</small>
+          </span>
+        </a>
         <div class="top-actions">
           <button class="icon-button" id="copySummary" type="button" title="Copiar resumen">
             <i data-lucide="copy"></i>
@@ -34,105 +34,177 @@
       </header>
 
       <main class="workspace">
-        <form class="control-panel" id="researchForm">
-          <div class="panel-heading">
-            <span class="eyebrow">Nuevo research</span>
-            <h2>Validar una idea ecom</h2>
-          </div>
+        <form class="ask-panel" id="researchForm">
+          <section class="hero">
+            <p class="eyebrow">Meta Ads + Amazon + TikTok</p>
+            <h1>¿Qué quieres investigar hoy?</h1>
+            <p class="hero-copy">
+              Escribe una marca, producto o problema. Agent Genia lo convierte en un research claro,
+              sin ruido y con siguientes pasos.
+            </p>
+          </section>
 
-          <label>
-            Marca o URL de referencia
-            <input
-              id="reference"
-              name="reference"
-              type="text"
-              placeholder="https://jolieskinco.com"
-              autocomplete="off"
-            />
-          </label>
+          <section class="composer" aria-label="Nuevo research">
+            <div class="composer-main">
+              <button class="composer-tool" id="toggleOptions" type="button" title="Opciones">
+                <i data-lucide="plus"></i>
+              </button>
+              <textarea
+                id="problem"
+                name="problem"
+                rows="2"
+                placeholder="Ej: Quiero empezar una marca como jolieskinco.com para skincare"
+              ></textarea>
+              <button class="send-button" type="submit" title="Generar research" aria-label="Generar research">
+                <i data-lucide="arrow-up"></i>
+              </button>
+            </div>
+            <div class="composer-footer">
+              <span><i data-lucide="shield-check"></i>Research cuidadoso</span>
+              <span><i data-lucide="database"></i>3 fuentes</span>
+              <span><i data-lucide="clock-3"></i>Rápido</span>
+            </div>
+          </section>
 
-          <label>
-            Problema o producto
-            <textarea
-              id="problem"
-              name="problem"
-              rows="4"
-              placeholder="Quiero empezar una marca parecida para skincare / belleza"
-            ></textarea>
-          </label>
+          <section class="suggestions" aria-label="Sugerencias">
+            <button
+              type="button"
+              data-suggestion
+              data-reference="https://jolieskinco.com"
+              data-problem="Me gustaría empezar una marca parecida a Jolie Skin Co. Investiga qué problema real resuelve, qué dicen los anuncios, qué se queja la gente en reviews y qué oportunidades hay para diferenciarse."
+            >
+              <i data-lucide="wand-sparkles"></i>
+              Investigar una marca como Jolie Skin Co
+            </button>
+            <button
+              type="button"
+              data-suggestion
+              data-problem="Quiero encontrar una oportunidad ecommerce en skincare para mujeres con piel sensible. Busca dolores reales, objeciones, hooks y requisitos del producto antes de comprar inventario."
+            >
+              <i data-lucide="search-check"></i>
+              Encontrar una idea en skincare
+            </button>
+            <button
+              type="button"
+              data-suggestion
+              data-problem="Valida si un producto para agua dura en la ducha tiene demanda. Investiga Amazon reviews, TikTok orgánico y anuncios de Meta para saber si vale la pena probarlo."
+            >
+              <i data-lucide="droplets"></i>
+              Validar filtros de ducha o agua dura
+            </button>
+            <button
+              type="button"
+              data-suggestion
+              data-problem="Quiero saber si esta idea puede dejar dinero. Ayúdame a calcular precio, costo del producto, envío, devoluciones, recompra, diferencia real y canal para conseguir clientes. Si es México puedo escribir CP origen, CP destino, peso y medidas del paquete."
+            >
+              <i data-lucide="calculator"></i>
+              Ver si una idea puede dejar dinero
+            </button>
+            <button
+              type="button"
+              data-suggestion
+              data-problem="Cotiza un envío en México. CP origen 99250, CP destino 45100, peso 300 gramos, caja 10x10x10 cm. Solo quiero tarifa de paquetería, sin crear guía."
+            >
+              <i data-lucide="truck"></i>
+              Cotizar un envío en México
+            </button>
+            <button
+              type="button"
+              data-suggestion
+              data-problem="Tengo una idea de producto pero no sé si la gente la compraría. Ayúdame a encontrar problemas reales, competidores, palabras que usan los clientes y un primer test de oferta."
+            >
+              <i data-lucide="lightbulb"></i>
+              Validar cualquier idea de producto
+            </button>
+          </section>
 
-          <div class="field-grid">
-            <label>
-              Mercado
-              <select id="market" name="market">
-                <option value="US">Estados Unidos</option>
-                <option value="MX">Mexico</option>
-                <option value="LATAM">Latam</option>
-                <option value="GLOBAL">Global</option>
-              </select>
-            </label>
-            <label>
-              Idioma
-              <select id="language" name="language">
-                <option value="es">Espanol</option>
-                <option value="en">English</option>
-                <option value="both">Bilingue</option>
-              </select>
-            </label>
-          </div>
-
-          <label>
-            Clave de acceso
-            <input
-              id="accessKey"
-              name="accessKey"
-              type="password"
-              placeholder="Solo si el backend la pide"
-              autocomplete="current-password"
-            />
-          </label>
-
-          <fieldset>
-            <legend>Fuentes</legend>
-            <div class="source-switches">
-              <label class="switch-card">
-                <input type="checkbox" name="source" value="meta" checked />
-                <span><i data-lucide="megaphone"></i>Meta Ads</span>
+          <details class="advanced-options" id="advancedOptions">
+            <summary>
+              <span><i data-lucide="sliders-horizontal"></i>Ajustes opcionales</span>
+              <i data-lucide="chevron-down"></i>
+            </summary>
+            <div class="advanced-grid">
+              <label>
+                Marca o URL exacta
+                <input
+                  id="reference"
+                  name="reference"
+                  type="text"
+                  placeholder="https://jolieskinco.com"
+                  autocomplete="off"
+                />
               </label>
-              <label class="switch-card">
-                <input type="checkbox" name="source" value="amazon" checked />
-                <span><i data-lucide="star"></i>Amazon</span>
+
+              <label>
+                Mercado
+                <select id="market" name="market">
+                  <option value="US">Estados Unidos</option>
+                  <option value="MX">México</option>
+                  <option value="LATAM">Latam</option>
+                  <option value="GLOBAL">Global</option>
+                </select>
               </label>
-              <label class="switch-card">
-                <input type="checkbox" name="source" value="tiktok" checked />
-                <span><i data-lucide="message-circle"></i>TikTok</span>
+
+              <label>
+                Idioma
+                <select id="language" name="language">
+                  <option value="es">Español</option>
+                  <option value="en">English</option>
+                  <option value="both">Bilingüe</option>
+                </select>
+              </label>
+
+              <label>
+                Clave de acceso
+                <input
+                  id="accessKey"
+                  name="accessKey"
+                  type="password"
+                  placeholder="Solo si se la pide"
+                  autocomplete="current-password"
+                />
               </label>
             </div>
-          </fieldset>
 
-          <fieldset>
-            <legend>Profundidad</legend>
-            <div class="segmented" role="radiogroup" aria-label="Profundidad">
-              <label>
-                <input type="radio" name="depth" value="rapido" checked />
-                <span>Rapido</span>
-              </label>
-              <label>
-                <input type="radio" name="depth" value="profundo" />
-                <span>Profundo</span>
-              </label>
+            <div class="option-row">
+              <fieldset>
+                <legend>Fuentes</legend>
+                <div class="source-switches">
+                  <label class="switch-card">
+                    <input type="checkbox" name="source" value="meta" checked />
+                    <span><i data-lucide="megaphone"></i>Meta</span>
+                  </label>
+                  <label class="switch-card">
+                    <input type="checkbox" name="source" value="amazon" checked />
+                    <span><i data-lucide="star"></i>Amazon</span>
+                  </label>
+                  <label class="switch-card">
+                    <input type="checkbox" name="source" value="tiktok" checked />
+                    <span><i data-lucide="message-circle"></i>TikTok</span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>Profundidad</legend>
+                <div class="segmented" role="radiogroup" aria-label="Profundidad">
+                  <label>
+                    <input type="radio" name="depth" value="rapido" checked />
+                    <span>Rápido</span>
+                  </label>
+                  <label>
+                    <input type="radio" name="depth" value="profundo" />
+                    <span>Profundo</span>
+                  </label>
+                </div>
+              </fieldset>
             </div>
-          </fieldset>
-
-          <button class="primary-button" type="submit">
-            <i data-lucide="sparkles"></i>
-            Generar research
-          </button>
+          </details>
         </form>
 
-        <section class="result-panel" aria-live="polite">
+        <section class="result-panel" aria-live="polite" hidden>
           <nav class="tabs" aria-label="Secciones del reporte">
-            <button class="tab active" type="button" data-tab="brief">Brief</button>
+            <button class="tab active" type="button" data-tab="brief">Resumen</button>
             <button class="tab" type="button" data-tab="sources">Fuentes</button>
             <button class="tab" type="button" data-tab="hooks">Hooks</button>
             <button class="tab" type="button" data-tab="product">Producto</button>
@@ -149,18 +221,18 @@
     <template id="emptyState">
       <div class="empty-state">
         <div class="source-strip" aria-hidden="true">
-          <span><i data-lucide="megaphone"></i> Ads</span>
+          <span><i data-lucide="megaphone"></i> Anuncios</span>
           <span><i data-lucide="star"></i> Reviews</span>
-          <span><i data-lucide="message-circle"></i> Social</span>
+          <span><i data-lucide="message-circle"></i> TikTok</span>
         </div>
-        <h2>Empieza con una marca, URL o problema.</h2>
+        <h2>El reporte aparecerá aquí.</h2>
         <p>
-          El reporte separa anuncios, reviews y voz organica para que las decisiones no salgan de ruido.
+          Usa una sugerencia o escribe cualquier idea arriba. Separaremos evidencia, hipótesis y ruido.
         </p>
       </div>
     </template>
 
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-    <script src="./app.js"></script>
+    <script src="./app.js?v=20260628-internal-tools"></script>
   </body>
 </html>

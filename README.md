@@ -38,14 +38,27 @@ Set Cloudflare Pages secrets:
 pnpm dlx wrangler pages secret put HARNESS_URL --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put HARNESS_TOKEN --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put APP_PASSWORD --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put ENVIA_TOKEN --project-name ecom-research-agent
 ```
+
+Optional Mexico shipping config:
+
+```bash
+pnpm dlx wrangler pages secret put SHIP_FROM_ZIP --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put SHIP_FROM_CITY --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put SHIP_FROM_STATE --project-name ecom-research-agent
+```
+
+`ENVIA_TOKEN` enables live Mexico carrier quotes through Envia.com. Without it, the unit economics tool still estimates Mexican shipping from CP, weight, and package dimensions, but marks the result as an estimate.
+
+The Envia integration is rate-only. The Cloudflare Function only calls the quote endpoint (`/ship/rate/`) to compare shipping prices; it does not create labels, buy shipping guides, schedule pickups, or charge shipments.
 
 Deploy:
 
 ```bash
 rm -rf dist
 mkdir -p dist
-cp index.html app.js styles.css .nojekyll dist/
+cp index.html app.js styles.css .nojekyll _headers _redirects dist/
 pnpm dlx wrangler pages deploy dist --project-name ecom-research-agent
 ```
 

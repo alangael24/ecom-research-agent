@@ -3,9 +3,44 @@ const state = {
 };
 
 const form = document.querySelector("#researchForm");
+const resultPanel = document.querySelector(".result-panel");
 const panels = [...document.querySelectorAll("[data-panel]")];
 const tabs = [...document.querySelectorAll("[data-tab]")];
 const emptyState = document.querySelector("#emptyState");
+const problemInput = document.querySelector("#problem");
+const referenceInput = document.querySelector("#reference");
+const advancedOptions = document.querySelector("#advancedOptions");
+const toggleOptions = document.querySelector("#toggleOptions");
+const suggestionButtons = [...document.querySelectorAll("[data-suggestion]")];
+
+const tabLabelSets = {
+  research: ["Resumen", "Fuentes", "Hooks", "Producto"],
+  profitability: ["Resumen", "Números", "Alertas", "Siguiente"],
+  shipping: ["Resumen", "Tarifas", "Detalles", "Siguiente"],
+};
+
+const repurchaseLabels = {
+  1: "Sin recompra clara",
+  1.15: "Baja",
+  1.35: "Media",
+  1.7: "Alta",
+};
+
+const differentiationLabels = {
+  commodity: "Casi igual a los demás",
+  weak: "Un poco diferente",
+  clear: "Se entiende la diferencia",
+  defensible: "Difícil de copiar",
+};
+
+const channelLabels = {
+  meta: "Facebook/Instagram",
+  "tiktok-organic": "videos orgánicos en TikTok",
+  "tiktok-paid": "anuncios en TikTok",
+  influencers: "creadores o influencers",
+  search: "Google",
+  amazon: "Amazon",
+};
 
 const sourceConfig = {
   meta: {
@@ -104,17 +139,31 @@ const categoryMap = [
 ];
 
 function init() {
+  clearLegacyLocalState();
+  restoreSkillFromUrl();
   renderEmptyState();
-  form.accessKey.value = localStorage.getItem("ecomResearchAccessKey") || "";
   form.addEventListener("submit", handleSubmit);
+  problemInput.addEventListener("input", autoResizePrompt);
+  toggleOptions.addEventListener("click", () => {
+    advancedOptions.open = !advancedOptions.open;
+  });
+  suggestionButtons.forEach((button) => {
+    button.addEventListener("click", () => applySuggestion(button));
+  });
   document.querySelector("#downloadBrief").addEventListener("click", downloadBrief);
   document.querySelector("#copySummary").addEventListener("click", copySummary);
   tabs.forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
+  autoResizePrompt();
   lucide.createIcons();
 }
 
 async function handleSubmit(event) {
   event.preventDefault();
+  if (!problemInput.value.trim() && !referenceInput.value.trim()) {
+    showToast("Escribe una marca, producto o problema");
+    problemInput.focus();
+    return;
+  }
   const data = readForm();
   const report = buildReport(data);
   setLoading(true);
@@ -122,6 +171,24 @@ async function handleSubmit(event) {
   try {
     const backend = await requestBackendReport(data);
     if (backend?.ok && backend.report) {
+      if (backend.report.type === "profitability") {
+        state.latest = backend.report;
+        renderProfitabilityReport(backend.report);
+        activateTab("brief");
+        setLoading(false);
+        document.querySelector(".result-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+        showToast("Análisis de rentabilidad listo");
+        return;
+      }
+      if (backend.report.type === "shipping_quote") {
+        state.latest = backend.report;
+        renderShippingQuoteReport(backend.report);
+        activateTab("brief");
+        setLoading(false);
+        document.querySelector(".result-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+        showToast("Cotización de envío lista");
+        return;
+      }
       report.ai = backend.report;
       report.backendMode = "codex-harness";
       report.diagnostics = backend.diagnostics || null;
@@ -135,8 +202,8 @@ async function handleSubmit(event) {
   state.latest = report;
   renderReport(report);
   activateTab("brief");
-  saveState(report);
   setLoading(false);
+  document.querySelector(".result-panel").scrollIntoView({ behavior: "smooth", block: "start" });
   showToast(report.ai ? "Research generado con Codex" : "Research guiado generado");
 }
 
@@ -144,15 +211,45 @@ function readForm() {
   const selectedSources = [...form.querySelectorAll("input[name='source']:checked")].map(
     (input) => input.value,
   );
+  const problem = problemInput.value.trim();
+  const inferredReference = inferReference(problem);
   return {
-    reference: form.reference.value.trim() || "marca de referencia",
-    problem: form.problem.value.trim() || "validar una nueva marca ecommerce",
-    market: form.market.value,
-    language: form.language.value,
-    depth: form.depth.value,
+    reference: form.elements.reference.value.trim() || inferredReference || "marca de referencia",
+    problem: problem || "validar una nueva marca ecommerce",
+    market: form.elements.market.value,
+    language: form.elements.language.value,
+    depth: form.elements.depth.value,
     sources: selectedSources.length ? selectedSources : ["meta", "amazon", "tiktok"],
-    accessKey: form.accessKey.value.trim(),
+    accessKey: form.elements.accessKey.value.trim(),
   };
+}
+
+function applySuggestion(button) {
+  referenceInput.value = button.dataset.reference || "";
+  problemInput.value = button.dataset.problem || button.textContent.trim();
+  autoResizePrompt();
+  problemInput.focus();
+  showToast("Sugerencia lista para investigar");
+}
+
+function autoResizePrompt() {
+  problemInput.style.height = "auto";
+  problemInput.style.height = `${Math.min(problemInput.scrollHeight, 220)}px`;
+}
+
+function inferReference(text) {
+  const urlMatch = text.match(/https?:\/\/[^\s]+/i);
+  if (urlMatch) return urlMatch[0].replace(/[),.]+$/, "");
+  const domainMatch = text.match(/\b[a-z0-9][a-z0-9-]*\.(com|co|net|io|store|mx|org)\b/i);
+  return domainMatch ? domainMatch[0] : "";
+}
+
+function restoreSkillFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("skill") === "rentabilidad" || params.get("skill") === "profitability") {
+    problemInput.value =
+      "Quiero saber si esta idea puede dejar dinero. Ayúdame a calcular costos, margen y cuánto podría pagar por cliente.";
+  }
 }
 
 function buildReport(data) {
@@ -178,10 +275,6 @@ function buildReport(data) {
 }
 
 async function requestBackendReport(data) {
-  if (data.accessKey) {
-    localStorage.setItem("ecomResearchAccessKey", data.accessKey);
-  }
-
   const headers = {
     "content-type": "application/json",
   };
@@ -306,11 +399,248 @@ function buildEvidenceRows(data, category) {
 }
 
 function renderEmptyState() {
+  resultPanel.hidden = true;
+  resultPanel.classList.remove("ready");
+  setTabLabels(tabLabelSets.research);
   document.querySelector("#brief").innerHTML = emptyState.innerHTML;
   lucide.createIcons();
 }
 
+function renderProfitabilityReport(report) {
+  const data = report.profitability;
+  const scoreClass = report.verdict.level === "pass" ? "" : report.verdict.level;
+  resultPanel.hidden = false;
+  resultPanel.classList.add("ready");
+  setTabLabels(tabLabelSets.profitability);
+
+  document.querySelector("#brief").innerHTML = `
+    <div class="metric-row">
+      <article class="metric-card ${report.verdict.level === "fail" ? "danger" : report.verdict.level === "watch" ? "warning" : ""}">
+        <strong>${escapeHtml(report.verdict.label)}</strong>
+        <p>veredicto</p>
+      </article>
+      <article class="metric-card">
+        <strong>${report.score}/100</strong>
+        <p>calificación</p>
+      </article>
+      <article class="metric-card">
+        <strong>${formatMoney(data.cacTarget, data.currency)}</strong>
+        <p>meta sana por cliente</p>
+      </article>
+    </div>
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>${escapeHtml(report.verdict.title)}</h3>
+        <p>${escapeHtml(report.verdict.copy)}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="calculator"></i>Análisis de rentabilidad</span>
+          <span class="pill"><i data-lucide="shopping-bag"></i>${formatMoney(data.aov, data.currency)} por pedido</span>
+          <span class="pill"><i data-lucide="megaphone"></i>${escapeHtml(channelLabels[data.channel])}</span>
+        </div>
+      </article>
+      <article class="report-card">
+        <h3>Dinero disponible antes de anuncios</h3>
+        <p>${formatMoney(data.contribution, data.currency)} por pedido, equivalente a ${formatPercent(data.margin)}.</p>
+      </article>
+      <article class="report-card">
+        <h3>Ventas necesarias</h3>
+        <p>Para no perder, necesitas vender ${formatRoas(data.breakEvenRoas)} por cada $1 gastado en anuncios.</p>
+      </article>
+      <article class="report-card full-span">
+        <h3>Calificación</h3>
+        <div class="score-track"><span class="${scoreClass}" style="width: ${report.score}%"></span></div>
+      </article>
+      <article class="report-card full-span">
+        <h3>Supuestos usados</h3>
+        <ul>${data.assumptions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#sources").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Números usados</h3>
+        <dl class="calculation-list">
+          <div><dt>Venta por pedido</dt><dd>${formatMoney(data.aov, data.currency)}</dd></div>
+          <div><dt>Producto</dt><dd>${formatMoney(data.cogs, data.currency)}</dd></div>
+          <div><dt>Envío</dt><dd>${formatMoney(data.shipping, data.currency)}</dd></div>
+          <div><dt>Cobros de plataforma</dt><dd>${formatMoney(data.fees, data.currency)}</dd></div>
+          <div><dt>Reserva por devoluciones</dt><dd>${formatMoney(data.returnsReserve, data.currency)}</dd></div>
+          <div><dt>Máximo para conseguir cliente</dt><dd>${formatMoney(data.cacMax, data.currency)}</dd></div>
+          <div><dt>Meta sana por cliente</dt><dd>${formatMoney(data.cacTarget, data.currency)}</dd></div>
+          <div><dt>Meta sana de ventas por $1 en anuncios</dt><dd>${formatRoas(data.targetRoas)}</dd></div>
+          <div><dt>Valor si compra otra vez</dt><dd>${formatMoney(data.ltvContribution, data.currency)}</dd></div>
+        </dl>
+      </article>
+      ${renderShippingQuoteDetails(data.shippingQuote)}
+    </div>`;
+
+  document.querySelector("#hooks").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Alertas importantes</h3>
+        <ul>${report.risks.map((risk) => `<li>${risk}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#product").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Qué haría después</h3>
+        <ul>${report.steps.map((step) => `<li>${step}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>Si faltan números</h3>
+        <p>Este resultado usa supuestos. Para reemplazarlos, escribe precio, costo del producto, CP origen, CP destino, peso, medidas del paquete y devoluciones.</p>
+      </article>
+    </div>`;
+
+  lucide.createIcons();
+}
+
+function renderShippingQuoteDetails(shippingQuote) {
+  if (!shippingQuote) return "";
+  const status = {
+    live_envia_mx: "Cotizado en vivo con Envia.com",
+    live_easypost: "Cotizado en vivo",
+    user_provided: "Escrito por el usuario",
+    estimated_no_envia_token: "Estimado para México",
+    estimated_missing_mx_details: "Estimado para México",
+    estimated_after_envia_error: "Estimado para México",
+    estimated_no_api_key: "Estimado",
+    estimated_unsupported_currency: "Estimado",
+    estimated_missing_details: "Estimado",
+    estimated_after_quote_error: "Estimado",
+  }[shippingQuote.mode] || "Estimado";
+  const profile = shippingQuote.profile || {};
+  const packageText =
+    shippingQuote.currency === "MXN"
+      ? `${formatNumber(profile.weightOz / 35.274)} kg, ${formatNumber(profile.lengthIn * 2.54)} x ${formatNumber(profile.widthIn * 2.54)} x ${formatNumber(profile.heightIn * 2.54)} cm`
+      : `${formatNumber(profile.weightOz)} oz, ${formatNumber(profile.lengthIn)} x ${formatNumber(profile.widthIn)} x ${formatNumber(profile.heightIn)} in`;
+  const routeText =
+    shippingQuote.currency === "MXN"
+      ? `${profile.originZip || "origen pendiente"} -> ${profile.destinationZip || "destino pendiente"}`
+      : `${profile.originZip || "origin pending"} -> ${profile.destinationZip || "destination pending"}`;
+  const rateRows = Array.isArray(shippingQuote.rates) && shippingQuote.rates.length
+    ? `<dl class="calculation-list mini-list">${shippingQuote.rates
+        .map(
+          (rate) => `<div><dt>${escapeHtml(rate.carrier)} ${escapeHtml(rate.service)}</dt><dd>${formatMoney(rate.amount, rate.currency || shippingQuote.currency)}</dd></div>`,
+        )
+        .join("")}</dl>`
+    : "";
+
+  return `<article class="report-card full-span">
+    <h3>Cómo se calculó el envío</h3>
+    <p><strong>${escapeHtml(status)}:</strong> ${formatMoney(shippingQuote.amount, shippingQuote.currency || "USD")} por pedido.</p>
+    <div class="pill-row">
+      <span class="pill"><i data-lucide="map-pinned"></i>${escapeHtml(routeText)}</span>
+      <span class="pill"><i data-lucide="package"></i>${escapeHtml(packageText)}</span>
+    </div>
+    ${rateRows}
+  </article>`;
+}
+
+function renderShippingQuoteReport(report) {
+  const quote = report.shippingQuote;
+  const profile = quote.profile || {};
+  const route = `${profile.originZip || "origen pendiente"} -> ${profile.destinationZip || "destino pendiente"}`;
+  const live = quote.mode === "live_envia_mx" || quote.mode === "live_easypost";
+  const status = live ? "Cotización viva" : quote.mode === "user_provided" ? "Envío escrito" : "Estimación";
+  resultPanel.hidden = false;
+  resultPanel.classList.add("ready");
+  setTabLabels(tabLabelSets.shipping);
+
+  document.querySelector("#brief").innerHTML = `
+    <div class="metric-row">
+      <article class="metric-card ${live ? "" : "warning"}">
+        <strong>${formatMoney(quote.amount, quote.currency)}</strong>
+        <p>costo de envío</p>
+      </article>
+      <article class="metric-card">
+        <strong>${escapeHtml(status)}</strong>
+        <p>tipo de cálculo</p>
+      </article>
+      <article class="metric-card">
+        <strong>${escapeHtml(quote.carrier || (quote.currency === "MXN" ? "Envia" : "API"))}</strong>
+        <p>proveedor</p>
+      </article>
+    </div>
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Ruta cotizada</h3>
+        <p>${escapeHtml(route)}${profile.originCity || profile.destinationCity ? ` · ${escapeHtml([profile.originCity, profile.destinationCity].filter(Boolean).join(" a "))}` : ""}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="truck"></i>Solo cotización</span>
+          <span class="pill"><i data-lucide="package"></i>${escapeHtml(packageSummary(report.package, quote.currency))}</span>
+          <span class="pill"><i data-lucide="shield-check"></i>No compra guía</span>
+        </div>
+      </article>
+      <article class="report-card full-span">
+        <h3>Notas</h3>
+        <ul>${quote.notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#sources").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Tarifas disponibles</h3>
+        ${renderShippingRates(quote)}
+      </article>
+    </div>`;
+
+  document.querySelector("#hooks").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Detalles usados</h3>
+        <dl class="calculation-list">
+          <div><dt>Origen</dt><dd>${escapeHtml(profile.originZip || "pendiente")}</dd></div>
+          <div><dt>Destino</dt><dd>${escapeHtml(profile.destinationZip || "pendiente")}</dd></div>
+          <div><dt>Peso</dt><dd>${formatNumber(report.package.weightKg)} kg</dd></div>
+          <div><dt>Medidas</dt><dd>${formatNumber(report.package.lengthCm)} x ${formatNumber(report.package.widthCm)} x ${formatNumber(report.package.heightCm)} cm</dd></div>
+          <div><dt>Valor declarado</dt><dd>${formatMoney(profile.declaredValue || 0, quote.currency)}</dd></div>
+        </dl>
+      </article>
+      ${report.warnings.length ? `<article class="report-card full-span notice-card">
+        <h3>Alertas</h3>
+        <ul>${report.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+      </article>` : ""}
+    </div>`;
+
+  document.querySelector("#product").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Qué haría después</h3>
+        <ul>${report.nextSteps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  lucide.createIcons();
+}
+
+function renderShippingRates(quote) {
+  if (!Array.isArray(quote.rates) || !quote.rates.length) {
+    return `<p>${escapeHtml(quote.notes.join(" "))}</p>`;
+  }
+  return `<dl class="calculation-list mini-list">${quote.rates
+    .map(
+      (rate) => `<div><dt>${escapeHtml(rate.carrier)} ${escapeHtml(rate.service)}</dt><dd>${formatMoney(rate.amount, rate.currency || quote.currency)}</dd></div>`,
+    )
+    .join("")}</dl>`;
+}
+
+function packageSummary(packageInfo, currency) {
+  if (!packageInfo) return "paquete";
+  if (currency === "MXN") {
+    return `${formatNumber(packageInfo.weightKg)} kg · ${formatNumber(packageInfo.lengthCm)} x ${formatNumber(packageInfo.widthCm)} x ${formatNumber(packageInfo.heightCm)} cm`;
+  }
+  return `${formatNumber(packageInfo.weightKg)} kg`;
+}
+
 function renderReport(report) {
+  resultPanel.hidden = false;
+  resultPanel.classList.add("ready");
+  setTabLabels(tabLabelSets.research);
   const sourceLabels = report.sources.map((key) => sourceConfig[key].label).join(", ");
   const ai = report.ai || null;
   const decisionText =
@@ -491,6 +821,12 @@ function activateTab(name) {
   panels.forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === name));
 }
 
+function setTabLabels(labels) {
+  tabs.forEach((tab, index) => {
+    tab.textContent = labels[index] || tab.textContent;
+  });
+}
+
 function renderCompactSections(sections) {
   return sections
     .filter(([, items]) => Array.isArray(items) && items.length)
@@ -507,8 +843,9 @@ function setLoading(isLoading) {
   const button = form.querySelector("button[type='submit']");
   button.disabled = isLoading;
   button.innerHTML = isLoading
-    ? '<i data-lucide="loader-circle"></i>Generando...'
-    : '<i data-lucide="sparkles"></i>Generar research';
+    ? '<i data-lucide="loader-circle"></i>'
+    : '<i data-lucide="arrow-up"></i>';
+  button.setAttribute("aria-label", isLoading ? "Generando research" : "Generar research");
   lucide.createIcons();
 }
 
@@ -518,6 +855,12 @@ function buildPrompt(report) {
 
 function buildMarkdown(report) {
   if (!report) return "";
+  if (report.type === "profitability") {
+    return buildProfitabilityMarkdown(report);
+  }
+  if (report.type === "shipping_quote") {
+    return buildShippingQuoteMarkdown(report);
+  }
   if (report.ai) {
     return buildAiMarkdown(report);
   }
@@ -553,6 +896,91 @@ ${report.category.requirements.map((item) => `- ${item}`).join("\n")}
 
 ${buildPrompt(report)}
 `;
+}
+
+function buildShippingQuoteMarkdown(report) {
+  const quote = report.shippingQuote;
+  const profile = quote.profile || {};
+  return `# Cotización de envío
+
+Fecha: ${report.createdAt}
+Modo: ${quote.mode}
+Proveedor: ${report.provider}
+Solo cotización: ${report.rateOnly ? "sí" : "no"}
+
+## Ruta
+- Origen: ${profile.originZip || "pendiente"} ${profile.originCity || ""}
+- Destino: ${profile.destinationZip || "pendiente"} ${profile.destinationCity || ""}
+
+## Paquete
+- Peso: ${formatNumber(report.package.weightKg)} kg
+- Medidas: ${formatNumber(report.package.lengthCm)} x ${formatNumber(report.package.widthCm)} x ${formatNumber(report.package.heightCm)} cm
+- Valor declarado: ${formatMoney(profile.declaredValue || 0, quote.currency)}
+
+## Resultado
+- Costo usado: ${formatMoney(quote.amount, quote.currency)}
+- Carrier: ${quote.carrier || "No disponible"}
+- Servicio: ${quote.service || "No disponible"}
+
+## Tarifas
+${Array.isArray(quote.rates) && quote.rates.length ? quote.rates.map((rate) => `- ${rate.carrier} ${rate.service}: ${formatMoney(rate.amount, rate.currency || quote.currency)}`).join("\n") : "- Sin tarifas vivas; se usó estimación."}
+
+## Alertas
+${report.warnings.map((warning) => `- ${warning}`).join("\n")}
+
+## Siguiente
+${report.nextSteps.map((step) => `- ${step}`).join("\n")}
+`;
+}
+
+function buildProfitabilityMarkdown(report) {
+  const data = report.profitability;
+  return `# Análisis de rentabilidad
+
+Idea: ${data.ideaName}
+Veredicto: ${report.verdict.label}
+Calificación: ${report.score}/100
+
+## Preguntas
+- Venta promedio por pedido: ${formatMoney(data.aov, data.currency)}
+- Costo del producto: ${formatMoney(data.cogs, data.currency)}
+- Costo de envío: ${formatMoney(data.shipping, data.currency)}
+- Fuente del envío: ${shippingQuoteSummary(data.shippingQuote)}
+- Cobros de plataforma/tarjeta: ${formatMoney(data.fees, data.currency)}
+- Devoluciones estimadas: ${formatPercent(data.returnRate / 100)}
+- Recompra posible: ${repurchaseLabels[data.repurchaseMultiplier]}
+- Diferencia: ${differentiationLabels[data.differentiation]}
+- Dónde conseguir clientes: ${channelLabels[data.channel]}
+
+## Resultado
+- Dinero que queda antes de anuncios: ${formatPercent(data.margin)}
+- Máximo para conseguir un cliente: ${formatMoney(data.cacMax, data.currency)}
+- Meta sana para conseguir un cliente: ${formatMoney(data.cacTarget, data.currency)}
+- Ventas necesarias por cada $1 en anuncios: ${formatRoas(data.breakEvenRoas)}
+- Meta sana de ventas por cada $1 en anuncios: ${formatRoas(data.targetRoas)}
+- Valor si compra otra vez: ${formatMoney(data.ltvContribution, data.currency)}
+
+## Supuestos
+${data.assumptions.map((item) => `- ${item}`).join("\n")}
+
+## Alertas
+${report.risks.map((item) => `- ${stripHtml(item)}`).join("\n")}
+
+## Siguiente
+${report.steps.map((item) => `- ${stripHtml(item)}`).join("\n")}
+`;
+}
+
+function shippingQuoteSummary(shippingQuote) {
+  if (!shippingQuote) return "No disponible";
+  if (shippingQuote.mode === "live_envia_mx") {
+    return `Cotizado con Envia.com (${shippingQuote.carrier} ${shippingQuote.service})`;
+  }
+  if (shippingQuote.mode === "live_easypost") {
+    return `Cotizado en vivo (${shippingQuote.carrier} ${shippingQuote.service})`;
+  }
+  if (shippingQuote.mode === "user_provided") return "Número escrito por el usuario";
+  return "Estimación por falta de datos o API key";
 }
 
 function buildAiMarkdown(report) {
@@ -628,8 +1056,13 @@ async function copySummary() {
   showToast("Resumen copiado");
 }
 
-function saveState(report) {
-  localStorage.setItem("ecomResearchLatest", JSON.stringify(report));
+function clearLegacyLocalState() {
+  try {
+    localStorage.removeItem("ecomResearchAccessKey");
+    localStorage.removeItem("ecomResearchLatest");
+  } catch {
+    // Ignore privacy cleanup failures in restricted browser modes.
+  }
 }
 
 function showToast(message) {
@@ -647,6 +1080,36 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function stripHtml(value) {
+  const node = document.createElement("div");
+  node.innerHTML = value;
+  return node.textContent || node.innerText || "";
+}
+
+function formatMoney(value, currency) {
+  const locale = currency === "MXN" ? "es-MX" : "en-US";
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+    maximumFractionDigits: value >= 100 ? 0 : 2,
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function formatPercent(value) {
+  return `${Math.round((Number.isFinite(value) ? value : 0) * 100)}%`;
+}
+
+function formatRoas(value) {
+  if (!Number.isFinite(value)) return "Sin margen";
+  return `${value.toFixed(value >= 10 ? 0 : 1)}x`;
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat("es-MX", {
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(value) ? value : 0);
 }
 
 init();

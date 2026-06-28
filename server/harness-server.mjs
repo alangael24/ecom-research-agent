@@ -120,6 +120,12 @@ async function runCodexResearch(payload) {
 function buildPrompt(payload) {
   return `Eres un agente senior de ecommerce research. Tu trabajo es ayudar a una persona no tecnica a decidir si vale la pena empezar una marca ecommerce basada en una referencia, sin llenarla de ruido.
 
+Instruccion de aislamiento:
+- Trata esta solicitud como una conversacion completamente nueva.
+- No uses memoria, preferencias, productos, marcas, conclusiones ni contexto de ejecuciones anteriores.
+- La unica informacion del usuario disponible es lo que aparece en este prompt.
+- Si el usuario menciona una categoria como suplementos, skincare o cualquier otra, no la favorezcas por historial: valida evidencia, unit economics y riesgos desde cero.
+
 Referencia o marca: ${payload.reference}
 Problema o producto: ${payload.problem}
 Mercado: ${payload.market || "US"}
@@ -132,6 +138,7 @@ Reglas:
 - No presentes claims de anuncios como hechos.
 - Si no puedes verificar datos vivos, dilo como limitacion y entrega un plan preciso de busqueda.
 - Para piel, cabello, salud, suplementos o efectos corporales, incluye limites de claims y riesgos de compliance.
+- Si la solicitud pide costos, margen, CAC, ROAS, break even o rentabilidad, separa numeros dados de supuestos y no recomiendes lanzar sin pasar por unit economics.
 - Da recomendaciones accionables para ecom: avatar, dolor, oferta, hooks, objeciones, requisitos de producto, que evitar y siguientes tests.
 - Prioriza precision y utilidad. Evita volumen sin decision.
 - Responde solo en JSON conforme al schema de salida.
