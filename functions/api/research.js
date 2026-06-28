@@ -63,6 +63,17 @@ export async function onRequestPost(context) {
       return json({ ok: true, report, diagnostics, runId: runContext.id });
     }
 
+    if (shouldUseBrandWhitespaceTool(agentPayload)) {
+      const report = runBrandWhitespaceTool(agentPayload);
+      const diagnostics = {
+        tool: "brand_whitespace_tool",
+        mode: "internal_tool",
+        evidenceMode: "declared_context_and_connected_catalog",
+      };
+      await persistReport(auth.config, auth.accessToken, auth.user.id, runContext.id, agentPayload, report);
+      return json({ ok: true, report, diagnostics, runId: runContext.id });
+    }
+
     if (shouldUseShippingRateTool(agentPayload)) {
       const report = await runShippingRateTool(agentPayload, env);
       const diagnostics = {
@@ -457,6 +468,328 @@ function shouldUseShippingRateTool(payload) {
 function shouldUseShopifyPageBuilder(payload) {
   const text = payloadText(payload).toLowerCase();
   return /shopify/.test(text) && /crear|hacer|generar|construir|publicar|subir|lanzar|landing|pagina|página|page|web|sitio/.test(text);
+}
+
+function shouldUseBrandWhitespaceTool(payload) {
+  if (payload.businessStage !== "brand") return false;
+  const text = payloadText(payload).toLowerCase();
+  const intentPattern =
+    /white ?space|espacio libre|hueco|oportunidad|posicion|posicionamiento|diferenci|competencia|competidor|competidores|saturad|nicho|angulo|ángulo|territorio|mercado libre|producto nuevo|lanzar|expansion|expansión/;
+  return intentPattern.test(text);
+}
+
+function runBrandWhitespaceTool(payload) {
+  const brand = normalizeBrandForWhitespace(payload);
+  const products = payload.shopify?.snapshot?.products || [];
+  const declaredSignals = extractDeclaredSignals(payload);
+  const catalogSignals = extractCatalogSignals(products);
+  const competitorSignals = extractCompetitorSignals(payloadText(payload), brand);
+  const candidates = buildWhitespaceCandidates({ payload, brand, products, declaredSignals, catalogSignals, competitorSignals });
+  const primary = candidates[0];
+
+  return {
+    type: "brand_whitespace",
+    toolUsed: "brand_whitespace_tool",
+    naturalRequest: payload.naturalRequest || "",
+    selectedInternalTool: "brand_whitespace_tool",
+    market: payload.market || "US",
+    createdAt: new Date().toLocaleString("es-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }),
+    brand,
+    shopify: {
+      shop: payload.shopify?.shop || "",
+      focus: payload.shopify?.focus || "",
+    },
+    sourceCoverage: buildWhitespaceCoverage(payload, products, declaredSignals, competitorSignals),
+    executiveBrief: {
+      decision: primary
+        ? `El espacio mas defendible para ${brand.name} parece ser: ${primary.title}. Validalo antes de cambiar catalogo o invertir fuerte.`
+        : `Todavia no hay suficiente contexto para elegir un whitespace confiable para ${brand.name}.`,
+      primaryWhitespace: primary?.title || "pendiente",
+      confidence: primary?.confidence || "baja",
+      guardrail: "Esto es una hipotesis de posicionamiento basada en contexto declarado y catalogo conectado; no reemplaza research live de Meta, Amazon o TikTok.",
+    },
+    candidates,
+    evidence: buildWhitespaceEvidence({ declaredSignals, catalogSignals, competitorSignals, products }),
+    risks: buildWhitespaceRisks(payload, products),
+    validationPlan: buildWhitespaceValidationPlan(primary, brand),
+    nextSteps: [
+      "Escoger un solo whitespace para probar durante 7-14 dias.",
+      "Crear una landing o PDP con ese angulo y medir conversion, add-to-cart y preguntas repetidas.",
+      "Comparar hooks contra 3 competidores directos antes de producir mas creativos.",
+      "Si el test gana, conectar la decision con margen, inventario y canal principal.",
+    ],
+  };
+}
+
+function normalizeBrandForWhitespace(payload) {
+  const brand = payload.brand || {};
+  const name =
+    cleanSentence(brand.name) ||
+    inferBrandFromUrl(brand.url) ||
+    cleanSentence(payload.product).split(/\s+/).slice(0, 4).join(" ") ||
+    "Marca";
+  return {
+    name,
+    url: brand.url || "",
+    channels: cleanSentence(brand.channels) || "canales no definidos",
+    goal: cleanSentence(brand.goal || payload.shopify?.focus) || "encontrar un posicionamiento mas claro",
+    stage: payload.shopify?.shop ? "marca con Shopify conectado" : brand.url ? "marca con presencia digital" : "marca con contexto declarado",
+  };
+}
+
+function extractDeclaredSignals(payload) {
+  const text = payloadText(payload);
+  const attachmentText = (payload.attachments || [])
+    .map((attachment) => attachment.content || "")
+    .filter(Boolean)
+    .join(" ");
+  const combined = `${text} ${attachmentText}`.toLowerCase();
+  const signals = [];
+  const rules = [
+    [/precio|barato|caro|premium|lujo/, "precio y percepcion de valor"],
+    [/confianza|reviews?|reseñas|garantia|garant[ií]a|prueba social/, "confianza y prueba social"],
+    [/env[ií]o|shipping|entrega|devoluciones|returns/, "friccion de envio o devoluciones"],
+    [/rutina|uso|como usar|educaci[oó]n|guia|guía/, "educacion de uso"],
+    [/comunidad|identidad|lifestyle|estilo de vida/, "identidad y comunidad"],
+    [/ingrediente|material|calidad|certific|seguridad/, "calidad, ingredientes o materiales"],
+    [/rapidez|facil|f[aá]cil|conveniencia|simple/, "conveniencia y rapidez"],
+    [/suscrip|recompra|retenci[oó]n|refill|repuesto/, "recompra o retencion"],
+  ];
+
+  for (const [pattern, label] of rules) {
+    if (pattern.test(combined)) signals.push(label);
+  }
+  if (!signals.length) signals.push("posicionamiento general aun poco especifico");
+  return [...new Set(signals)].slice(0, 8);
+}
+
+function extractCatalogSignals(products) {
+  if (!products.length) return ["catalogo no conectado o sin productos leidos"];
+  const activeProducts = products.filter((product) => String(product.status || "").toLowerCase() === "active");
+  const types = [...new Set(products.map((product) => product.productType || "").filter(Boolean))];
+  const vendors = [...new Set(products.map((product) => product.vendor || "").filter(Boolean))];
+  const lowInventory = products.filter((product) => Number(product.totalInventory) <= 5).length;
+  const signals = [
+    `${products.length} productos leidos desde Shopify`,
+    `${activeProducts.length || products.length} productos activos o vendibles`,
+  ];
+  if (types.length) signals.push(`${types.slice(0, 4).join(", ")} como categorias visibles`);
+  if (vendors.length > 1) signals.push("catalogo con multiples vendors o lineas; posible dispersion de posicionamiento");
+  if (lowInventory) signals.push(`${lowInventory} productos con inventario bajo; validar antes de empujar demanda`);
+  return signals;
+}
+
+function extractCompetitorSignals(text, brand) {
+  const urls = [...String(text).matchAll(/https?:\/\/[^\s)]+|(?:[a-z0-9-]+\.)+[a-z]{2,}/gi)]
+    .map((match) => match[0].replace(/[.,;]+$/, ""))
+    .filter((url) => !brand.url || !url.includes(brand.url.replace(/^https?:\/\//, "").replace(/^www\./, "")));
+  const named = [];
+  const competitorPattern = /(?:competidor(?:es)?|contra|como|similar a|vs\.?)\s+([a-z0-9][a-z0-9 .&-]{2,40})/gi;
+  let match = competitorPattern.exec(text);
+  while (match) {
+    named.push(cleanSentence(match[1]).replace(/[.,;]+$/, ""));
+    match = competitorPattern.exec(text);
+  }
+  return [...new Set([...urls, ...named].filter(Boolean))].slice(0, 8);
+}
+
+function buildWhitespaceCandidates({ payload, brand, products, declaredSignals, catalogSignals, competitorSignals }) {
+  const text = payloadText(payload).toLowerCase();
+  const category = inferWhitespaceCategory(text, products);
+  const hasCatalog = products.length > 0;
+  const candidates = [];
+
+  candidates.push({
+    title: `${category}: posicionarse por problema especifico, no por producto generico`,
+    targetCustomer: inferWhitespaceCustomer(text, category),
+    underservedProblem: inferUnderservedProblem(text, declaredSignals, category),
+    positioningAngle: inferPositioningAngle(text, declaredSignals, category),
+    whyItMayBeOpen: [
+      competitorSignals.length
+        ? "El usuario ya esta comparando contra competidores; hay oportunidad de ocupar un angulo mas estrecho."
+        : "No se declararon competidores concretos; el primer espacio abierto suele estar en definir mejor para quien es la marca.",
+      hasCatalog
+        ? "El catalogo conectado permite convertir el angulo en una prueba concreta sin inventar una nueva linea desde cero."
+        : "Sin catalogo conectado, conviene validarlo con una pagina o creativo antes de comprar inventario.",
+    ],
+    supportingSignals: [...declaredSignals.slice(0, 3), ...catalogSignals.slice(0, 2)],
+    risks: [
+      "Puede ser demasiado amplio si no se aterriza a un avatar y una objecion.",
+      "Puede no defender margen si termina compitiendo por precio.",
+    ],
+    validationTest: `Crear una landing para ${brand.name} con este angulo y comparar conversion contra la pagina actual durante 7 dias.`,
+    firstOffer: inferFirstOffer(text, category),
+    channel: inferWhitespaceChannel(text, brand.channels),
+    confidence: confidenceFromSignals(declaredSignals.length + (hasCatalog ? 2 : 0), competitorSignals.length),
+  });
+
+  if (/premium|calidad|ingrediente|material|seguridad|certific/.test(text) || declaredSignals.includes("calidad, ingredientes o materiales")) {
+    candidates.push({
+      title: "Territorio de confianza: calidad verificable y compra sin duda",
+      targetCustomer: "comprador que quiere evitar una mala compra, no solo encontrar el precio mas bajo",
+      underservedProblem: "miedo a que el producto no sea igual a la promesa o no tenga respaldo suficiente",
+      positioningAngle: "mostrar prueba, materiales, uso, limites y garantia con mas claridad que el competidor",
+      whyItMayBeOpen: ["Muchas marcas comunican beneficios, pero pocas explican evidencia, uso correcto y riesgo de mala expectativa."],
+      supportingSignals: declaredSignals.filter((item) => /confianza|calidad|material|ingrediente/.test(item)).concat(catalogSignals.slice(0, 2)),
+      risks: ["Requiere substanciacion real; no conviene usar claims fuertes sin evidencia."],
+      validationTest: "Agregar bloque de prueba/garantia/FAQ en PDP y medir reduccion de preguntas precompra.",
+      firstOffer: "bundle de entrada con garantia clara y explicacion de uso",
+      channel: "Meta retargeting o email a trafico tibio",
+      confidence: confidenceFromSignals(3 + (hasCatalog ? 1 : 0), competitorSignals.length),
+    });
+  }
+
+  if (/recompra|retenci[oó]n|suscrip|refill|email|ltv/.test(text) || declaredSignals.includes("recompra o retencion")) {
+    candidates.push({
+      title: "Whitespace de recompra: convertir el producto en rutina",
+      targetCustomer: "cliente que ya compro o que necesita reposicion recurrente",
+      underservedProblem: "la compra se queda como transaccion unica porque no hay siguiente paso claro",
+      positioningAngle: "rutina, replenishment, bundle secuencial o suscripcion ligera",
+      whyItMayBeOpen: ["Competir por adquisicion se vuelve caro; una marca existente puede abrir espacio en retencion antes que en nuevos SKUs."],
+      supportingSignals: declaredSignals.filter((item) => /recompra|retencion/.test(item)).concat(catalogSignals.slice(0, 2)),
+      risks: ["Si el producto no tiene consumo recurrente real, forzar suscripcion puede bajar confianza."],
+      validationTest: "Enviar flujo post-compra con siguiente producto recomendado y medir segunda compra a 30 dias.",
+      firstOffer: "bundle de rutina o refill con incentivo moderado",
+      channel: "email/SMS y audiencia de compradores",
+      confidence: confidenceFromSignals(3 + (hasCatalog ? 2 : 0), competitorSignals.length),
+    });
+  }
+
+  if (/tiktok|organico|orgánico|creador|influencer|ugc/.test(text)) {
+    candidates.push({
+      title: "Whitespace de contenido: educar el problema mejor que vender el producto",
+      targetCustomer: "persona que todavia no sabe que categoria comprar",
+      underservedProblem: "la audiencia entiende el dolor, pero no entiende el criterio de decision",
+      positioningAngle: "contenido comparativo, demostraciones y errores comunes antes/despues de comprar",
+      whyItMayBeOpen: ["En TikTok/UGC el espacio libre suele estar en explicar el problema con lenguaje real, no en repetir features."],
+      supportingSignals: declaredSignals.slice(0, 3),
+      risks: ["Puede traer trafico curioso sin intencion si el CTA no filtra bien."],
+      validationTest: "Publicar 5 piezas educativas con el mismo angulo y medir saves, comentarios con intencion y clicks.",
+      firstOffer: "lead magnet, quiz o starter kit",
+      channel: "TikTok organico o creadores",
+      confidence: confidenceFromSignals(2 + (hasCatalog ? 1 : 0), competitorSignals.length),
+    });
+  }
+
+  return candidates.slice(0, 4);
+}
+
+function inferWhitespaceCategory(text, products) {
+  if (/skin|skincare|piel|beauty|belleza|serum|acne|acné/.test(text)) return "skincare";
+  if (/suplement|prote[ií]na|vitamin|creatina|col[aá]geno|magnesio/.test(text)) return "suplementos";
+  if (/ropa|moda|fashion|apparel/.test(text)) return "moda";
+  const productType = products.find((product) => product.productType)?.productType;
+  return productType || "marca ecommerce";
+}
+
+function inferWhitespaceCustomer(text, category) {
+  if (/mama|mamá|madres/.test(text)) return "personas ocupadas que quieren resolver el problema sin investigar demasiado";
+  if (category === "skincare") return "personas que quieren una rutina clara y menos confusion al elegir productos";
+  if (category === "suplementos") return "personas que quieren mejorar su rutina sin promesas exageradas";
+  if (category === "moda") return "compradores que quieren identidad, ajuste y confianza antes de comprar";
+  return "cliente que compara opciones y necesita una razon concreta para elegir esta marca";
+}
+
+function inferUnderservedProblem(text, signals, category) {
+  if (signals.includes("educacion de uso")) return "el cliente no entiende como elegir, usar o comparar la solucion";
+  if (signals.includes("confianza y prueba social")) return "falta confianza suficiente antes de comprar";
+  if (signals.includes("friccion de envio o devoluciones")) return "la friccion logistica impide que la oferta se sienta segura";
+  if (category === "skincare") return "demasiadas promesas similares y poca claridad sobre rutina, expectativas y uso";
+  return "la categoria se percibe generica y obliga a competir por precio o estetica";
+}
+
+function inferPositioningAngle(text, signals, category) {
+  if (signals.includes("conveniencia y rapidez")) return "solucion simple, rapida y facil de incorporar";
+  if (signals.includes("calidad, ingredientes o materiales")) return "calidad verificable sin claims exagerados";
+  if (signals.includes("identidad y comunidad")) return "marca con identidad clara para un grupo especifico";
+  if (category === "skincare") return "rutina simple con expectativas claras y objeciones resueltas";
+  return "especialista en un problema concreto para un comprador concreto";
+}
+
+function inferFirstOffer(text, category) {
+  if (/bundle|kit|set/.test(text)) return "bundle curado con una promesa especifica";
+  if (/premium|calidad/.test(text)) return "starter kit premium con prueba o garantia";
+  if (category === "skincare") return "rutina de entrada de 2-3 pasos con guia de uso";
+  return "oferta de entrada que pruebe el angulo sin ampliar catalogo";
+}
+
+function inferWhitespaceChannel(text, channels) {
+  const combined = `${text} ${channels || ""}`.toLowerCase();
+  if (/tiktok/.test(combined)) return "TikTok organico/creadores";
+  if (/email|sms|retenci/.test(combined)) return "email/SMS";
+  if (/google|search|seo/.test(combined)) return "Google/search";
+  if (/meta|facebook|instagram|ads|anuncios/.test(combined)) return "Meta Ads";
+  return "un canal principal a elegir antes del test";
+}
+
+function confidenceFromSignals(signalCount, competitorCount) {
+  if (signalCount >= 5 && competitorCount >= 2) return "media-alta";
+  if (signalCount >= 4) return "media";
+  return "baja-media";
+}
+
+function buildWhitespaceCoverage(payload, products, declaredSignals, competitorSignals) {
+  return [
+    `Contexto de marca: ${payload.brand?.name || payload.brand?.url ? "recibido" : "limitado"}.`,
+    `Shopify/catalogo: ${products.length ? `${products.length} productos leidos` : "no conectado o sin productos"}.`,
+    `Senales declaradas: ${declaredSignals.join(", ")}.`,
+    `Competidores declarados: ${competitorSignals.length ? competitorSignals.join(", ") : "ninguno; falta benchmark externo"}.`,
+    "Meta/Amazon/TikTok live: no consultados en esta herramienta interna; usar research competitivo profundo para confirmar.",
+  ];
+}
+
+function buildWhitespaceEvidence({ declaredSignals, catalogSignals, competitorSignals, products }) {
+  return {
+    strongerSignals: [
+      ...declaredSignals.map((signal) => `La solicitud/contexto apunta a ${signal}.`),
+      ...catalogSignals.slice(0, 4).map((signal) => `Catalogo: ${signal}.`),
+    ],
+    weakSignals: [
+      competitorSignals.length
+        ? `Competidores mencionados por el usuario: ${competitorSignals.join(", ")}. Falta leer sus ads/reviews para confirmar saturacion.`
+        : "No se mencionaron competidores directos; la comparacion aun es incompleta.",
+      products.length ? "El catalogo ayuda a aterrizar el test, pero no prueba demanda por si solo." : "Sin catalogo conectado, el whitespace depende mas de supuestos.",
+    ],
+    missingData: [
+      "Top 3 competidores directos y sus promesas principales.",
+      "Reviews, comentarios o tickets de clientes con lenguaje literal.",
+      "AOV, margen, CAC, tasa de conversion y recompra por producto.",
+      "Canal principal donde se va a validar el angulo.",
+    ],
+  };
+}
+
+function buildWhitespaceRisks(payload, products) {
+  const risks = [
+    "Elegir un espacio demasiado amplio y terminar con una promesa generica.",
+    "Confundir un angulo interesante con demanda real sin test de conversion.",
+    "Copiar lenguaje de competidores en vez de ocupar una objecion no atendida.",
+  ];
+  if (!products.length) risks.push("Sin catalogo conectado, puede recomendarse un angulo dificil de ejecutar con inventario actual.");
+  if (/skin|skincare|piel|suplement|vitamin|salud|health/.test(payloadText(payload).toLowerCase())) {
+    risks.push("Categoria sensible a claims: evitar promesas medicas, curas o resultados garantizados sin substanciacion.");
+  }
+  return risks;
+}
+
+function buildWhitespaceValidationPlan(primary, brand) {
+  if (!primary) {
+    return [
+      "Agregar 3 competidores directos y 3 productos top de la marca.",
+      "Definir canal principal de validacion.",
+      "Volver a correr el analisis con catalogo o evidencia de clientes.",
+    ];
+  }
+  return [
+    `Hipotesis: ${primary.title}.`,
+    `Pagina/test: ${primary.validationTest}`,
+    `Oferta minima: ${primary.firstOffer}.`,
+    `Canal: ${primary.channel}.`,
+    `Decision: continuar solo si mejora conversion, add-to-cart, respuesta cualitativa o CAC vs el posicionamiento actual de ${brand.name}.`,
+  ];
 }
 
 function runShopifyPageBuilderTool(payload) {

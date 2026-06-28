@@ -47,6 +47,7 @@ const SHOPIFY_PRODUCTION_ORIGIN = "https://agentgenia.com";
 const tabLabelSets = {
   sourcing: ["Resumen", "Herramientas", "Proveedores", "Negociacion", "DDP", "Calidad"],
   brand: ["Resumen", "Marca", "Oferta", "Crecimiento", "Conversion", "Siguiente"],
+  brandWhitespace: ["Resumen", "Espacios", "Evidencia", "Validacion", "Riesgos", "Siguiente"],
   shopify: ["Resumen", "Shopify", "Catalogo", "Acciones", "DDP", "Calidad"],
   profitability: ["Resumen", "Numeros", "Alertas", "Siguiente", "Supuestos", "Notas"],
   shipping: ["Resumen", "Tarifas", "Detalles", "Alertas", "Siguiente", "Notas"],
@@ -777,39 +778,12 @@ async function runResearch(data) {
   try {
     const backend = await requestBackendReport(data);
     if (backend?.ok && backend.report) {
-      if (backend.report.type === "profitability") {
-        state.latest = backend.report;
-        document.body.classList.add("report-ready");
-        renderProfitabilityReport(backend.report);
-        activateTab("brief");
+      if (renderTypedBackendReport(backend.report)) {
         saveState(backend.report);
         setLoading(false);
         await loadHistory();
         resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-        showToast("Analisis de rentabilidad listo");
-        return;
-      }
-      if (backend.report.type === "shipping_quote") {
-        state.latest = backend.report;
-        document.body.classList.add("report-ready");
-        renderShippingQuoteReport(backend.report);
-        activateTab("brief");
-        saveState(backend.report);
-        setLoading(false);
-        await loadHistory();
-        resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-        showToast("Cotizacion de envio lista");
-        return;
-      }
-      if (backend.report.type === "shopify_page_draft") {
-        state.latest = backend.report;
-        document.body.classList.add("report-ready");
-        renderShopifyPageDraftReport(backend.report);
-        activateTab("brief");
-        saveState(backend.report);
-        setLoading(false);
-        resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-        showToast("Preview de pagina Shopify listo");
+        showToast(typedReportToast(backend.report));
         return;
       }
       report.ai = backend.report;
@@ -831,6 +805,45 @@ async function runResearch(data) {
   setLoading(false);
   await loadHistory();
   showToast(report.ai ? "Sourcing generado con Codex" : "Plan guiado generado");
+}
+
+function renderTypedBackendReport(report) {
+  if (!report?.type) return false;
+
+  if (report.type === "profitability") {
+    state.latest = report;
+    document.body.classList.add("report-ready");
+    resultPanel.hidden = false;
+    renderProfitabilityReport(report);
+  } else if (report.type === "shipping_quote") {
+    state.latest = report;
+    document.body.classList.add("report-ready");
+    resultPanel.hidden = false;
+    renderShippingQuoteReport(report);
+  } else if (report.type === "shopify_page_draft") {
+    state.latest = report;
+    document.body.classList.add("report-ready");
+    resultPanel.hidden = false;
+    renderShopifyPageDraftReport(report);
+  } else if (report.type === "brand_whitespace") {
+    state.latest = report;
+    document.body.classList.add("report-ready");
+    resultPanel.hidden = false;
+    renderBrandWhitespaceReport(report);
+  } else {
+    return false;
+  }
+
+  activateTab("brief");
+  return true;
+}
+
+function typedReportToast(report) {
+  if (report.type === "profitability") return "Analisis de rentabilidad listo";
+  if (report.type === "shipping_quote") return "Cotizacion de envio lista";
+  if (report.type === "shopify_page_draft") return "Preview de pagina Shopify listo";
+  if (report.type === "brand_whitespace") return "Whitespace de marca listo";
+  return "Reporte listo";
 }
 
 async function fetchSession() {
@@ -955,6 +968,23 @@ function inferRequest(naturalRequest, businessStage = "starter") {
   const brandIntent =
     businessStage === "brand" ||
     hasAny(text, ["marca", "brand", "negocio", "ventas", "aov", "retencion", "retención", "email", "ads", "roas"]);
+  const whitespaceIntent = hasAny(text, [
+    "whitespace",
+    "white space",
+    "espacio libre",
+    "hueco",
+    "oportunidad",
+    "posicionamiento",
+    "diferenciar",
+    "diferenciacion",
+    "diferenciación",
+    "competencia",
+    "competidor",
+    "competidores",
+    "nicho",
+    "angulo",
+    "ángulo",
+  ]);
   const market = text.includes("mexico") || text.includes("méxico") ? "MX" : text.includes("latam") ? "LATAM" : "US";
   const destination = inferDestination(text, market);
   const budget = inferMoney(text, ["presupuesto", "budget", "tengo", "invertir"]);
@@ -982,6 +1012,8 @@ function inferRequest(naturalRequest, businessStage = "starter") {
         : ["interpret"],
     selectedInternalTool: sourcingIntent
       ? "alibaba-sourcing-agent"
+      : brandIntent && whitespaceIntent
+        ? "brand_whitespace_tool"
       : brandIntent
         ? "brand-audit-agent"
       : shopifyIntent
@@ -2121,6 +2153,135 @@ function renderBrandReport(report) {
   lucide.createIcons();
 }
 
+function renderBrandWhitespaceReport(report) {
+  resultPanel.hidden = false;
+  setTabLabels(tabLabelSets.brandWhitespace);
+
+  const brand = report.brand || {};
+  const brief = report.executiveBrief || {};
+  const candidates = Array.isArray(report.candidates) ? report.candidates : [];
+  const evidence = report.evidence || {};
+  const coverage = Array.isArray(report.sourceCoverage) ? report.sourceCoverage : [];
+  const risks = Array.isArray(report.risks) ? report.risks : [];
+  const validationPlan = Array.isArray(report.validationPlan) ? report.validationPlan : [];
+  const nextSteps = Array.isArray(report.nextSteps) ? report.nextSteps : [];
+  const primary = candidates[0] || {};
+
+  document.querySelector("#brief").innerHTML = `
+    <div class="metric-row">
+      <article class="metric-card"><strong>${escapeHtml(brand.name || "Marca")}</strong><p>marca</p></article>
+      <article class="metric-card"><strong>${escapeHtml(brief.confidence || primary.confidence || "baja")}</strong><p>confianza</p></article>
+      <article class="metric-card"><strong>${candidates.length}</strong><p>hipotesis</p></article>
+    </div>
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Decision</h3>
+        <p>${escapeHtml(brief.decision || "No hay suficiente contexto para elegir un espacio libre confiable.")}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="store"></i>${escapeHtml(brand.name || "marca")}</span>
+          <span class="pill"><i data-lucide="target"></i>${escapeHtml(brief.primaryWhitespace || primary.title || "whitespace pendiente")}</span>
+          <span class="pill"><i data-lucide="shield-check"></i>${escapeHtml(brand.stage || "contexto declarado")}</span>
+        </div>
+      </article>
+      <article class="report-card full-span notice-card">
+        <h3>Guardrail</h3>
+        <p>${escapeHtml(brief.guardrail || "Tratamos el whitespace como hipotesis hasta validarlo con datos de mercado y conversion.")}</p>
+      </article>
+      <article class="report-card full-span">
+        <h3>Cobertura de fuentes</h3>
+        <ul>${coverage.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#tools").innerHTML = `
+    <div class="report-grid">
+      ${candidates.map(renderWhitespaceCandidate).join("") || emptyReportCard("Sin hipotesis", "Agrega competidores, catalogo o contexto de clientes para generar espacios posibles.")}
+    </div>`;
+
+  document.querySelector("#suppliers").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Senales fuertes</h3>
+        <ul>${(evidence.strongerSignals || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>Senales debiles</h3>
+        <ul>${(evidence.weakSignals || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>Datos faltantes</h3>
+        <ul>${(evidence.missingData || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#negotiation").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Plan de validacion</h3>
+        <ol>${validationPlan.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
+      </article>
+      <article class="report-card full-span">
+        <h3>Primer test recomendado</h3>
+        <dl class="calculation-list">
+          <div><dt>Oferta</dt><dd>${escapeHtml(primary.firstOffer || "oferta de entrada pendiente")}</dd></div>
+          <div><dt>Canal</dt><dd>${escapeHtml(primary.channel || "canal principal pendiente")}</dd></div>
+          <div><dt>Metrica</dt><dd>conversion, add-to-cart, CAC o respuesta cualitativa</dd></div>
+        </dl>
+      </article>
+    </div>`;
+
+  document.querySelector("#ddp").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span notice-card">
+        <h3>Riesgos</h3>
+        <ul>${risks.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>Claims y ruido</h3>
+        <p>No convertir claims de competidores, comentarios sueltos o preferencias internas en prueba. El espacio libre se confirma con evidencia externa y una metrica de negocio.</p>
+      </article>
+    </div>`;
+
+  document.querySelector("#quality").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Siguientes pasos</h3>
+        <ol>${nextSteps.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
+      </article>
+      <article class="report-card full-span">
+        <h3>Prompt profundo</h3>
+        <p>${escapeHtml(`Actua como Agent Genia. Toma la marca ${brand.name || "marca"} y valida el whitespace "${brief.primaryWhitespace || primary.title || ""}" contra competidores, reviews, ads y comentarios reales. Separa evidencia fuerte, hipotesis y ruido.`)}</p>
+      </article>
+    </div>`;
+
+  lucide.createIcons();
+}
+
+function renderWhitespaceCandidate(candidate) {
+  return `<article class="report-card full-span">
+    <h3>${escapeHtml(candidate.title || "Whitespace")}</h3>
+    <p>${escapeHtml(candidate.positioningAngle || "")}</p>
+    <dl class="calculation-list">
+      <div><dt>Cliente</dt><dd>${escapeHtml(candidate.targetCustomer || "--")}</dd></div>
+      <div><dt>Problema no atendido</dt><dd>${escapeHtml(candidate.underservedProblem || "--")}</dd></div>
+      <div><dt>Confianza</dt><dd>${escapeHtml(candidate.confidence || "baja")}</dd></div>
+      <div><dt>Canal</dt><dd>${escapeHtml(candidate.channel || "--")}</dd></div>
+    </dl>
+    <div class="compact-section">
+      <h4>Por que podria estar abierto</h4>
+      <ul>${(candidate.whyItMayBeOpen || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+    </div>
+    <div class="compact-section">
+      <h4>Senales usadas</h4>
+      <ul>${(candidate.supportingSignals || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+    </div>
+  </article>`;
+}
+
+function emptyReportCard(title, copy) {
+  return `<article class="report-card full-span"><h3>${escapeHtml(title)}</h3><p>${escapeHtml(copy)}</p></article>`;
+}
+
 function normalizeBrandContext(report) {
   const brand = report.brand || {};
   const inferredName =
@@ -2633,6 +2794,11 @@ async function handleHistoryClick(event) {
 
     const run = body.run;
     const input = run.input_json || {};
+    if (renderTypedBackendReport(run.result_json || null)) {
+      closeHistory();
+      return;
+    }
+
     const report = buildReport({
       ...input,
       naturalRequest: run.natural_request || input.naturalRequest || "Research guardado",
@@ -2698,6 +2864,9 @@ function buildMarkdown(report) {
   }
   if (report.type === "shopify_page_draft") {
     return buildShopifyPageMarkdown(report);
+  }
+  if (report.type === "brand_whitespace") {
+    return buildBrandWhitespaceMarkdown(report);
   }
   if (report.businessStage === "brand") {
     return buildBrandMarkdown(report);
@@ -2796,6 +2965,67 @@ ${audit.conversion.map((item) => `- ${item}`).join("\n")}
 ## Siguientes experimentos
 
 ${audit.nextExperiments.map((item) => `- ${item}`).join("\n")}
+`;
+}
+
+function buildBrandWhitespaceMarkdown(report) {
+  const brand = report.brand || {};
+  const brief = report.executiveBrief || {};
+  const candidates = Array.isArray(report.candidates) ? report.candidates : [];
+  const evidence = report.evidence || {};
+
+  return `# Whitespace de marca
+
+Fecha: ${report.createdAt || ""}
+Marca: ${brand.name || "Marca"}
+Sitio: ${brand.url || "no definido"}
+Canales: ${brand.channels || "no definidos"}
+Objetivo: ${brand.goal || "no definido"}
+Solicitud: ${report.naturalRequest || ""}
+Herramienta interna: ${toolLabel(report.toolUsed || report.selectedInternalTool)}
+
+## Decision
+
+${brief.decision || ""}
+
+Confianza: ${brief.confidence || ""}
+Guardrail: ${brief.guardrail || ""}
+
+## Hipotesis de whitespace
+
+${candidates
+  .map(
+    (candidate, index) => `### ${index + 1}. ${candidate.title}
+
+- Cliente: ${candidate.targetCustomer || ""}
+- Problema no atendido: ${candidate.underservedProblem || ""}
+- Angulo: ${candidate.positioningAngle || ""}
+- Oferta inicial: ${candidate.firstOffer || ""}
+- Canal: ${candidate.channel || ""}
+- Confianza: ${candidate.confidence || ""}
+- Test: ${candidate.validationTest || ""}
+`,
+  )
+  .join("\n")}
+
+## Evidencia y limites
+
+Senales fuertes:
+${(evidence.strongerSignals || []).map((item) => `- ${item}`).join("\n")}
+
+Senales debiles:
+${(evidence.weakSignals || []).map((item) => `- ${item}`).join("\n")}
+
+Datos faltantes:
+${(evidence.missingData || []).map((item) => `- ${item}`).join("\n")}
+
+## Riesgos
+
+${(report.risks || []).map((item) => `- ${item}`).join("\n")}
+
+## Plan de validacion
+
+${(report.validationPlan || []).map((item) => `- ${item}`).join("\n")}
 `;
 }
 
@@ -3192,6 +3422,7 @@ function toolLabel(value) {
   if (value === "alibaba-sourcing-agent") return "Alibaba sourcing";
   if (value === "shopify-store-audit") return "Shopify audit";
   if (value === "brand-audit-agent") return "Brand audit";
+  if (value === "brand_whitespace_tool") return "Brand whitespace";
   if (value === "shopify_page_builder") return "Shopify page builder";
   return "Ecom research";
 }

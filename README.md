@@ -12,6 +12,7 @@ The main page has two ecommerce paths without changing the cockpit structure:
 
 - `Empezar desde cero`: for beginners who only know they want to sell online.
 - `Tienda Shopify`: connects one or more Shopify stores with OAuth, stores encrypted offline tokens in Cloudflare KV, and lets Agent Genia audit the real catalog without asking merchants to paste tokens.
+- `Analizar marca`: uses existing brand context and optional Shopify catalog data. When the prompt asks for positioning, differentiation, competitors, or an "espacio libre", the backend returns a `brand_whitespace` report with whitespace hypotheses, evidence coverage, risks, and a validation plan.
 
 ## Supabase
 
@@ -115,6 +116,15 @@ pnpm dlx wrangler pages secret put SHIP_FROM_STATE --project-name ecom-research-
 The Envia integration is rate-only. The Cloudflare Function only calls the quote endpoint (`/ship/rate/`) to compare shipping prices; it does not create labels, buy shipping guides, schedule pickups, or charge shipments.
 
 `AUTH_SECRET` signs legacy browser sessions. `APP_PASSWORD` is only a legacy/testing bypass for direct API calls and is not shown in the UI. Supabase email/password is the primary production auth gate for `/api/research`, `/api/runs`, and `/api/runs/:id`.
+
+Internal tools currently handled directly by `/api/research`:
+
+- `brand_whitespace_tool`: existing-brand whitespace hypotheses from declared brand context, attachments, and connected Shopify catalog data.
+- `shopify_page_builder`: creates an approved Shopify Page draft and lets the user publish it through `/api/shopify/pages`.
+- `shipping_rate_quote`: rate-only Envia shipping quotes when a shipping-only intent is detected.
+- `unit_economics_filter`: beginner-friendly profitability filter for non-brand-stage ideas.
+
+`brand_whitespace_tool` labels output as hypotheses. It does not perform live Meta Ads, Amazon review, or TikTok collection by itself; use the deeper competitive research harness/skills to confirm demand, saturation, and customer language.
 
 ## Browser login
 
