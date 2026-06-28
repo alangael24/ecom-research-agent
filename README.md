@@ -57,6 +57,7 @@ pnpm dlx wrangler pages secret put ENVIA_TOKEN --project-name ecom-research-agen
 pnpm dlx wrangler pages secret put SHOPIFY_API_KEY --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put SHOPIFY_API_SECRET --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put SHOPIFY_TOKEN_ENCRYPTION_SECRET --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put SHOPIFY_INSTALL_URL --project-name ecom-research-agent
 ```
 
 Optional Mexico shipping config:
@@ -75,14 +76,17 @@ The Envia integration is rate-only. The Cloudflare Function only calls the quote
 
 Create a Shopify Partner app and configure:
 
-- App URL: `https://YOUR_PAGES_DOMAIN/`
+- App URL: `https://YOUR_PAGES_DOMAIN/api/shopify/start`
 - Allowed redirection URL: `https://YOUR_PAGES_DOMAIN/api/shopify/callback`
 - Scopes: `read_products`
 - API version: `2026-04`
+- Distribution/install link: save the Shopify Partner install link as `SHOPIFY_INSTALL_URL`.
 
 Cloudflare endpoints:
 
 - `GET /api/shopify`: lists connected stores without exposing tokens.
+- `GET /api/shopify/login`: sends the merchant to Shopify login/store selection through `SHOPIFY_INSTALL_URL`.
+- `GET /api/shopify/start`: receives Shopify's selected `shop`, validates HMAC when present, then starts OAuth.
 - `GET /api/shopify/connect?shop=store.myshopify.com`: starts OAuth install.
 - `GET /api/shopify/callback`: validates Shopify HMAC/state, exchanges code for an access token, encrypts it, and stores the shop in KV.
 - `POST /api/shopify`: returns a sanitized catalog snapshot for a connected store.

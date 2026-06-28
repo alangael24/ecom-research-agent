@@ -199,6 +199,7 @@ function init() {
   renderEmptyState();
   form.accessKey.value = localStorage.getItem("alibabaSourcingAccessKey") || "";
   setupStageControls();
+  if (handleShopifyEntryParams()) return;
   handleShopifyCallbackParams();
   loadShopifyStores();
   form.addEventListener("submit", handleSubmit);
@@ -215,6 +216,7 @@ function setupStageControls() {
   stageCards.forEach((card) => {
     card.addEventListener("click", () => selectBusinessStage(card.dataset.stageCard));
   });
+  document.querySelector("#loginShopify")?.addEventListener("click", startShopifyLogin);
   document.querySelector("#connectShopify")?.addEventListener("click", connectShopifyStore);
   document.querySelector("#refreshShopifyStores")?.addEventListener("click", loadShopifyStores);
   document.querySelector("#disconnectShopify")?.addEventListener("click", disconnectSelectedShopifyStore);
@@ -230,6 +232,15 @@ function selectBusinessStage(stage) {
   if (stage === "shopify") {
     shopifyFields?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
+}
+
+function handleShopifyEntryParams() {
+  const params = new URLSearchParams(window.location.search);
+  const shop = normalizeShopifyDomain(params.get("shop"));
+  if (!shop || !isValidShopifyDomain(shop) || params.has("shopify_connected")) return false;
+
+  window.location.replace(shopifyApiUrl(`/api/shopify/start${window.location.search}`));
+  return true;
 }
 
 function handleShopifyCallbackParams() {
@@ -248,6 +259,33 @@ function handleShopifyCallbackParams() {
   cleanUrl.searchParams.delete("shopify_connected");
   cleanUrl.searchParams.delete("stage");
   window.history.replaceState({}, "", cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+}
+
+async function startShopifyLogin() {
+  const button = document.querySelector("#loginShopify");
+  if (button) button.disabled = true;
+
+  try {
+    const response = await fetch(shopifyApiUrl("/api/shopify/login"), {
+      headers: { accept: "application/json" },
+    });
+    const body = await response.json();
+    if (!response.ok || !body.ok || !body.redirectUrl) {
+      openManualShopifyFallback();
+      showToast(body.message || "Falta activar el install link de Shopify");
+      return;
+    }
+    window.location.href = body.redirectUrl;
+  } catch {
+    openManualShopifyFallback();
+    showToast("No se pudo iniciar sesion con Shopify");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function openManualShopifyFallback() {
+  document.querySelector(".manual-shopify")?.setAttribute("open", "");
 }
 
 function selectedBusinessStage() {

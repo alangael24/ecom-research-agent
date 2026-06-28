@@ -85,22 +85,31 @@
                 <i data-lucide="x"></i>
               </button>
             </div>
-            <div class="shopify-connect-row">
-              <label>
-                Dominio Shopify
-                <input
-                  id="shopifyDomain"
-                  name="shopifyDomain"
-                  type="text"
-                  placeholder="mi-tienda.myshopify.com"
-                  autocomplete="off"
-                />
-              </label>
-              <button class="secondary-button" id="connectShopify" type="button">
-                <i data-lucide="plug"></i>
-                Conectar
+            <div class="shopify-login-row">
+              <button class="shopify-login-button" id="loginShopify" type="button">
+                <i data-lucide="log-in"></i>
+                Iniciar sesión con Shopify
               </button>
             </div>
+            <details class="manual-shopify">
+              <summary>Usar dominio manual</summary>
+              <div class="shopify-connect-row">
+                <label>
+                  Dominio Shopify
+                  <input
+                    id="shopifyDomain"
+                    name="shopifyDomain"
+                    type="text"
+                    placeholder="mi-tienda.myshopify.com"
+                    autocomplete="off"
+                  />
+                </label>
+                <button class="secondary-button" id="connectShopify" type="button">
+                  <i data-lucide="plug"></i>
+                  Conectar
+                </button>
+              </div>
+            </details>
             <div class="shopify-store-row">
               <label>
                 Tienda conectada

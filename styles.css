@@ -367,6 +367,55 @@ button {
   width: 34px;
 }
 
+.shopify-login-row {
+  display: grid;
+}
+
+.shopify-login-button {
+  align-items: center;
+  background: var(--teal);
+  border: 1px solid var(--teal);
+  border-radius: 12px;
+  color: white;
+  display: inline-flex;
+  font-weight: 850;
+  gap: 8px;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 16px;
+  width: 100%;
+}
+
+.shopify-login-button:disabled {
+  background: #87918d;
+  border-color: #87918d;
+  cursor: wait;
+}
+
+.manual-shopify {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.manual-shopify summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  list-style: none;
+  padding: 8px 0 0;
+}
+
+.manual-shopify summary::-webkit-details-marker {
+  display: none;
+}
+
+.manual-shopify[open] {
+  padding-top: 10px;
+}
+
 .shopify-connect-row,
 .shopify-store-row {
   align-items: end;
