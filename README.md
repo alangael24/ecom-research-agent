@@ -7,6 +7,11 @@ The app can run in two modes:
 - Guided static mode: works in any static host and shows the same main-page cockpit with inferred tool routing.
 - Codex harness mode: Cloudflare Pages calls `/api/research`, which proxies to a private harness server that runs `codex exec` with the local Codex authentication and the local `$alibaba-sourcing-agent` skill. This is the production mode where Agent Genia decides whether to call Alibaba sourcing as an internal tool and returns results to the main page.
 
+The main page has two ecommerce paths without changing the cockpit structure:
+
+- `Empezar desde cero`: for beginners who only know they want to sell online.
+- `Tienda Shopify`: connects one or more Shopify stores with OAuth, stores encrypted offline tokens in Cloudflare KV, and lets Agent Genia audit the real catalog without asking merchants to paste tokens.
+
 ## Local skill
 
 This machine has the production sourcing skill installed at:
@@ -49,6 +54,9 @@ pnpm dlx wrangler pages secret put HARNESS_URL --project-name ecom-research-agen
 pnpm dlx wrangler pages secret put HARNESS_TOKEN --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put APP_PASSWORD --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put ENVIA_TOKEN --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put SHOPIFY_API_KEY --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put SHOPIFY_API_SECRET --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put SHOPIFY_TOKEN_ENCRYPTION_SECRET --project-name ecom-research-agent
 ```
 
 Optional Mexico shipping config:
@@ -63,12 +71,31 @@ pnpm dlx wrangler pages secret put SHIP_FROM_STATE --project-name ecom-research-
 
 The Envia integration is rate-only. The Cloudflare Function only calls the quote endpoint (`/ship/rate/`) to compare shipping prices; it does not create labels, buy shipping guides, schedule pickups, or charge shipments.
 
+## Shopify OAuth
+
+Create a Shopify Partner app and configure:
+
+- App URL: `https://YOUR_PAGES_DOMAIN/`
+- Allowed redirection URL: `https://YOUR_PAGES_DOMAIN/api/shopify/callback`
+- Scopes: `read_products`
+- API version: `2026-04`
+
+Cloudflare endpoints:
+
+- `GET /api/shopify`: lists connected stores without exposing tokens.
+- `GET /api/shopify/connect?shop=store.myshopify.com`: starts OAuth install.
+- `GET /api/shopify/callback`: validates Shopify HMAC/state, exchanges code for an access token, encrypts it, and stores the shop in KV.
+- `POST /api/shopify`: returns a sanitized catalog snapshot for a connected store.
+- `DELETE /api/shopify`: disconnects a store by deleting its KV record.
+
+The KV binding is declared in `wrangler.toml` as `SHOPIFY_STORES`.
+
 Deploy:
 
 ```bash
 rm -rf dist
 mkdir -p dist
-cp index.html app.js styles.css .nojekyll _headers _redirects dist/
+cp index.html app.js styles.css .nojekyll _headers _redirects _routes.json dist/
 pnpm dlx wrangler pages deploy dist --project-name ecom-research-agent
 ```
 

@@ -128,6 +128,18 @@
       "required": ["sampleChecklist", "certificationChecks", "inspectionPlan", "packagingChecks", "noGoDefects"],
       "additionalProperties": false
     },
+    "shopifyPlan": {
+      "type": "object",
+      "properties": {
+        "storeSummary": { "type": "string" },
+        "catalogOpportunities": { "type": "array", "items": { "type": "string" } },
+        "priorityActions": { "type": "array", "items": { "type": "string" } },
+        "conversionRisks": { "type": "array", "items": { "type": "string" } },
+        "nextDataToCollect": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["storeSummary", "catalogOpportunities", "priorityActions", "conversionRisks", "nextDataToCollect"],
+      "additionalProperties": false
+    },
     "beginnerNextSteps": { "type": "array", "items": { "type": "string" } },
     "limitations": { "type": "array", "items": { "type": "string" } }
   },

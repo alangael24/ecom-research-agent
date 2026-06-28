@@ -1,5 +1,7 @@
 const state = {
   latest: null,
+  shopifyStores: [],
+  pendingShopifyShop: "",
 };
 
 const form = document.querySelector("#researchForm");
@@ -7,9 +9,15 @@ const resultPanel = document.querySelector(".result-panel");
 const panels = [...document.querySelectorAll("[data-panel]")];
 const tabs = [...document.querySelectorAll("[data-tab]")];
 const emptyState = document.querySelector("#emptyState");
+const shopifyFields = document.querySelector("#shopifyFields");
+const shopifyDomainInput = document.querySelector("#shopifyDomain");
+const shopifyStoreSelect = document.querySelector("#shopifyStore");
+const shopifyFocusInput = document.querySelector("#shopifyFocus");
+const shopifyConnectionStatus = document.querySelector("#shopifyConnectionStatus");
 
 const tabLabelSets = {
   sourcing: ["Resumen", "Herramientas", "Proveedores", "Negociacion", "DDP", "Calidad"],
+  shopify: ["Resumen", "Shopify", "Catalogo", "Acciones", "DDP", "Calidad"],
   profitability: ["Resumen", "Numeros", "Alertas", "Siguiente", "Supuestos", "Notas"],
   shipping: ["Resumen", "Tarifas", "Detalles", "Alertas", "Siguiente", "Notas"],
 };
@@ -62,6 +70,11 @@ const goalConfig = {
     label: "Calidad maxima",
     icon: "shield-check",
     className: "quality",
+  },
+  shopify: {
+    label: "Auditar Shopify",
+    icon: "shopping-bag",
+    className: "shopify",
   },
 };
 
@@ -183,6 +196,9 @@ const productProfiles = [
 function init() {
   renderEmptyState();
   form.accessKey.value = localStorage.getItem("alibabaSourcingAccessKey") || "";
+  setupStageControls();
+  handleShopifyCallbackParams();
+  loadShopifyStores();
   form.addEventListener("submit", handleSubmit);
   document.querySelector("#downloadBrief").addEventListener("click", downloadBrief);
   document.querySelector("#copySummary").addEventListener("click", copySummary);
@@ -190,11 +206,156 @@ function init() {
   lucide.createIcons();
 }
 
+function setupStageControls() {
+  form.querySelectorAll("input[name='businessStage']").forEach((input) => {
+    input.addEventListener("change", updateStageUI);
+  });
+  document.querySelector("#connectShopify")?.addEventListener("click", connectShopifyStore);
+  document.querySelector("#refreshShopifyStores")?.addEventListener("click", loadShopifyStores);
+  document.querySelector("#disconnectShopify")?.addEventListener("click", disconnectSelectedShopifyStore);
+  updateStageUI();
+}
+
+function handleShopifyCallbackParams() {
+  const params = new URLSearchParams(window.location.search);
+  const connectedShop = normalizeShopifyDomain(params.get("shopify_connected"));
+  if (!connectedShop) return;
+
+  const shopifyInput = form.querySelector("input[name='businessStage'][value='shopify']");
+  if (shopifyInput) shopifyInput.checked = true;
+  state.pendingShopifyShop = connectedShop;
+  if (shopifyDomainInput) shopifyDomainInput.value = connectedShop;
+  updateStageUI();
+  showToast(`Tienda conectada: ${connectedShop}`);
+
+  const cleanUrl = new URL(window.location.href);
+  cleanUrl.searchParams.delete("shopify_connected");
+  cleanUrl.searchParams.delete("stage");
+  window.history.replaceState({}, "", cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+}
+
+function selectedBusinessStage() {
+  return form.businessStage?.value || "starter";
+}
+
+function updateStageUI() {
+  const isShopify = selectedBusinessStage() === "shopify";
+  if (shopifyFields) shopifyFields.hidden = !isShopify;
+  document.body.classList.toggle("shopify-mode", isShopify);
+}
+
+async function loadShopifyStores() {
+  if (!shopifyStoreSelect) return;
+  try {
+    const response = await fetch("./api/shopify");
+    if (response.status === 404) throw new Error("Shopify backend not deployed");
+    const body = await response.json();
+    if (!body.ok) throw new Error(body.message || "No se pudieron leer las tiendas Shopify.");
+    state.shopifyStores = body.stores || [];
+    renderShopifyStoreOptions();
+    if (shopifyConnectionStatus) {
+      shopifyConnectionStatus.textContent = state.shopifyStores.length
+        ? `${state.shopifyStores.length} tienda(s) conectada(s).`
+        : "Conecta cada tienda una vez con OAuth de Shopify.";
+    }
+  } catch (error) {
+    state.shopifyStores = [];
+    renderShopifyStoreOptions();
+    if (shopifyConnectionStatus) {
+      shopifyConnectionStatus.textContent =
+        error instanceof Error ? error.message : "Shopify no esta disponible en este entorno.";
+    }
+  }
+}
+
+function renderShopifyStoreOptions() {
+  if (!shopifyStoreSelect) return;
+  const current = state.pendingShopifyShop || shopifyStoreSelect.value;
+  shopifyStoreSelect.innerHTML = state.shopifyStores.length
+    ? state.shopifyStores
+        .map((store) => {
+          const label = store.shopInfo?.name ? `${store.shopInfo.name} (${store.shop})` : store.shop;
+          return `<option value="${escapeHtml(store.shop)}">${escapeHtml(label)}</option>`;
+        })
+        .join("")
+    : '<option value="">Sin tiendas conectadas</option>';
+
+  if (state.shopifyStores.some((store) => store.shop === current)) {
+    shopifyStoreSelect.value = current;
+  }
+  state.pendingShopifyShop = "";
+}
+
+function connectShopifyStore() {
+  const shop = normalizeShopifyDomain(shopifyDomainInput?.value);
+  if (!isValidShopifyDomain(shop)) {
+    showToast("Usa un dominio .myshopify.com valido");
+    return;
+  }
+  window.location.href = `./api/shopify/connect?shop=${encodeURIComponent(shop)}`;
+}
+
+async function disconnectSelectedShopifyStore() {
+  const shop = shopifyStoreSelect?.value || "";
+  if (!shop) {
+    showToast("Selecciona una tienda conectada");
+    return;
+  }
+
+  const response = await fetch("./api/shopify", {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ shop }),
+  });
+  const body = await response.json();
+  if (!body.ok) {
+    showToast(body.message || "No se pudo desconectar Shopify");
+    return;
+  }
+  showToast(`Tienda desconectada: ${shop}`);
+  await loadShopifyStores();
+}
+
+async function requestShopifySnapshot(shop) {
+  const response = await fetch("./api/shopify", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ shop }),
+  });
+  const body = await response.json();
+  if (!body.ok) {
+    throw new Error(body.message || "No se pudo leer Shopify.");
+  }
+  return body.shopify;
+}
+
+function normalizeShopifyDomain(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .split(/[/?#]/)[0]
+    .toLowerCase();
+}
+
+function isValidShopifyDomain(shop) {
+  return /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop);
+}
+
 async function handleSubmit(event) {
   event.preventDefault();
   const data = readForm();
-  const report = buildReport(data);
   setLoading(true);
+
+  if (data.businessStage === "shopify" && data.shopify.shop) {
+    try {
+      data.shopify.snapshot = await requestShopifySnapshot(data.shopify.shop);
+    } catch (error) {
+      data.shopify.error = error instanceof Error ? error.message : "No se pudo leer la tienda Shopify.";
+    }
+  }
+
+  const report = buildReport(data);
 
   try {
     const backend = await requestBackendReport(data);
@@ -244,15 +405,21 @@ async function handleSubmit(event) {
 
 function readForm() {
   const naturalRequest = form.naturalRequest.value.trim() || "Quiero investigar una oportunidad ecommerce y necesito siguientes pasos claros.";
-  const inferred = inferRequest(naturalRequest);
+  const businessStage = selectedBusinessStage();
+  const inferred = inferRequest(naturalRequest, businessStage);
   return {
+    businessStage,
     naturalRequest,
     ...inferred,
+    shopify: {
+      shop: shopifyStoreSelect?.value || "",
+      focus: shopifyFocusInput?.value.trim() || "",
+    },
     accessKey: form.accessKey.value.trim(),
   };
 }
 
-function inferRequest(naturalRequest) {
+function inferRequest(naturalRequest, businessStage = "starter") {
   const text = naturalRequest.toLowerCase();
   const sourcingIntent = hasAny(text, [
     "alibaba",
@@ -267,6 +434,9 @@ function inferRequest(naturalRequest) {
     "cotizar",
     "sourcing",
   ]);
+  const shopifyIntent =
+    businessStage === "shopify" ||
+    hasAny(text, ["shopify", "tienda", "store", "catalogo", "catálogo", "conversion", "conversiones"]);
   const market = text.includes("mexico") || text.includes("méxico") ? "MX" : text.includes("latam") ? "LATAM" : "US";
   const destination = inferDestination(text, market);
   const budget = inferMoney(text, ["presupuesto", "budget", "tengo", "invertir"]);
@@ -285,8 +455,16 @@ function inferRequest(naturalRequest) {
     orderQuantity,
     qualityLevel,
     depth: text.includes("profundo") || text.includes("completo") ? "profundo" : "rapido",
-    goals: sourcingIntent ? ["interpret", "search", "negotiate", "ddp", "quality"] : ["interpret"],
-    selectedInternalTool: sourcingIntent ? "alibaba-sourcing-agent" : "ecom-research-agent",
+    goals: sourcingIntent
+      ? ["interpret", "search", "negotiate", "ddp", "quality"]
+      : shopifyIntent
+        ? ["interpret", "shopify", "quality"]
+        : ["interpret"],
+    selectedInternalTool: sourcingIntent
+      ? "alibaba-sourcing-agent"
+      : shopifyIntent
+        ? "shopify-store-audit"
+        : "ecom-research-agent",
   };
 }
 
@@ -450,6 +628,19 @@ function buildAgentTasks(query, data, category) {
     },
   ];
   if (data.selectedInternalTool !== "alibaba-sourcing-agent") {
+    if (data.selectedInternalTool === "shopify-store-audit") {
+      return firstStep.concat([
+        {
+          key: "shopify",
+          title: "Leer tienda Shopify",
+          status: data.shopify?.shop ? "listo para OAuth" : "requiere conexion",
+          result: data.shopify?.shop
+            ? `El agente usara la tienda conectada ${data.shopify.shop} como contexto real.`
+            : "El agente necesita que conectes una tienda Shopify para leer catalogo real.",
+          nextAction: "Auditar catalogo, pricing, inventario y siguientes acciones dentro de esta pagina.",
+        },
+      ]);
+    }
     return firstStep.concat([
       {
         key: "search",
@@ -859,7 +1050,8 @@ function packageSummary(packageInfo, currency) {
 }
 
 function renderReport(report) {
-  setTabLabels(tabLabelSets.sourcing);
+  const isShopify = report.businessStage === "shopify";
+  setTabLabels(isShopify ? tabLabelSets.shopify : tabLabelSets.sourcing);
   const ai = report.ai || null;
   const supplierShortlist = ai?.supplierShortlist?.length ? ai.supplierShortlist : report.supplierProfiles;
   const agentWorkLog = ai?.agentWorkLog?.length ? ai.agentWorkLog : report.agentTasks;
@@ -870,7 +1062,9 @@ function renderReport(report) {
         "comparar solo precio sin costo DDP aterrizado",
         "aceptar certificaciones o DDP sin documentos",
       ];
-  const goals = report.goals.map((key) => goalConfig[key]?.label || key).join(", ");
+  const goals = (report.goals || []).map((key) => goalConfig[key]?.label || key).join(", ");
+  const shopifyOverview = isShopify ? renderShopifyOverview(report) : "";
+  const shopifyProductCount = report.shopify?.snapshot?.products?.length || 0;
   const backendNotice = report.backendError
     ? `<article class="report-card full-span notice-card">
         <h3>Backend privado</h3>
@@ -880,8 +1074,8 @@ function renderReport(report) {
 
   document.querySelector("#brief").innerHTML = `
     <div class="metric-row">
-      <article class="metric-card"><strong>${supplierShortlist.length}</strong><p>${ai ? "proveedores" : "candidatos meta"}</p></article>
-      <article class="metric-card"><strong>${report.targetUnitCost ? formatMoney(report.targetUnitCost) : "--"}</strong><p>costo objetivo</p></article>
+      <article class="metric-card"><strong>${isShopify ? shopifyProductCount : supplierShortlist.length}</strong><p>${isShopify ? "productos Shopify" : ai ? "proveedores" : "candidatos meta"}</p></article>
+      <article class="metric-card"><strong>${isShopify ? (report.shopify?.shop || "--") : report.targetUnitCost ? formatMoney(report.targetUnitCost) : "--"}</strong><p>${isShopify ? "tienda" : "costo objetivo"}</p></article>
       <article class="metric-card"><strong>${escapeHtml(toolLabel(report.selectedInternalTool))}</strong><p>herramienta interna</p></article>
     </div>
     <div class="report-grid">
@@ -912,11 +1106,13 @@ function renderReport(report) {
         <h3>Trabajo del agente</h3>
         ${renderAgentWorkLog(agentWorkLog)}
       </article>
+      ${shopifyOverview}
       ${backendNotice}
     </div>`;
 
   document.querySelector("#tools").innerHTML = `
     <div class="report-grid">
+      ${isShopify ? renderShopifyOverview(report) : ""}
       <article class="report-card full-span">
         <h3>Tool routing</h3>
         <p>${escapeHtml(ai?.executiveBrief?.recommendedPath || `Solicitud recibida en lenguaje natural. Tool seleccionada: ${toolLabel(report.selectedInternalTool)}.`)}</p>
@@ -945,7 +1141,9 @@ function renderReport(report) {
       </article>
     </div>`;
 
-  document.querySelector("#suppliers").innerHTML = `
+  document.querySelector("#suppliers").innerHTML = isShopify
+    ? renderShopifyCatalog(report)
+    : `
     <div class="source-list">
       <article class="report-card full-span">
         <h3>${ai ? "Shortlist de proveedores" : "Shortlist objetivo del agente"}</h3>
@@ -971,7 +1169,9 @@ function renderReport(report) {
   const outreachQueue = ai?.supplierOutreachQueue?.length
     ? ai.supplierOutreachQueue
     : buildOutreachQueue(supplierShortlist, negotiation);
-  document.querySelector("#negotiation").innerHTML = `
+  document.querySelector("#negotiation").innerHTML = isShopify
+    ? renderShopifyActions(report)
+    : `
     <div class="report-grid">
       <article class="report-card full-span">
         <h3>Cola de negociacion</h3>
@@ -1042,6 +1242,148 @@ function renderReport(report) {
     </div>`;
 
   lucide.createIcons();
+}
+
+function renderShopifyOverview(report) {
+  const snapshot = report.shopify?.snapshot || null;
+  const plan = report.ai?.shopifyPlan || null;
+  const shop = snapshot?.shop || null;
+  const products = snapshot?.products || [];
+  const focus = report.shopify?.focus || "conversion, catalogo y producto ganador";
+  const error = report.shopify?.error || "";
+
+  if (!report.shopify?.shop) {
+    return `<article class="report-card full-span notice-card">
+      <h3>Shopify sin conectar</h3>
+      <p>Selecciona el modo Tienda Shopify, conecta una tienda .myshopify.com y vuelve a ejecutar el agente para auditar catalogo real.</p>
+    </article>`;
+  }
+
+  if (error) {
+    return `<article class="report-card full-span notice-card">
+      <h3>No se pudo leer Shopify</h3>
+      <p>${escapeHtml(error)}</p>
+    </article>`;
+  }
+
+  return `<article class="report-card full-span">
+    <h3>${escapeHtml(shop?.name || report.shopify.shop)}</h3>
+    <p>${escapeHtml(plan?.storeSummary || `Tienda conectada por OAuth. El agente puede leer catalogo y enfocar la auditoria en ${focus}.`)}</p>
+    <div class="pill-row">
+      <span class="pill"><i data-lucide="shopping-bag"></i>${escapeHtml(report.shopify.shop)}</span>
+      <span class="pill"><i data-lucide="package-search"></i>${products.length} productos</span>
+      <span class="pill"><i data-lucide="coins"></i>${escapeHtml(shop?.currencyCode || "moneda pendiente")}</span>
+      <span class="pill"><i data-lucide="target"></i>${escapeHtml(focus)}</span>
+    </div>
+  </article>`;
+}
+
+function renderShopifyCatalog(report) {
+  const snapshot = report.shopify?.snapshot || null;
+  const products = snapshot?.products || [];
+  if (!report.shopify?.shop) {
+    return `<div class="report-grid">${renderShopifyOverview(report)}</div>`;
+  }
+  if (report.shopify?.error) {
+    return `<div class="report-grid">${renderShopifyOverview(report)}</div>`;
+  }
+  if (!products.length) {
+    return `<div class="report-grid">
+      ${renderShopifyOverview(report)}
+      <article class="report-card full-span notice-card">
+        <h3>Catalogo vacio</h3>
+        <p>No encontre productos en la tienda. El siguiente paso es definir oferta, precio, fotos y primer producto para test.</p>
+      </article>
+    </div>`;
+  }
+
+  return `<div class="report-grid">
+    ${renderShopifyOverview(report)}
+    <article class="report-card full-span">
+      <h3>Catalogo Shopify</h3>
+      <div class="table-wrap"><table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Producto</th>
+            <th>Tipo</th>
+            <th>Status</th>
+            <th>Inventario</th>
+            <th>Precio</th>
+            <th>Actualizado</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${products
+            .map(
+              (product) => `<tr>
+                <td>${escapeHtml(product.title || "Producto")}</td>
+                <td>${escapeHtml(product.productType || product.vendor || "--")}</td>
+                <td>${escapeHtml(product.status || "--")}</td>
+                <td>${escapeHtml(product.totalInventory ?? "--")}</td>
+                <td>${escapeHtml(product.priceRange || "--")}</td>
+                <td>${escapeHtml(formatDate(product.updatedAt))}</td>
+              </tr>`,
+            )
+            .join("")}
+        </tbody>
+      </table></div>
+    </article>
+  </div>`;
+}
+
+function renderShopifyActions(report) {
+  const snapshot = report.shopify?.snapshot || null;
+  const products = snapshot?.products || [];
+  const plan = report.ai?.shopifyPlan || null;
+  const actions = Array.isArray(plan?.priorityActions) && plan.priorityActions.length
+    ? plan.priorityActions
+    : buildShopifyActions(products, report);
+  const opportunities = Array.isArray(plan?.catalogOpportunities) && plan.catalogOpportunities.length
+    ? plan.catalogOpportunities
+    : buildShopifyCatalogOpportunities(products);
+
+  return `<div class="report-grid">
+    ${renderShopifyOverview(report)}
+    <article class="report-card">
+      <h3>Acciones prioritarias</h3>
+      <ol>${actions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
+    </article>
+    <article class="report-card">
+      <h3>Oportunidades de catalogo</h3>
+      <ul>${opportunities.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+    </article>
+  </div>`;
+}
+
+function buildShopifyActions(products, report) {
+  if (!report.shopify?.shop) {
+    return ["Conectar una tienda Shopify para leer catalogo real.", "Definir foco: conversion, catalogo, pricing o producto ganador."];
+  }
+  if (report.shopify?.error) {
+    return ["Reinstalar la app OAuth si el permiso expiro.", "Confirmar que la tienda tenga permiso read_products."];
+  }
+  if (!products.length) {
+    return ["Crear el primer producto con fotos, precio y propuesta clara.", "Validar una landing simple antes de comprar inventario grande."];
+  }
+  return [
+    "Separar productos activos de borradores y priorizar los que tienen inventario.",
+    "Detectar productos sin tipo/vendor para ordenar el catalogo y mejorar filtros.",
+    "Comparar precios por rango para identificar bundles, upsells o productos gancho.",
+    "Usar reviews, ads y TikTok para validar el producto con mayor potencial antes de meter mas presupuesto.",
+  ];
+}
+
+function buildShopifyCatalogOpportunities(products) {
+  if (!products.length) return ["Sin catalogo conectado todavia."];
+  const draftCount = products.filter((product) => product.status && product.status !== "ACTIVE").length;
+  const noTypeCount = products.filter((product) => !product.productType).length;
+  const lowInventoryCount = products.filter((product) => Number(product.totalInventory) <= 3).length;
+  return [
+    `${products.length} productos leidos desde Shopify.`,
+    draftCount ? `${draftCount} productos no activos requieren decision: publicar, mejorar o eliminar.` : "No se detectaron borradores en la muestra leida.",
+    noTypeCount ? `${noTypeCount} productos no tienen tipo; conviene categorizar para analizar oferta.` : "Los productos leidos ya tienen tipo/categoria.",
+    lowInventoryCount ? `${lowInventoryCount} productos tienen inventario bajo o cero.` : "No se detecto inventario critico en la muestra leida.",
+  ];
 }
 
 function renderSupplierTable(rows) {
@@ -1262,6 +1604,7 @@ function buildMarkdown(report) {
   if (report.ai) {
     return buildAiMarkdown(report);
   }
+  const shopifySection = report.businessStage === "shopify" ? buildShopifyMarkdown(report) : "";
   const negotiation = buildNegotiationPlan(report);
   const ddp = buildDdpPlan(report);
   const quality = buildQualityPlan(report);
@@ -1278,6 +1621,7 @@ Destino DDP: ${report.destination}
 Presupuesto: ${report.budget || "no definido"}
 Cantidad: ${report.orderQuantity || "no definida"}
 Costo objetivo: ${report.targetUnitCost ? formatMoney(report.targetUnitCost) : "no definido"}
+${shopifySection}
 
 ## Decision
 
@@ -1308,6 +1652,27 @@ ${quality.sampleChecklist.map((item) => `- ${item}`).join("\n")}
 ## Prompt profundo
 
 ${buildPrompt(report)}
+`;
+}
+
+function buildShopifyMarkdown(report) {
+  const snapshot = report.shopify?.snapshot || null;
+  const products = snapshot?.products || [];
+  const productsText = products.length
+    ? products
+        .slice(0, 20)
+        .map((product) => `- ${product.title}: ${product.status || "sin status"} | inventario ${product.totalInventory ?? "--"} | ${product.priceRange || "precio pendiente"}`)
+        .join("\n")
+    : "- Sin productos leidos.";
+
+  return `
+Tienda Shopify: ${report.shopify?.shop || "no conectada"}
+Foco Shopify: ${report.shopify?.focus || "no definido"}
+Productos leidos: ${products.length}
+
+## Shopify
+
+${productsText}
 `;
 }
 
@@ -1413,6 +1778,17 @@ function shippingQuoteSummary(shippingQuote) {
 
 function buildAiMarkdown(report) {
   const ai = report.ai;
+  const shopifySection = ai.shopifyPlan
+    ? `
+## Shopify
+
+${ai.shopifyPlan.storeSummary || ""}
+
+${(ai.shopifyPlan.priorityActions || []).map((item) => `- ${item}`).join("\n")}
+`
+    : report.businessStage === "shopify"
+      ? buildShopifyMarkdown(report)
+      : "";
   return `# Agent Genia Brief
 
 Fecha: ${report.createdAt}
@@ -1421,6 +1797,7 @@ Producto: ${report.product}
 Mercado: ${report.market}
 Destino DDP: ${report.destination}
 Modo: Codex harness
+${shopifySection}
 
 ## Decision
 
@@ -1524,8 +1901,19 @@ function formatNumber(value) {
   }).format(Number.isFinite(number) ? number : 0);
 }
 
+function formatDate(value) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("es-MX", {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
 function toolLabel(value) {
   if (value === "alibaba-sourcing-agent") return "Alibaba sourcing";
+  if (value === "shopify-store-audit") return "Shopify audit";
   return "Ecom research";
 }
 

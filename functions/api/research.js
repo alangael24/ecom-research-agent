@@ -116,6 +116,11 @@ function validatePayload(payload) {
   if (payload.productDetails && !stringField(payload.productDetails, 2000)) return "Invalid product details.";
   if (payload.goals && !Array.isArray(payload.goals)) return "Invalid goals.";
   if (payload.destination && typeof payload.destination !== "string") return "Invalid destination.";
+  if (payload.businessStage && !["starter", "shopify"].includes(payload.businessStage)) return "Invalid business stage.";
+  if (payload.shopify && typeof payload.shopify !== "object") return "Invalid Shopify payload.";
+  if (payload.shopify?.shop && !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(payload.shopify.shop)) {
+    return "Invalid Shopify shop domain.";
+  }
   return "";
 }
 
