@@ -39,15 +39,9 @@
 
           <form class="command-panel" id="researchForm">
             <input id="accessKey" name="accessKey" type="hidden" />
-            <div class="mode-row" role="radiogroup" aria-label="Camino ecommerce">
-              <label class="mode-chip">
-                <input type="radio" name="businessStage" value="starter" checked />
-                <span><i data-lucide="compass"></i> Empezar desde cero</span>
-              </label>
-              <label class="mode-chip">
-                <input type="radio" name="businessStage" value="shopify" />
-                <span><i data-lucide="shopping-bag"></i> Tienda Shopify</span>
-              </label>
+            <div class="stage-inputs" aria-hidden="true">
+              <input type="radio" name="businessStage" value="starter" checked tabindex="-1" />
+              <input type="radio" name="businessStage" value="shopify" tabindex="-1" />
             </div>
             <div class="prompt-row">
               <button class="plus-button" type="button" title="Agregar contexto">
@@ -69,52 +63,72 @@
                 </button>
               </div>
             </div>
-            <div class="shopify-panel" id="shopifyFields" hidden>
-              <div class="shopify-connect-row">
-                <label>
-                  Dominio Shopify
-                  <input
-                    id="shopifyDomain"
-                    name="shopifyDomain"
-                    type="text"
-                    placeholder="mi-tienda.myshopify.com"
-                    autocomplete="off"
-                  />
-                </label>
-                <button class="secondary-button" id="connectShopify" type="button">
-                  <i data-lucide="plug"></i>
-                  Conectar
-                </button>
+          </form>
+
+          <div class="connector-dock" aria-label="Opciones ecommerce">
+            <div class="connector-cards" role="radiogroup" aria-label="Camino ecommerce">
+              <button class="connector-card" type="button" data-stage-card="shopify" aria-pressed="false">
+                <span class="connector-icon shopify-icon"><i data-lucide="shopping-bag"></i></span>
+                <span class="connector-label">Conectar Shopify</span>
+                <span class="connector-check"><i data-lucide="check"></i></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="shopify-panel" id="shopifyFields" hidden>
+            <div class="shopify-panel-head">
+              <div>
+                <strong>Shopify</strong>
+                <small>Conexión OAuth segura</small>
               </div>
-              <div class="shopify-store-row">
-                <label>
-                  Tienda conectada
-                  <select id="shopifyStore" name="shopifyStore">
-                    <option value="">Sin tiendas conectadas</option>
-                  </select>
-                </label>
-                <button class="utility-button" id="refreshShopifyStores" type="button" title="Actualizar tiendas">
-                  <i data-lucide="refresh-cw"></i>
-                </button>
-                <button class="utility-button danger" id="disconnectShopify" type="button" title="Desconectar tienda">
-                  <i data-lucide="unlink"></i>
-                </button>
-              </div>
-              <p class="field-note" id="shopifyConnectionStatus">
-                Conecta cada tienda una vez con OAuth de Shopify.
-              </p>
+              <button class="panel-close" id="closeShopifyPanel" type="button" title="Cerrar Shopify">
+                <i data-lucide="x"></i>
+              </button>
+            </div>
+            <div class="shopify-connect-row">
               <label>
-                Foco de auditoria
+                Dominio Shopify
                 <input
-                  id="shopifyFocus"
-                  name="shopifyFocus"
+                  id="shopifyDomain"
+                  name="shopifyDomain"
                   type="text"
-                  placeholder="conversion, catalogo, producto ganador o pricing"
+                  placeholder="mi-tienda.myshopify.com"
                   autocomplete="off"
                 />
               </label>
+              <button class="secondary-button" id="connectShopify" type="button">
+                <i data-lucide="plug"></i>
+                Conectar
+              </button>
             </div>
-          </form>
+            <div class="shopify-store-row">
+              <label>
+                Tienda conectada
+                <select id="shopifyStore" name="shopifyStore">
+                  <option value="">Sin tiendas conectadas</option>
+                </select>
+              </label>
+              <button class="utility-button" id="refreshShopifyStores" type="button" title="Actualizar tiendas">
+                <i data-lucide="refresh-cw"></i>
+              </button>
+              <button class="utility-button danger" id="disconnectShopify" type="button" title="Desconectar tienda">
+                <i data-lucide="unlink"></i>
+              </button>
+            </div>
+            <p class="field-note" id="shopifyConnectionStatus">
+              Conecta cada tienda una vez con OAuth de Shopify.
+            </p>
+            <label>
+              Foco de auditoria
+              <input
+                id="shopifyFocus"
+                name="shopifyFocus"
+                type="text"
+                placeholder="conversion, catalogo, producto ganador o pricing"
+                autocomplete="off"
+              />
+            </label>
+          </div>
         </section>
 
         <section class="result-panel" aria-live="polite" hidden>

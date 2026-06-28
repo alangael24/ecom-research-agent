@@ -14,6 +14,8 @@ const shopifyDomainInput = document.querySelector("#shopifyDomain");
 const shopifyStoreSelect = document.querySelector("#shopifyStore");
 const shopifyFocusInput = document.querySelector("#shopifyFocus");
 const shopifyConnectionStatus = document.querySelector("#shopifyConnectionStatus");
+const stageCards = [...document.querySelectorAll("[data-stage-card]")];
+const SHOPIFY_PRODUCTION_ORIGIN = "https://ecom-research-agent.pages.dev";
 
 const tabLabelSets = {
   sourcing: ["Resumen", "Herramientas", "Proveedores", "Negociacion", "DDP", "Calidad"],
@@ -210,10 +212,24 @@ function setupStageControls() {
   form.querySelectorAll("input[name='businessStage']").forEach((input) => {
     input.addEventListener("change", updateStageUI);
   });
+  stageCards.forEach((card) => {
+    card.addEventListener("click", () => selectBusinessStage(card.dataset.stageCard));
+  });
   document.querySelector("#connectShopify")?.addEventListener("click", connectShopifyStore);
   document.querySelector("#refreshShopifyStores")?.addEventListener("click", loadShopifyStores);
   document.querySelector("#disconnectShopify")?.addEventListener("click", disconnectSelectedShopifyStore);
+  document.querySelector("#closeShopifyPanel")?.addEventListener("click", () => selectBusinessStage("starter"));
   updateStageUI();
+}
+
+function selectBusinessStage(stage) {
+  const input = form.querySelector(`input[name='businessStage'][value='${stage}']`);
+  if (!input) return;
+  input.checked = true;
+  updateStageUI();
+  if (stage === "shopify") {
+    shopifyFields?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
 }
 
 function handleShopifyCallbackParams() {
@@ -242,12 +258,17 @@ function updateStageUI() {
   const isShopify = selectedBusinessStage() === "shopify";
   if (shopifyFields) shopifyFields.hidden = !isShopify;
   document.body.classList.toggle("shopify-mode", isShopify);
+  stageCards.forEach((card) => {
+    const active = card.dataset.stageCard === selectedBusinessStage();
+    card.classList.toggle("active", active);
+    card.setAttribute("aria-pressed", String(active));
+  });
 }
 
 async function loadShopifyStores() {
   if (!shopifyStoreSelect) return;
   try {
-    const response = await fetch("./api/shopify");
+    const response = await fetch(shopifyApiUrl("/api/shopify"));
     if (response.status === 404) throw new Error("Shopify backend not deployed");
     const body = await response.json();
     if (!body.ok) throw new Error(body.message || "No se pudieron leer las tiendas Shopify.");
@@ -262,8 +283,7 @@ async function loadShopifyStores() {
     state.shopifyStores = [];
     renderShopifyStoreOptions();
     if (shopifyConnectionStatus) {
-      shopifyConnectionStatus.textContent =
-        error instanceof Error ? error.message : "Shopify no esta disponible en este entorno.";
+      shopifyConnectionStatus.textContent = "La conexion Shopify funciona desde la URL publicada en Cloudflare.";
     }
   }
 }
@@ -289,10 +309,10 @@ function renderShopifyStoreOptions() {
 function connectShopifyStore() {
   const shop = normalizeShopifyDomain(shopifyDomainInput?.value);
   if (!isValidShopifyDomain(shop)) {
-    showToast("Usa un dominio .myshopify.com valido");
+    showToast("Usa tu dominio .myshopify.com o el nombre de tu tienda");
     return;
   }
-  window.location.href = `./api/shopify/connect?shop=${encodeURIComponent(shop)}`;
+  window.location.href = shopifyApiUrl(`/api/shopify/connect?shop=${encodeURIComponent(shop)}`);
 }
 
 async function disconnectSelectedShopifyStore() {
@@ -302,7 +322,7 @@ async function disconnectSelectedShopifyStore() {
     return;
   }
 
-  const response = await fetch("./api/shopify", {
+  const response = await fetch(shopifyApiUrl("/api/shopify"), {
     method: "DELETE",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ shop }),
@@ -317,7 +337,7 @@ async function disconnectSelectedShopifyStore() {
 }
 
 async function requestShopifySnapshot(shop) {
-  const response = await fetch("./api/shopify", {
+  const response = await fetch(shopifyApiUrl("/api/shopify"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ shop }),
@@ -330,16 +350,31 @@ async function requestShopifySnapshot(shop) {
 }
 
 function normalizeShopifyDomain(value) {
-  return String(value || "")
-    .trim()
-    .replace(/^https?:\/\//i, "")
-    .replace(/^www\./i, "")
-    .split(/[/?#]/)[0]
-    .toLowerCase();
+  const raw = String(value || "").trim();
+  const adminStoreMatch = raw.match(/admin\.shopify\.com\/store\/([^/?#]+)/i);
+  const cleaned = (
+    adminStoreMatch
+      ? adminStoreMatch[1]
+      : raw
+          .replace(/^https?:\/\//i, "")
+          .replace(/^www\./i, "")
+          .split(/[/?#]/)[0]
+  ).toLowerCase();
+  if (/^[a-z0-9][a-z0-9-]*$/.test(cleaned)) return `${cleaned}.myshopify.com`;
+  return cleaned;
 }
 
 function isValidShopifyDomain(shop) {
   return /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop);
+}
+
+function shopifyApiUrl(path) {
+  if (usesLocalPreview()) return `${SHOPIFY_PRODUCTION_ORIGIN}${path}`;
+  return path;
+}
+
+function usesLocalPreview() {
+  return ["", "localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
 }
 
 async function handleSubmit(event) {
