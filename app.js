@@ -2,6 +2,7 @@ const state = {
   latest: null,
   shopifyStores: [],
   pendingShopifyShop: "",
+  user: null,
 };
 
 const form = document.querySelector("#researchForm");
@@ -15,7 +16,13 @@ const shopifyStoreSelect = document.querySelector("#shopifyStore");
 const shopifyFocusInput = document.querySelector("#shopifyFocus");
 const shopifyConnectionStatus = document.querySelector("#shopifyConnectionStatus");
 const stageCards = [...document.querySelectorAll("[data-stage-card]")];
-const SHOPIFY_PRODUCTION_ORIGIN = "https://ecom-research-agent.pages.dev";
+const hero = document.querySelector(".hero");
+const authPage = document.querySelector("#authPage");
+const authError = document.querySelector("#authError");
+const shopifyLoginForm = document.querySelector("#shopifyLoginForm");
+const userPill = document.querySelector("#userPill");
+const pendingRequestKey = "agentGeniaPendingRequest";
+const SHOPIFY_PRODUCTION_ORIGIN = "https://agentgenia.com";
 
 const tabLabelSets = {
   sourcing: ["Resumen", "Herramientas", "Proveedores", "Negociacion", "DDP", "Calidad"],
@@ -195,18 +202,23 @@ const productProfiles = [
   },
 ];
 
-function init() {
+async function init() {
   renderEmptyState();
   form.accessKey.value = localStorage.getItem("alibabaSourcingAccessKey") || "";
   setupStageControls();
+  state.user = await fetchSession();
+  renderAuthState();
+  renderRoute();
   if (handleShopifyEntryParams()) return;
   handleShopifyCallbackParams();
   loadShopifyStores();
   form.addEventListener("submit", handleSubmit);
+  shopifyLoginForm?.addEventListener("submit", handleShopifyLogin);
   document.querySelector("#downloadBrief").addEventListener("click", downloadBrief);
   document.querySelector("#copySummary").addEventListener("click", copySummary);
   tabs.forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
   lucide.createIcons();
+  resumePendingRequest();
 }
 
 function setupStageControls() {
@@ -418,6 +430,14 @@ function usesLocalPreview() {
 async function handleSubmit(event) {
   event.preventDefault();
   const data = readForm();
+  if (!state.user) {
+    queueLogin(data.naturalRequest);
+    return;
+  }
+  await runResearch(data);
+}
+
+async function runResearch(data) {
   setLoading(true);
 
   if (data.businessStage === "shopify" && data.shopify.shop) {
@@ -474,6 +494,92 @@ async function handleSubmit(event) {
   saveState(report);
   setLoading(false);
   showToast(report.ai ? "Sourcing generado con Codex" : "Plan guiado generado");
+}
+
+async function fetchSession() {
+  try {
+    const response = await fetch("./api/session", { credentials: "include" });
+    if (!response.ok) return null;
+    const session = await response.json();
+    return session.authenticated ? session.user : null;
+  } catch {
+    return null;
+  }
+}
+
+function renderAuthState() {
+  if (!state.user) {
+    userPill.hidden = true;
+    userPill.innerHTML = "";
+    return;
+  }
+
+  userPill.hidden = false;
+  userPill.innerHTML = `
+    <span>${escapeHtml(state.user.name || state.user.email)}</span>
+    <a href="/api/logout">Salir</a>
+  `;
+}
+
+function renderRoute() {
+  const isLoginRoute = window.location.pathname === "/login";
+  document.body.classList.toggle("auth-mode", isLoginRoute);
+  if (hero) hero.hidden = isLoginRoute;
+  if (authPage) authPage.hidden = !isLoginRoute;
+  if (isLoginRoute) {
+    resultPanel.hidden = true;
+    renderAuthError();
+  }
+  if (isLoginRoute && state.user) {
+    window.location.replace("/");
+  }
+}
+
+function renderAuthError() {
+  const message = {
+    google_config: "Falta configurar Google OAuth.",
+    google_state: "La sesion de Google expiro. Intenta de nuevo.",
+    google_token: "Google no pudo completar el acceso.",
+    google_profile: "No pudimos leer el perfil de Google.",
+    google_email: "Google no devolvio un correo.",
+    shopify_config: "Falta configurar Shopify OAuth.",
+    shopify_shop: "Escribe una tienda valida de Shopify.",
+    shopify_state: "La sesion de Shopify expiro. Intenta de nuevo.",
+    shopify_hmac: "Shopify no pudo verificar la solicitud.",
+    shopify_token: "Shopify no pudo completar el acceso.",
+  }[new URLSearchParams(window.location.search).get("error")];
+
+  if (!authError) return;
+  authError.hidden = !message;
+  authError.textContent = message || "";
+}
+
+function queueLogin(naturalRequest) {
+  sessionStorage.setItem(pendingRequestKey, naturalRequest);
+  window.location.href = "/login";
+}
+
+function resumePendingRequest() {
+  const params = new URLSearchParams(window.location.search);
+  if (!state.user || params.get("auth") !== "success") return;
+  const pending = sessionStorage.getItem(pendingRequestKey);
+  sessionStorage.removeItem(pendingRequestKey);
+  window.history.replaceState({}, "", window.location.pathname);
+  if (!pending) return;
+  form.naturalRequest.value = pending;
+  runResearch(readForm());
+}
+
+function handleShopifyLogin(event) {
+  event.preventDefault();
+  const data = new FormData(shopifyLoginForm);
+  const shop = String(data.get("shop") || "").trim();
+  if (!shop) {
+    showToast("Escribe tu tienda Shopify");
+    shopifyLoginForm.shop.focus();
+    return;
+  }
+  window.location.href = `/api/auth/shopify/start?shop=${encodeURIComponent(shop)}`;
 }
 
 function readForm() {
@@ -583,11 +689,17 @@ async function requestBackendReport(data) {
   const response = await fetch("./api/research", {
     method: "POST",
     headers,
+    credentials: "include",
     body: JSON.stringify({ ...data, accessKey: undefined }),
   });
 
   if (response.status === 404) {
     throw new Error("Backend not deployed");
+  }
+
+  if (response.status === 401) {
+    queueLogin(data.naturalRequest);
+    return null;
   }
 
   return response.json();
