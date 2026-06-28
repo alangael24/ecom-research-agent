@@ -474,7 +474,7 @@ button {
   align-items: center;
   display: grid;
   gap: 16px;
-  grid-template-columns: 58px minmax(0, 1fr) auto;
+  grid-template-columns: 58px minmax(0, 1fr) auto auto;
   min-height: 112px;
   padding: 20px 22px 20px 26px;
 }
@@ -498,11 +498,16 @@ button {
 
 .plus-button,
 .send-button,
-.mic-button {
+.mic-button,
+.active-context-chip {
   align-items: center;
   border: 0;
   display: inline-flex;
   justify-content: center;
+}
+
+.tool-menu-wrap {
+  position: relative;
 }
 
 .plus-button {
@@ -510,6 +515,112 @@ button {
   color: var(--muted);
   height: 58px;
   width: 58px;
+}
+
+.plus-button:hover,
+.plus-button[aria-expanded="true"] {
+  color: var(--teal-dark);
+}
+
+.tool-menu {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 18px 44px rgba(22, 34, 29, 0.13);
+  display: grid;
+  gap: 4px;
+  left: 0;
+  min-width: 236px;
+  padding: 6px;
+  position: absolute;
+  top: calc(100% + 10px);
+  z-index: 20;
+}
+
+.tool-option {
+  appearance: none;
+  -webkit-appearance: none;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ink);
+  display: grid;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 850;
+  gap: 10px;
+  grid-template-columns: 30px minmax(0, 1fr) 18px;
+  min-height: 42px;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.tool-option:hover,
+.tool-option.active {
+  background: #eef6f3;
+}
+
+.tool-option.quiet {
+  color: var(--muted);
+}
+
+.tool-option-icon {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.tool-option-icon svg {
+  height: 20px;
+  width: 20px;
+}
+
+.brand-tool {
+  color: var(--blue);
+}
+
+.shopify-tool {
+  color: var(--teal);
+}
+
+.tool-option-check {
+  color: var(--teal);
+  display: none;
+  height: 18px;
+  width: 18px;
+}
+
+.tool-option.active .tool-option-check {
+  display: block;
+}
+
+.active-context-chip {
+  appearance: none;
+  -webkit-appearance: none;
+  background: #eef6f3;
+  border: 1px solid rgba(15, 123, 104, 0.18);
+  border-radius: 999px;
+  color: var(--teal-dark);
+  height: 40px;
+  padding: 0;
+  width: 40px;
+}
+
+.active-context-chip[data-active-stage="brand"] {
+  color: var(--blue);
+}
+
+.active-context-chip svg {
+  height: 20px;
+  width: 20px;
+}
+
+.context-store {
+  display: none;
 }
 
 .attachment-tray {
@@ -1164,6 +1275,43 @@ textarea:focus {
 .compact-section h4 {
   font-size: 14px;
   margin: 0 0 8px;
+}
+
+.inspiration-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.inspiration-card {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.inspiration-card div {
+  border-right: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.inspiration-card div:last-child {
+  border-right: 0;
+}
+
+.inspiration-card span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.inspiration-card strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.35;
 }
 
 .report-card ul,
@@ -1862,8 +2010,18 @@ textarea:focus {
   .field-grid,
   .report-grid,
   .metric-row,
-  .agent-work-grid {
+  .agent-work-grid,
+  .inspiration-card {
     grid-template-columns: 1fr;
+  }
+
+  .inspiration-card div {
+    border-bottom: 1px solid var(--line);
+    border-right: 0;
+  }
+
+  .inspiration-card div:last-child {
+    border-bottom: 0;
   }
 
   .hero > h2 {
@@ -1898,7 +2056,7 @@ textarea:focus {
 
   .prompt-row {
     gap: 8px;
-    grid-template-columns: 36px minmax(0, 1fr) auto;
+    grid-template-columns: 36px minmax(0, 1fr) auto auto;
     min-height: 74px;
     padding: 12px 12px 12px 10px;
   }
@@ -1913,6 +2071,22 @@ textarea:focus {
   .plus-button {
     height: 44px;
     width: 36px;
+  }
+
+  .tool-menu {
+    left: -2px;
+    min-width: min(236px, calc(100vw - 30px));
+    top: calc(100% + 8px);
+  }
+
+  .active-context-chip {
+    height: 34px;
+    width: 34px;
+  }
+
+  .active-context-chip svg {
+    height: 18px;
+    width: 18px;
   }
 
   .attachment-tray {
