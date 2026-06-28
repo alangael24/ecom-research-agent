@@ -230,8 +230,7 @@ button {
   gap: 14px;
 }
 
-.auth-provider,
-.shopify-row {
+.auth-provider {
   align-items: center;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -266,36 +265,22 @@ button {
   color: #2563eb;
 }
 
-.shopify-login {
-  display: grid;
-  gap: 8px;
+.shopify-provider {
+  border-color: rgba(149, 191, 71, 0.5);
 }
 
-.shopify-login label {
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 850;
+.shopify-provider:hover {
+  border-color: #95bf47;
+  color: var(--teal-dark);
 }
 
-.shopify-row {
-  grid-template-columns: minmax(0, 1fr) auto;
+.shopify-mark {
+  color: #5e8e3e;
 }
 
-.shopify-row input {
-  border: 0;
-  color: var(--ink);
-  min-height: 46px;
-  min-width: 0;
-  padding: 0 14px;
-}
-
-.shopify-row button {
-  align-self: stretch;
-  background: var(--ink);
-  border: 0;
-  color: white;
-  font-weight: 850;
-  padding: 0 16px;
+.shopify-mark svg {
+  height: 22px;
+  width: 22px;
 }
 
 .back-link {
@@ -1514,14 +1499,6 @@ textarea:focus {
   .auth-prompt-preview {
     font-size: 16px;
     min-height: 58px;
-  }
-
-  .shopify-row {
-    grid-template-columns: 1fr;
-  }
-
-  .shopify-row button {
-    min-height: 44px;
   }
 
   .report-ready .main-page {

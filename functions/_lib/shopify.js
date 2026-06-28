@@ -53,13 +53,20 @@ export function json(body, status = 200, extraHeaders = {}) {
 }
 
 export function redirect(location, headers = {}) {
+  const responseHeaders = new Headers({
+    location,
+    "cache-control": "no-store",
+  });
+  for (const [key, value] of Object.entries(headers)) {
+    if (Array.isArray(value)) {
+      value.forEach((item) => responseHeaders.append(key, item));
+    } else {
+      responseHeaders.append(key, value);
+    }
+  }
   return new Response(null, {
     status: 302,
-    headers: {
-      ...headers,
-      location,
-      "cache-control": "no-store",
-    },
+    headers: responseHeaders,
   });
 }
 
