@@ -141,6 +141,8 @@ Each Tool Factory report now includes an `appReplacement` decision with:
 
 Tool Factory reports also include a `toolSpec` contract. This is the executable shape of the mini-tool: target surface/runtime, primary action, success metric, data destination, fields, blocks, automation rules, safety checks, and upgrade path. The Shopify Page runtime renders this spec when it can safely publish a Page MVP, and the registry stores it with the installed mini-tool.
 
+When Shopify is connected, the browser includes the store's registered Agent Genia mini-tools in the `/api/research` payload. Tool Factory uses that registry context to avoid duplicating work: if a matching active/paused mini-tool already exists, the report recommends iterating, reactivating, pausing, or archiving the existing tool before creating another one.
+
 `brand_whitespace_tool` labels output as hypotheses. It does not perform live Meta Ads, Amazon review, or TikTok collection by itself; use the deeper competitive research harness/skills to confirm demand, saturation, and customer language.
 
 ## Browser login

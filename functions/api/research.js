@@ -732,7 +732,9 @@ function runToolFactory(payload) {
   const mvp = buildToolFactoryMvp(profile, primitives);
   const limitations = buildToolFactoryLimitations(profile);
   const risks = buildToolFactoryRisks(profile);
-  const appReplacement = buildAppReplacementPlan(profile, limitations);
+  const installedTools = normalizeInstalledToolsForFactory(payload.shopify?.installedTools);
+  const existingToolMatch = findExistingToolMatch(profile, installedTools);
+  const appReplacement = buildAppReplacementPlan(profile, limitations, existingToolMatch);
   const toolSpec = buildToolFactorySpec(profile, appReplacement);
 
   return {
@@ -748,10 +750,14 @@ function runToolFactory(payload) {
     shopify: {
       shop: payload.shopify?.shop || "",
       focus: payload.shopify?.focus || "",
+      installedTools,
+      installedToolsError: payload.shopify?.installedToolsError || "",
     },
     requestedTool: profile,
     executiveBrief: {
-      decision: `${profile.name} si puede avanzar como herramienta nativa de Agent Genia. Ruta actual: ${profile.runtimeLabel}.`,
+      decision: existingToolMatch
+        ? `Ya existe una mini-tool parecida (${existingToolMatch.title}). Primero conviene iterarla o reactivarla antes de crear otra.`
+        : `${profile.name} si puede avanzar como herramienta nativa de Agent Genia. Ruta actual: ${profile.runtimeLabel}.`,
       valueThesis: "La meta no es copiar apps de pago; es construir la parte exacta que el merchant necesita para evitar subscriptions innecesarias.",
       feasibility: profile.feasibility,
       guardrail: "Si la necesidad requiere infraestructura regulada, entregabilidad, pagos, fraude, SMS compliance o marketplace externo, Agent Genia debe integrarse con un proveedor o limitar el alcance.",
@@ -774,6 +780,9 @@ function runToolFactory(payload) {
     risks,
     validationPlan: buildToolFactoryValidationPlan(profile, mvp),
     nextSteps: [
+      ...(existingToolMatch
+        ? [`Abrir la herramienta existente "${existingToolMatch.title}" y decidir si activarla, pausarla o editar su spec.`]
+        : []),
       "Confirmar el job-to-be-done exacto: que debe hacer la herramienta y que no debe hacer.",
       "Construir el MVP con bloques/configuracion existentes antes de crear codigo nuevo.",
       "Medir uso, conversion, ahorro de subscription y errores operativos por 7-14 dias.",
@@ -972,19 +981,23 @@ function buildToolFactoryValidationPlan(profile, mvp) {
   ];
 }
 
-function buildAppReplacementPlan(profile, limitations) {
+function buildAppReplacementPlan(profile, limitations, existingToolMatch = null) {
   const capability = toolCapabilityByCategory(profile.category);
   const replaceabilityLevel = replacementLevelForMode(capability.publishMode);
+  const recommendedLevel = existingToolMatch ? "iterate_existing" : replaceabilityLevel;
   return {
     principle:
       "Agent Genia no debe clonar una app pagada completa. Debe extraer el trabajo que el merchant necesita, construir la version minima nativa, medir valor y solo escalar si se usa.",
-    replaceabilityLevel,
+    replaceabilityLevel: recommendedLevel,
     publishMode: capability.publishMode,
     runtimeLabel: capability.runtimeLabel,
-    canCreateNow: capability.publishMode === "shopify_page_mvp",
+    canCreateNow: capability.publishMode === "shopify_page_mvp" && !existingToolMatch,
+    existingTool: existingToolMatch,
     firstVersion: capability.firstVersion,
     upgradePath: capability.upgradePath,
-    buildOrBuyDecision: buildOrBuyDecision(capability),
+    buildOrBuyDecision: existingToolMatch
+      ? `Ya hay una mini-tool registrada para este trabajo: ${existingToolMatch.title}. Antes de crear otra, Agent Genia debe iterar, reactivar o archivar esa herramienta.`
+      : buildOrBuyDecision(capability),
     nativeAdvantages: [
       "Menos subscriptions antes de validar valor real.",
       "Menos ruido: solo se construye la funcion exacta que el merchant pidio.",
@@ -992,6 +1005,48 @@ function buildAppReplacementPlan(profile, limitations) {
     ],
     keepThirdPartyWhen: limitations.thirdPartyStillBetter,
   };
+}
+
+function normalizeInstalledToolsForFactory(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((tool) => ({
+      id: cleanSentence(tool?.id).slice(0, 80),
+      title: cleanSentence(tool?.title || tool?.requestedTool?.name).slice(0, 160),
+      category: cleanSentence(tool?.category || tool?.requestedTool?.category).slice(0, 120),
+      status: cleanSentence(tool?.status || "active").slice(0, 30),
+      mode: cleanSentence(tool?.mode || tool?.publishMode).slice(0, 80),
+      url: cleanSentence(tool?.url).slice(0, 300),
+      adminUrl: cleanSentence(tool?.adminUrl).slice(0, 300),
+      updatedAt: cleanSentence(tool?.updatedAt).slice(0, 60),
+    }))
+    .filter((tool) => tool.id && tool.status !== "archived")
+    .slice(0, 25);
+}
+
+function findExistingToolMatch(profile, installedTools) {
+  if (!installedTools.length) return null;
+  const exact = installedTools.find((tool) => tool.category && tool.category === profile.category);
+  if (exact) return exact;
+  const profileWords = keywordsForToolMatch(`${profile.name} ${profile.category} ${profile.jobToBeDone}`);
+  return (
+    installedTools.find((tool) => {
+      const toolWords = keywordsForToolMatch(`${tool.title} ${tool.category}`);
+      return [...profileWords].some((word) => toolWords.has(word));
+    }) || null
+  );
+}
+
+function keywordsForToolMatch(value) {
+  const stop = new Set(["para", "como", "tool", "app", "agent", "genia", "gratis", "nativo", "ligera", "ligero", "mvp"]);
+  return new Set(
+    cleanSentence(value)
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word.length > 3 && !stop.has(word)),
+  );
 }
 
 function buildToolFactorySpec(profile, appReplacement) {

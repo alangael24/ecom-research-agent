@@ -521,6 +521,18 @@ async function requestShopifySnapshot(shop) {
   return body.shopify;
 }
 
+async function requestInstalledShopifyTools(shop) {
+  const response = await fetch(shopifyApiUrl(`/api/shopify/tools?shop=${encodeURIComponent(shop)}`), {
+    headers: shopifyToolHeaders({ accept: "application/json" }),
+    credentials: "include",
+  });
+  const body = await response.json();
+  if (!response.ok || !body.ok) {
+    throw new Error(body.message || "No se pudieron leer las herramientas Agent Genia.");
+  }
+  return Array.isArray(body.tools) ? body.tools : [];
+}
+
 function normalizeShopifyDomain(value) {
   const raw = String(value || "").trim();
   const adminStoreMatch = raw.match(/admin\.shopify\.com\/store\/([^/?#]+)/i);
@@ -852,6 +864,11 @@ async function runResearch(data) {
       data.shopify.snapshot = await requestShopifySnapshot(data.shopify.shop);
     } catch (error) {
       data.shopify.error = error instanceof Error ? error.message : "No se pudo leer la tienda Shopify.";
+    }
+    try {
+      data.shopify.installedTools = await requestInstalledShopifyTools(data.shopify.shop);
+    } catch (error) {
+      data.shopify.installedToolsError = error instanceof Error ? error.message : "No se pudieron leer las herramientas Agent Genia.";
     }
   }
 
@@ -2142,10 +2159,15 @@ function renderToolFactoryReport(report) {
   const events = Array.isArray(strategy.events) ? strategy.events : [];
   const adminActions = Array.isArray(strategy.adminActions) ? strategy.adminActions : [];
   const publication = report.publication || null;
-  const installedTools = Array.isArray(report.installedTools) ? report.installedTools : [];
+  const installedTools = Array.isArray(report.installedTools)
+    ? report.installedTools
+    : Array.isArray(report.shopify?.installedTools)
+      ? report.shopify.installedTools
+      : [];
+  const installedToolsLoaded = report.installedToolsLoaded || Array.isArray(report.shopify?.installedTools);
   const shop = report.shopify?.shop || "";
   const runtime = toolFactoryRuntimeSupport(report);
-  const canCreateTool = Boolean(shop && (requested.name || requested.category) && runtime.supported && !publication);
+  const canCreateTool = Boolean(shop && (requested.name || requested.category) && runtime.supported && replacement.canCreateNow !== false && !publication);
   const publishedCard = publication
     ? `<article class="report-card full-span success-card">
         <h3>Herramienta creada</h3>
@@ -2187,6 +2209,7 @@ function renderToolFactoryReport(report) {
           <span class="pill"><i data-lucide="route"></i>${escapeHtml(replacement.replaceabilityLevel || "definir alcance")}</span>
           <span class="pill"><i data-lucide="cpu"></i>${escapeHtml(replacement.runtimeLabel || requested.runtimeLabel || "runtime por definir")}</span>
           <span class="pill"><i data-lucide="rocket"></i>${replacement.canCreateNow ? "crear ahora" : "runtime avanzado"}</span>
+          ${replacement.existingTool ? `<span class="pill"><i data-lucide="layers"></i>${escapeHtml(`ya existe: ${replacement.existingTool.title || replacement.existingTool.category}`)}</span>` : ""}
         </div>
       </article>
       <article class="report-card full-span notice-card">
@@ -2217,7 +2240,7 @@ function renderToolFactoryReport(report) {
       </article>
       <article class="report-card full-span">
         <h3>Herramientas instaladas</h3>
-        ${renderInstalledShopifyTools({ tools: installedTools, loaded: report.installedToolsLoaded, loading: report.installedToolsLoading, error: report.installedToolsError })}
+        ${renderInstalledShopifyTools({ tools: installedTools, loaded: installedToolsLoaded, loading: report.installedToolsLoading, error: report.installedToolsError || report.shopify?.installedToolsError })}
       </article>
     </div>`;
 
@@ -2285,7 +2308,7 @@ function renderToolFactoryReport(report) {
       </article>
       <article class="report-card full-span ${runtime.supported ? "" : "notice-card"}">
         <h3>Crear herramienta en Shopify</h3>
-        <p>${escapeHtml(toolFactoryPublishMessage({ shop, runtime, publication, canCreateTool }))}</p>
+        <p>${escapeHtml(toolFactoryPublishMessage({ shop, runtime, publication, canCreateTool, replacement }))}</p>
         <button class="primary-button" type="button" data-create-shopify-tool ${canCreateTool ? "" : "disabled"}>
           <i data-lucide="${publication ? "check-circle" : runtime.supported ? "upload-cloud" : "shield-alert"}"></i>
           ${publication ? "Herramienta creada" : runtime.supported ? "Crear herramienta en Shopify" : "Requiere runtime avanzado"}
@@ -2295,13 +2318,13 @@ function renderToolFactoryReport(report) {
             ? `Publicada: ${escapeHtml(publication.url || publication.handle || "")}`
             : canCreateTool
               ? "Lista para publicar como MVP seguro."
-              : escapeHtml(runtime.supported ? "Conecta Shopify para crearla." : runtime.message)
+              : escapeHtml(toolFactoryPublishMessage({ shop, runtime, publication, canCreateTool, replacement }))
         }</p>
       </article>
     </div>`;
 
   lucide.createIcons();
-  if (shop && !report.installedToolsLoaded && !report.installedToolsLoading) {
+  if (shop && !installedToolsLoaded && !report.installedToolsLoading) {
     void refreshInstalledShopifyTools(report);
   }
 }
@@ -2421,9 +2444,12 @@ function toolFactoryRuntimeSupport(reportOrCategory) {
   };
 }
 
-function toolFactoryPublishMessage({ shop, runtime, publication }) {
+function toolFactoryPublishMessage({ shop, runtime, publication, replacement }) {
   if (publication) return "La herramienta ya existe en Shopify. Puedes abrirla, revisarla y decidir si iterarla.";
   if (!shop) return "Conecta una tienda Shopify para que Agent Genia pueda crear esta herramienta.";
+  if (replacement?.existingTool) {
+    return `Ya existe una herramienta parecida: ${replacement.existingTool.title || replacement.existingTool.category}. Primero conviene iterarla, activarla/pausarla o archivarla antes de crear otra.`;
+  }
   if (!runtime.supported) return runtime.message;
   return "Esto crea una Page real en Shopify con la version minima de la herramienta: segura, reversible y medible.";
 }
@@ -4413,6 +4439,7 @@ Solicitud: ${report.naturalRequest || ""}
 Herramienta interna: ${toolLabel(report.toolUsed)}
 Tienda Shopify: ${report.shopify?.shop || "no conectada"}
 Publicacion: ${report.publication?.url || "no publicada"}
+Herramienta existente sugerida: ${replacement.existingTool?.title || "ninguna"}
 
 ## Decision
 
@@ -4439,6 +4466,9 @@ ${replacement.buildOrBuyDecision || ""}
 Primera version: ${replacement.firstVersion || ""}
 
 Ruta si funciona: ${replacement.upgradePath || ""}
+
+Herramientas Agent Genia existentes:
+${installedTools.length ? installedTools.map((tool) => `- ${tool.title || tool.requestedTool?.name || tool.id}: ${tool.category || ""} | ${tool.status || ""} | ${tool.url || ""}`).join("\n") : "- Ninguna registrada en el contexto del reporte."}
 
 ## Spec ejecutable
 
