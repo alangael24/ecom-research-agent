@@ -1,4 +1,5 @@
 import { readSession } from "../../_auth.js";
+import { requireActiveUser } from "../../_shared/supabase.js";
 import {
   createShopifyPage,
   getApiVersion,
@@ -12,6 +13,7 @@ import {
 const MAX_PAYLOAD_LENGTH = 200000;
 const MAX_TITLE_LENGTH = 255;
 const MAX_HANDLE_LENGTH = 255;
+const TOOL_PREFIX = "shopify:tool:";
 
 const PAGE_RUNTIME_CATEGORIES = new Set([
   "constructor de paginas y secciones",
@@ -39,9 +41,8 @@ export async function onRequestPost(context) {
     return json({ ok: false, code: "shopify_not_configured", message: configError }, 503);
   }
 
-  const passwordOk = env.APP_PASSWORD && request.headers.get("x-app-password") === env.APP_PASSWORD;
-  const session = passwordOk ? null : await readSession(request, env);
-  if (!passwordOk && !session) {
+  const authorized = await authorizeToolRequest(request, env);
+  if (!authorized) {
     return json({ ok: false, code: "auth_required", message: "Inicia sesion para crear herramientas en Shopify." }, 401);
   }
 
@@ -95,20 +96,27 @@ export async function onRequestPost(context) {
     });
     const publicUrl = buildPublicPageUrl(store, shop, page.handle);
     const adminId = numericShopifyId(page.id);
+    const adminUrl = adminId ? `https://${shop}/admin/pages/${adminId}` : `https://${shop}/admin/pages`;
+    const toolRecord = buildToolRecord({
+      shop,
+      report,
+      page,
+      pageDraft,
+      runtime,
+      publicUrl,
+      adminUrl,
+    });
+    let registryWarning = "";
+    try {
+      await saveToolRecord(env, toolRecord);
+    } catch (registryError) {
+      registryWarning = registryError instanceof Error ? registryError.message : "No se pudo guardar el registro de herramienta.";
+    }
 
     return json({
       ok: true,
-      tool: {
-        id: page.id,
-        title: page.title,
-        handle: page.handle,
-        category: pageDraft.category,
-        mode: "shopify_page_mvp",
-        runtime: runtime.runtime,
-        limitations: runtime.limitations,
-        url: publicUrl,
-        adminUrl: adminId ? `https://${shop}/admin/pages/${adminId}` : `https://${shop}/admin/pages`,
-      },
+      tool: publicToolRecord(toolRecord),
+      registryWarning,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "No se pudo crear la herramienta en Shopify.";
@@ -126,15 +134,162 @@ export async function onRequestPost(context) {
   }
 }
 
+export async function onRequestGet(context) {
+  const { request, env } = context;
+  const configError = requireShopifyConfig(env);
+  if (configError) {
+    return json({ ok: false, code: "shopify_not_configured", message: configError }, 503);
+  }
+
+  const authorized = await authorizeToolRequest(request, env);
+  if (!authorized) {
+    return json({ ok: false, code: "auth_required", message: "Inicia sesion para ver herramientas de Shopify." }, 401);
+  }
+
+  const url = new URL(request.url);
+  const shop = normalizeShopifyDomain(url.searchParams.get("shop"));
+  if (!isValidShopDomain(shop)) {
+    return json({ ok: false, code: "invalid_shop", message: "Use a valid connected Shopify shop." }, 400);
+  }
+
+  const store = await getConnectedStore(env, shop);
+  if (!store) {
+    return json(
+      {
+        ok: false,
+        code: "shop_not_connected",
+        message: "Esta tienda no esta conectada. Vuelve a iniciar sesion con Shopify.",
+      },
+      404,
+    );
+  }
+
+  const tools = await listToolRecords(env, shop);
+  return json({
+    ok: true,
+    shop,
+    tools: tools.map(publicToolRecord),
+  });
+}
+
 export async function onRequestOptions() {
   return new Response(null, {
     status: 204,
     headers: {
       "access-control-allow-origin": "*",
-      "access-control-allow-methods": "POST,OPTIONS",
-      "access-control-allow-headers": "content-type,x-app-password",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
+      "access-control-allow-headers": "accept,authorization,content-type,x-app-password",
     },
   });
+}
+
+async function authorizeToolRequest(request, env) {
+  if (env.APP_PASSWORD && request.headers.get("x-app-password") === env.APP_PASSWORD) return true;
+  const session = await readSession(request, env).catch(() => null);
+  if (session) return true;
+  if (request.headers.get("authorization")) {
+    try {
+      await requireActiveUser(request, env);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+async function saveToolRecord(env, record) {
+  await env.SHOPIFY_STORES.put(toolKey(record.shop, record.id), JSON.stringify(record));
+}
+
+async function listToolRecords(env, shop) {
+  const records = [];
+  let cursor;
+  do {
+    const page = await env.SHOPIFY_STORES.list({
+      prefix: toolPrefix(shop),
+      cursor,
+      limit: 100,
+    });
+    cursor = page.cursor;
+    for (const key of page.keys) {
+      const record = await env.SHOPIFY_STORES.get(key.name, { type: "json" });
+      if (record) records.push(record);
+    }
+  } while (cursor);
+
+  return records.sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
+}
+
+function buildToolRecord({ shop, report, page, pageDraft, runtime, publicUrl, adminUrl }) {
+  const requested = report.requestedTool || {};
+  const replacement = report.appReplacement || {};
+  const now = new Date().toISOString();
+  const id = numericShopifyId(page.id) || crypto.randomUUID();
+  return {
+    id,
+    shop,
+    source: "agentgenia_tool_factory",
+    status: "active",
+    title: page.title,
+    handle: page.handle,
+    category: pageDraft.category,
+    mode: "shopify_page_mvp",
+    runtime: runtime.runtime,
+    publishMode: replacement.publishMode || "shopify_page_mvp",
+    runtimeLabel: replacement.runtimeLabel || requested.runtimeLabel || "Page MVP publicable hoy",
+    replaceabilityLevel: replacement.replaceabilityLevel || "crear ahora",
+    limitations: runtime.limitations || [],
+    requestedTool: {
+      name: requested.name || page.title,
+      category: requested.category || pageDraft.category,
+      jobToBeDone: requested.jobToBeDone || "",
+      desiredOutcome: requested.desiredOutcome || "",
+    },
+    appReplacement: {
+      buildOrBuyDecision: replacement.buildOrBuyDecision || "",
+      firstVersion: replacement.firstVersion || "",
+      upgradePath: replacement.upgradePath || "",
+    },
+    shopifyPageId: page.id,
+    url: publicUrl,
+    adminUrl,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function publicToolRecord(record) {
+  return {
+    id: record.id,
+    shop: record.shop,
+    source: record.source || "agentgenia_tool_factory",
+    status: record.status || "active",
+    title: record.title || "",
+    handle: record.handle || "",
+    category: record.category || "",
+    mode: record.mode || "",
+    runtime: record.runtime || "",
+    publishMode: record.publishMode || "",
+    runtimeLabel: record.runtimeLabel || "",
+    replaceabilityLevel: record.replaceabilityLevel || "",
+    limitations: record.limitations || [],
+    requestedTool: record.requestedTool || null,
+    appReplacement: record.appReplacement || null,
+    shopifyPageId: record.shopifyPageId || "",
+    url: record.url || "",
+    adminUrl: record.adminUrl || "",
+    createdAt: record.createdAt || "",
+    updatedAt: record.updatedAt || "",
+  };
+}
+
+function toolPrefix(shop) {
+  return `${TOOL_PREFIX}${shop}:`;
+}
+
+function toolKey(shop, id) {
+  return `${toolPrefix(shop)}${id}`;
 }
 
 function validateToolPayload(payload) {

@@ -130,7 +130,7 @@ Internal tools currently handled directly by `/api/research`:
 
 `agentgenia_tool_factory` identifies the smallest native Shopify MVP that can replace the merchant's actual job-to-be-done, plus the cases where a third-party app is still safer because of deliverability, compliance, fraud, payments, carrier labels, or enterprise support. It treats paid apps as jobs-to-be-done, not as brands to clone.
 
-For supported low-risk categories, it can publish a real Shopify Page MVP through `POST /api/shopify/tools`. Current Page runtime categories include simple quiz/recommendation tools, support/trust hubs, landing/section-builder outputs, lightweight social-proof pages, lead-capture pages, returns/post-purchase forms, and generic ecommerce helper pages. Deep categories such as email/SMS retention, pixels/analytics, checkout, discounts, bundles, loyalty, subscriptions, and advanced search remain blueprint-only until Agent Genia has the right Shopify extension/function/provider runtime for them.
+For supported low-risk categories, it can publish a real Shopify Page MVP through `POST /api/shopify/tools`. Current Page runtime categories include simple quiz/recommendation tools, support/trust hubs, landing/section-builder outputs, lightweight social-proof pages, lead-capture pages, returns/post-purchase forms, and generic ecommerce helper pages. Published Tool Factory MVPs are registered in the Shopify KV namespace so Agent Genia can list the mini-tools already installed for a store. Deep categories such as email/SMS retention, pixels/analytics, checkout, discounts, bundles, loyalty, subscriptions, and advanced search remain blueprint-only until Agent Genia has the right Shopify extension/function/provider runtime for them.
 
 Each Tool Factory report now includes an `appReplacement` decision with:
 
@@ -161,7 +161,8 @@ Login endpoints:
 - `GET /api/shopify/login`: sends the user to Shopify's own login/store selection flow.
 - `GET /api/shopify/callback`: connects the Shopify store and creates the Agent Genia session.
 - `POST /api/shopify/pages`: creates a real Shopify Online Store page after the user approves the preview.
-- `POST /api/shopify/tools`: creates a real Shopify Online Store Page MVP for supported Tool Factory reports.
+- `GET /api/shopify/tools?shop=store.myshopify.com`: lists Agent Genia mini-tools registered for a connected Shopify store.
+- `POST /api/shopify/tools`: creates a real Shopify Online Store Page MVP for supported Tool Factory reports and records it as an installed mini-tool.
 - `GET /api/auth/shopify/start?shop=store.myshopify.com`: optional direct-shop Shopify login.
 - `GET /api/auth/shopify/callback`: validates direct-shop Shopify OAuth and creates the session.
 
@@ -188,7 +189,8 @@ Cloudflare endpoints:
 - `GET /api/shopify/callback`: validates Shopify HMAC/state, exchanges code for an access token, encrypts it, stores the shop in KV, and signs in the user.
 - `POST /api/shopify`: returns a sanitized catalog snapshot for a connected store.
 - `POST /api/shopify/pages`: publishes an approved Agent Genia page draft to Shopify Pages.
-- `POST /api/shopify/tools`: publishes an approved Tool Factory MVP as a safe Shopify Page when the category supports the Page runtime.
+- `GET /api/shopify/tools?shop=store.myshopify.com`: lists registered Agent Genia mini-tools for the store.
+- `POST /api/shopify/tools`: publishes an approved Tool Factory MVP as a safe Shopify Page when the category supports the Page runtime, then persists a public mini-tool record in KV.
 - `DELETE /api/shopify`: disconnects a store by deleting its KV record.
 
 If `write_content` is added after a store was already connected, the merchant must reconnect/reinstall the Shopify app so Shopify grants a token with the new scope.

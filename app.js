@@ -2136,6 +2136,7 @@ function renderToolFactoryReport(report) {
   const events = Array.isArray(strategy.events) ? strategy.events : [];
   const adminActions = Array.isArray(strategy.adminActions) ? strategy.adminActions : [];
   const publication = report.publication || null;
+  const installedTools = Array.isArray(report.installedTools) ? report.installedTools : [];
   const shop = report.shopify?.shop || "";
   const runtime = toolFactoryRuntimeSupport(report);
   const canCreateTool = Boolean(shop && (requested.name || requested.category) && runtime.supported && !publication);
@@ -2207,6 +2208,10 @@ function renderToolFactoryReport(report) {
           <div><dt>Runtime</dt><dd>${escapeHtml(replacement.runtimeLabel || requested.runtimeLabel || "por definir")}</dd></div>
           <div><dt>Ruta si funciona</dt><dd>${escapeHtml(replacement.upgradePath || "Convertirlo en herramienta reutilizable solo si se usa varias veces.")}</dd></div>
         </dl>
+      </article>
+      <article class="report-card full-span">
+        <h3>Herramientas instaladas</h3>
+        ${renderInstalledShopifyTools({ tools: installedTools, loaded: report.installedToolsLoaded, loading: report.installedToolsLoading, error: report.installedToolsError })}
       </article>
     </div>`;
 
@@ -2286,6 +2291,56 @@ function renderToolFactoryReport(report) {
     </div>`;
 
   lucide.createIcons();
+  if (shop && !report.installedToolsLoaded && !report.installedToolsLoading) {
+    void refreshInstalledShopifyTools(report);
+  }
+}
+
+function renderInstalledShopifyTools({ tools, loaded, loading, error }) {
+  if (error) return `<p>${escapeHtml(error)}</p>`;
+  if (loading || !loaded) return "<p>Leyendo herramientas Agent Genia instaladas en esta tienda...</p>";
+  if (!tools.length) return "<p>Todavia no hay herramientas Agent Genia registradas para esta tienda.</p>";
+  return `<dl class="calculation-list">
+    ${tools
+      .map(
+        (tool) => `<div>
+          <dt>${tool.url ? `<a class="link-pill" href="${escapeHtml(tool.url)}" target="_blank" rel="noreferrer">${escapeHtml(tool.title || tool.requestedTool?.name || "Herramienta")}</a>` : escapeHtml(tool.title || tool.requestedTool?.name || "Herramienta")}</dt>
+          <dd>${escapeHtml([tool.category, tool.mode || tool.publishMode, tool.status].filter(Boolean).join(" · "))}</dd>
+        </div>`,
+      )
+      .join("")}
+  </dl>`;
+}
+
+async function refreshInstalledShopifyTools(report) {
+  const shop = report?.shopify?.shop || "";
+  if (!shop) return;
+  report.installedToolsLoading = true;
+  report.installedToolsError = "";
+  const activeTab = document.querySelector(".tab.active")?.dataset.tab || "brief";
+
+  try {
+    const response = await fetch(`./api/shopify/tools?shop=${encodeURIComponent(shop)}`, {
+      headers: shopifyToolHeaders({ accept: "application/json" }),
+      credentials: "include",
+    });
+    const body = await response.json();
+    if (!response.ok || !body.ok) {
+      throw new Error(body.message || "No se pudieron leer las herramientas instaladas.");
+    }
+    report.installedTools = Array.isArray(body.tools) ? body.tools : [];
+    report.installedToolsLoaded = true;
+  } catch (error) {
+    report.installedToolsLoaded = true;
+    report.installedToolsError = error instanceof Error ? error.message : "No se pudieron leer las herramientas instaladas.";
+  } finally {
+    report.installedToolsLoading = false;
+    if (state.latest === report) {
+      saveState(report);
+      renderToolFactoryReport(report);
+      activateTab(activeTab);
+    }
+  }
 }
 
 function toolFactoryRuntimeSupport(reportOrCategory) {
@@ -2331,6 +2386,12 @@ function toolFactoryPublishMessage({ shop, runtime, publication }) {
   return "Esto crea una Page real en Shopify con la version minima de la herramienta: segura, reversible y medible.";
 }
 
+function mergeInstalledShopifyTools(existingTools, newTool) {
+  const tools = Array.isArray(existingTools) ? existingTools : [];
+  if (!newTool?.id) return tools;
+  return [newTool, ...tools.filter((tool) => tool.id !== newTool.id)];
+}
+
 async function createShopifyTool(button) {
   const report = state.latest;
   if (!report || report.type !== "tool_factory") return;
@@ -2359,7 +2420,7 @@ async function createShopifyTool(button) {
   try {
     const response = await fetch("./api/shopify/tools", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: shopifyToolHeaders({ "content-type": "application/json" }),
       credentials: "include",
       body: JSON.stringify({
         shop,
@@ -2372,6 +2433,9 @@ async function createShopifyTool(button) {
     }
 
     report.publication = body.tool;
+    report.installedTools = mergeInstalledShopifyTools(report.installedTools, body.tool);
+    report.installedToolsLoaded = true;
+    report.installedToolsError = body.registryWarning || "";
     state.latest = report;
     saveState(report);
     renderToolFactoryReport(report);
@@ -2385,6 +2449,13 @@ async function createShopifyTool(button) {
     lucide.createIcons();
     showToast(message);
   }
+}
+
+function shopifyToolHeaders(extra = {}) {
+  return {
+    ...(state.session?.access_token ? { authorization: `Bearer ${state.session.access_token}` } : {}),
+    ...extra,
+  };
 }
 
 function pickToolFactoryPayload(report) {
