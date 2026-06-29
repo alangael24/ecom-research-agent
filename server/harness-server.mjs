@@ -371,7 +371,7 @@ Inferencias del frontend, revisalas y corrigelas si hace falta:
 
 Herramientas internas disponibles:
 - $alibaba-sourcing-agent: usar cuando la solicitud mencione Alibaba, proveedores, fabricantes, sourcing, MOQ, DDP, muestras, precio de proveedor, negociar con proveedor o encontrar productos para vender.
-- problem discovery agent / $ecom-problem-research: usar cuando la solicitud pida buscar un problema real, validar una oportunidad, descubrir avatar, encontrar angulo no explotado, elegir producto desde un dolor, o lanzar una marca desde cero con evidencia de Meta Ads, Amazon reviews y TikTok pain points.
+- problem discovery agent / $ecom-problem-research: usar cuando la solicitud pida buscar un problema real, validar una oportunidad, descubrir avatar, encontrar angulo no explotado, elegir producto desde un dolor, recomendar que vender, ideas de producto, o lanzar una marca desde cero con evidencia de Meta Ads, Amazon reviews y TikTok pain points.
 - ecom research / $ecom-problem-research: usar para research de marca, problema, Meta Ads, Amazon reviews, TikTok, avatar, hooks, performance creativa, voz del cliente y validacion de oportunidad.
 - unit economics filter: usar cuando la solicitud pida costos, margen, CAC, ROAS, break even, rentabilidad o si conviene lanzar.
 - shipping rate quote: usar cuando la solicitud pida cotizar envio, tarifa de paqueteria, costo de paquete, origen/destino, CP, peso o medidas.
@@ -384,7 +384,9 @@ Herramientas internas disponibles:
 - product customization helper: usar cuando la solicitud pida producto personalizado, private label, custom product, logo, empaque, packaging, envase, caja, etiqueta, sleeve, insert, unboxing, variantes, acabados, materiales, formula, fragancia o brief para fabricar.
 
 Reglas:
+- Estilo principal: executiveBrief.decision debe sonar como un agente tipo Codex/Claude Code hablando directo con el usuario. Empieza con la respuesta concreta, no con "Aqui tienes un reporte". Usa lenguaje natural, breve y accionable. executiveBrief.recommendedPath debe explicar el siguiente movimiento con criterio, no como template.
 - Si la solicitud pide buscar problema, validar oportunidad, encontrar producto desde dolor, avatar, angulo no explotado, niche research, research profundo de audiencia, o lanzar una marca desde cero, usa problem discovery agent y llena problemDiscovery. Trata Meta Ads, Amazon reviews y TikTok como fuentes separadas: no mezcles ads, reviews y comentarios organicos hasta la sintesis.
+- Si la solicitud pregunta "que vender", "que recomiendas vender", "vender algo" o pide un producto "estructuralmente fuerte/resistente/durable", usa problem discovery agent. Interpreta "estructuralmente fuerte" como: bajo riesgo de romperse en envio, empaque simple, shipping razonable, devoluciones controlables, bajo riesgo regulatorio, margen defendible, diferenciacion real y canal de adquisicion claro. Recomienda pocas opciones con razones y descarta opciones debiles; no entregues una lista random.
 - Para problemDiscovery, intenta usar las skills locales: $ecom-problem-research, meta-ads-library-downloader, amazon-reviews y tiktok-painpoint-research cuando el entorno lo permita. Si no puedes recolectar datos vivos, marca cada sourceCoverage.status como "pendiente/no ejecutado", no inventes ads/reviews/comments y entrega solo hipotesis accionables con limitations.
 - problemDiscovery debe separar: evidencia fuerte, prometedor pero necesita test, ruido/no confiar aun. Incluye sourceCoverage, evidenceMatrix, avatars, painPoints, angleCandidates, productHypotheses, creativeBrief y nextSteps.
 - problemDiscovery.opportunityScore debe ser 0-100 y explicar con confidence si esta basado en datos recolectados, adjuntos, links, contexto declarado o hipotesis.
@@ -434,7 +436,7 @@ function buildProblemDiscoveryHelper(payload) {
     .join(" ")
     .toLowerCase();
   const wantsProblemDiscovery =
-    /buscar problema|encontrar problema|problema real|validar oportunidad|validar idea|oportunidad|nicho|avatar|pain points?|puntos? de dolor|angulo|ángulo|no explotado|whitespace|white space|research profundo|investigaci[oó]n profunda|audiencia|voz del cliente|voice of customer|meta ads|amazon reviews?|reseñas amazon|tiktok|comentarios|lanzar marca|empezar marca|producto que resuelva|soluci[oó]n de producto|posicion(?:ar|arme|amiento)|diferenciaci[oó]n|diferenciar|marca como|brand like|como esta|como este|similar a|parecid[ao] a|competidor(?:es)?|competencia/.test(
+    /buscar problema|encontrar problema|problema real|validar oportunidad|validar idea|oportunidad|nicho|avatar|pain points?|puntos? de dolor|angulo|ángulo|no explotado|whitespace|white space|research profundo|investigaci[oó]n profunda|audiencia|voz del cliente|voice of customer|meta ads|amazon reviews?|reseñas amazon|tiktok|comentarios|lanzar marca|empezar marca|producto que resuelva|soluci[oó]n de producto|posicion(?:ar|arme|amiento)|diferenciaci[oó]n|diferenciar|marca como|brand like|como esta|como este|similar a|parecid[ao] a|competidor(?:es)?|competencia|qu[eé]\s+(me\s+)?recomiendas?|recomi[eé]ndame|qu[eé]\s+vender|qu[eé]\s+producto vender|vender algo|ideas? de producto|producto recomendable|estructuralmente fuerte|estructura fuerte|resistente|durable|no fr[aá]gil|aguante env[ií]os|dif[ií]cil de romper|bajo riesgo de env[ií]o/.test(
       text,
     ) || payload.selectedInternalTool === "problem-discovery-agent";
   const category = inferBrandNiche(text, payload.product || payload.productDetails || "");
@@ -455,6 +457,8 @@ Reglas para problemDiscovery:
 - Si la señal es alta, devuelve problemDiscovery completo aunque tambien devuelvas brandPlan, websitePlan, creativePerformance, customizationPlan o sourcing.
 - Usa $ecom-problem-research como orquestador conceptual: Meta Ads para promesas/ofertas/hooks activos, Amazon reviews para frustraciones y requisitos de producto, TikTok pain points para lenguaje organico y deseo del avatar.
 - Si el usuario da una URL de referencia tipo "quiero una marca como X", no audites una marca existente del usuario: trata esa URL como competidor/referencia y responde con posicionamiento propio, whitespace, avatar, promesa, oferta y pruebas.
+- Si el usuario pide recomendacion de que vender, convierte la respuesta en un ranking pequeño: mejor opcion, opcion prometedora, opcion a evitar/descartar. Explica los filtros aplicados: demanda, margen, envio, fragilidad, devoluciones, regulacion, diferenciacion y canal principal.
+- Si el usuario pide algo estructuralmente fuerte/resistente/durable, penaliza productos fragiles, volumetricos, con instalacion complicada, alta devolucion, claims regulatorios o CAC dificil de sostener. Para Mexico considera paqueteria, dimensiones, peso, ticket y confianza del comprador.
 - Si puedes recolectar datos vivos, preserva URLs, ad ids, ASINs, TikTok ids, row ids o archivos. Si no puedes, di exactamente que faltó y marca la evidencia como hipotesis.
 - No conviertas claims de ads, reseñas o comentarios en verdad cientifica. Para salud, piel, cabello, suplementos, baby, comida o body-effect, incluye claim-safety risks.
 - opportunityScore debe penalizar falta de evidencia, saturacion, claims riesgosos, margen incierto y sourcing dificil.

@@ -430,6 +430,8 @@ async function executeResearchFlow({ request, env, agentPayload, persistence }) 
     );
   }
 
+  normalizeHarnessToolSelection(agentPayload);
+
   const upstream = env.HARNESS_SYNC === "true"
     ? await requestHarness(env, agentPayload)
     : await requestHarnessJob(env, agentPayload);
@@ -980,7 +982,26 @@ function shouldUseProblemDiscoveryTool(payload) {
   if (selectedTool(payload) === "problem-discovery-agent") return true;
   if (hasExplicitTool(payload)) return false;
   const text = payloadText(payload).toLowerCase();
-  return /buscar problema|encontrar problema|problema real|validar oportunidad|validar idea|oportunidad|nicho|avatar|pain point|pain points|punto(s)? de dolor|angulo|ángulo|no explotado|white ?space|research profundo|investigaci[oó]n profunda|audiencia|voz del cliente|voice of customer|meta ads|amazon reviews|reseñas amazon|tiktok|comentarios|lanzar marca|empezar marca|producto que resuelva|soluci[oó]n de producto|posicion(?:ar|arme|amiento)|diferenciaci[oó]n|diferenciar|marca como|brand like|como esta|como este|similar a|parecid[ao] a|competidor(?:es)?|competencia/.test(text);
+  return /buscar problema|encontrar problema|problema real|validar oportunidad|validar idea|oportunidad|nicho|avatar|pain point|pain points|punto(s)? de dolor|angulo|ángulo|no explotado|white ?space|research profundo|investigaci[oó]n profunda|audiencia|voz del cliente|voice of customer|meta ads|amazon reviews|reseñas amazon|tiktok|comentarios|lanzar marca|empezar marca|producto que resuelva|soluci[oó]n de producto|posicion(?:ar|arme|amiento)|diferenciaci[oó]n|diferenciar|marca como|brand like|como esta|como este|similar a|parecid[ao] a|competidor(?:es)?|competencia|qu[eé]\s+(me\s+)?recomiendas?|recomi[eé]ndame|qu[eé]\s+vender|qu[eé]\s+producto vender|vender algo|ideas? de producto|producto recomendable|estructuralmente fuerte|estructura fuerte|resistente|durable|no fr[aá]gil|que aguante|aguante env[ií]os|dif[ií]cil de romper|bajo riesgo de env[ií]o/.test(text);
+}
+
+function normalizeHarnessToolSelection(payload) {
+  if (hasExplicitTool(payload)) return;
+  if (shouldUseProductCustomizationTool(payload)) {
+    payload.selectedInternalTool = "product-customization-agent";
+    return;
+  }
+  if (shouldUseProblemDiscoveryTool(payload)) {
+    payload.selectedInternalTool = "problem-discovery-agent";
+    return;
+  }
+  if (payload.businessStage === "shopify" || connectedPlatform(payload)) {
+    payload.selectedInternalTool = "shopify-store-audit";
+    return;
+  }
+  if (payload.businessStage === "brand") {
+    payload.selectedInternalTool = "brand-audit-agent";
+  }
 }
 
 function shouldUseRetailToOnlineTool(payload) {

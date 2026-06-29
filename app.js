@@ -143,6 +143,11 @@ const goalConfig = {
     icon: "calculator",
     className: "quality",
   },
+  shipping: {
+    label: "Validar envio",
+    icon: "truck",
+    className: "ddp",
+  },
   content: {
     label: "Crear contenido",
     icon: "video",
@@ -1440,6 +1445,35 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     "muestra",
     "sample",
   ]);
+  const productRecommendationIntent = hasAny(text, [
+    "que vender",
+    "qué vender",
+    "que producto vender",
+    "qué producto vender",
+    "vender algo",
+    "que me recomiendas",
+    "qué me recomiendas",
+    "recomiendame",
+    "recomiéndame",
+    "idea de producto",
+    "ideas de producto",
+    "producto recomendable",
+  ]);
+  const structuralStrengthIntent = hasAny(text, [
+    "estructuralmente fuerte",
+    "estructura fuerte",
+    "resistente",
+    "durable",
+    "no fragil",
+    "no frágil",
+    "que aguante",
+    "aguante envios",
+    "aguante envíos",
+    "dificil de romper",
+    "difícil de romper",
+    "bajo riesgo de envio",
+    "bajo riesgo de envío",
+  ]);
   const problemDiscoveryIntent = hasAny(text, [
     "buscar problema",
     "encontrar problema",
@@ -1489,7 +1523,7 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     "similar a",
     "parecida a",
     "parecido a",
-  ]) || referenceBrandIntent;
+  ]) || referenceBrandIntent || productRecommendationIntent || structuralStrengthIntent;
   const creativePerformanceIntent = isCreativePerformanceText(text);
   const inspirationIntent = creativePerformanceIntent || hasAny(text, [
     "inspiracion",
@@ -1600,7 +1634,7 @@ function inferRequest(naturalRequest, businessStage = "starter") {
       : customizationIntent
         ? ["interpret", "customize", "brand", "quality"]
       : problemDiscoveryIntent
-        ? ["interpret", "problem", "brand", "content", "costs"]
+        ? ["interpret", "problem", "costs", "content"].concat(structuralStrengthIntent ? ["shipping", "quality"] : ["brand"])
       : brandIntent
         ? ["interpret", "brand", "shopify", "quality"]
       : shopifyIntent
@@ -1783,6 +1817,9 @@ function inferDestination(text, market) {
 function inferProduct(value) {
   const withoutUrls = String(value || "").replace(/https?:\/\/\S+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s,]*)?/gi, " ");
   const combined = `${value || ""} ${withoutUrls}`.toLowerCase();
+  if (/\b(que|qué)\s+(me\s+)?recomiendas?\b|recomiendame|recomiéndame|\b(que|qué)\s+vender\b|vender algo|ideas? de producto|estructuralmente fuerte/.test(combined)) {
+    return "producto por descubrir";
+  }
   if (/jolie|skin|skincare|piel|beauty|belleza|glow|serum|acne|acné|facial/.test(combined)) {
     return "skincare";
   }
@@ -3727,6 +3764,58 @@ function renderCustomizationPlanCard(customizationPlan, brandPlan) {
   </article>`;
 }
 
+function renderAgentAnswerCard({ report, ai, problemDiscovery, topRisks, agentWorkLog, backendMode }) {
+  const brief = ai?.executiveBrief || {};
+  const nextSteps = normalizeTextList(ai?.beginnerNextSteps?.length ? ai.beginnerNextSteps : problemDiscovery?.nextSteps);
+  const lead =
+    brief.decision ||
+    problemDiscovery?.decision ||
+    (backendMode
+      ? "El harness respondio, pero no devolvio una respuesta principal suficientemente clara."
+      : "El agente preparo el flujo interno para convertir la solicitud en una decision accionable.");
+  const path =
+    brief.recommendedPath ||
+    problemDiscovery?.recommendedPath ||
+    "Primero entender el problema y el mercado; despues pasar por margen, envio, devoluciones, diferenciacion y canal.";
+  const understood = [
+    report.product ? `Producto/contexto: ${report.product}.` : "",
+    report.market ? `Mercado: ${report.market}.` : "",
+    report.destination ? `Destino usado para logistica: ${report.destination}.` : "",
+    report.selectedInternalTool ? `Herramienta interna: ${toolLabel(report.selectedInternalTool)}.` : "",
+  ].filter(Boolean);
+  const riskItems = normalizeTextList(topRisks).slice(0, 4);
+  const actionItems = (nextSteps.length ? nextSteps : [path]).slice(0, 5);
+
+  return `<article class="report-card full-span agent-answer-card">
+    <div class="answer-kicker"><i data-lucide="sparkles"></i><span>Respuesta del agente</span></div>
+    <p class="answer-lead">${escapeHtml(lead)}</p>
+    <div class="answer-columns">
+      <section>
+        <h4>Cómo lo estoy viendo</h4>
+        <p>${escapeHtml(path)}</p>
+        ${understood.length ? `<ul>${understood.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+      </section>
+      <section>
+        <h4>Lo que haría después</h4>
+        <ul>${actionItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </section>
+      <section>
+        <h4>Lo que no ignoraría</h4>
+        <ul>${riskItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>Separar datos reales de hipotesis antes de comprar inventario.</li>"}</ul>
+      </section>
+    </div>
+    <details class="agent-trace">
+      <summary>Ver cómo trabajó</summary>
+      ${renderAgentWorkLog(agentWorkLog)}
+    </details>
+  </article>`;
+}
+
+function normalizeTextList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
 function normalizeWebsiteSections(websitePlan = {}) {
   if (Array.isArray(websitePlan.sections) && websitePlan.sections.length) {
     return websitePlan.sections;
@@ -3780,35 +3869,13 @@ function renderReport(report) {
       <article class="metric-card"><strong>${escapeHtml(toolLabel(report.selectedInternalTool))}</strong><p>herramienta interna</p></article>
     </div>
     <div class="report-grid">
-      <article class="report-card full-span">
-        <h3>Decision</h3>
-        <p>${escapeHtml(ai?.executiveBrief?.decision || (backendMode ? "El harness respondio, pero no devolvio una decision estructurada." : "El agente interpreto tu solicitud y preparo el flujo interno. Si la intencion es sourcing, usara Alibaba como herramienta interna y devolvera shortlist, negociacion, DDP y calidad aqui mismo."))}</p>
-        <div class="pill-row">
-          <span class="pill"><i data-lucide="message-square-text"></i>${escapeHtml(report.naturalRequest)}</span>
-          <span class="pill"><i data-lucide="package"></i>${escapeHtml(report.product)}</span>
-          <span class="pill"><i data-lucide="map-pin"></i>${escapeHtml(report.destination)}</span>
-          <span class="pill"><i data-lucide="wrench"></i>${escapeHtml(toolLabel(report.selectedInternalTool))}</span>
-          ${ai ? '<span class="pill"><i data-lucide="cpu"></i>Codex harness</span>' : ""}
-        </div>
-      </article>
-      <article class="report-card">
-        <h3>Ruta recomendada</h3>
-        <p>${escapeHtml(ai?.executiveBrief?.recommendedPath || (backendMode ? "Falta recommendedPath en la respuesta del harness." : "Conectar el backend de produccion para que el agente busque proveedores, compare candidatos, prepare outreach y devuelva todo dentro de esta pagina."))}</p>
-      </article>
-      <article class="report-card">
-        <h3>Riesgos principales</h3>
-        <ul>${topRisks.map((risk) => `<li>${escapeHtml(risk)}</li>`).join("")}</ul>
-      </article>
+      ${renderAgentAnswerCard({ report, ai, problemDiscovery, topRisks, agentWorkLog, backendMode })}
       <article class="report-card full-span">
         <h3>Herramientas activas</h3>
         <p>${escapeHtml(goals)}</p>
       </article>
       ${renderProblemDiscoveryCard(problemDiscovery)}
       ${renderBrandPlanCard(brandPlan)}
-      <article class="report-card full-span">
-        <h3>Trabajo del agente</h3>
-        ${renderAgentWorkLog(agentWorkLog)}
-      </article>
       ${shopifyOverview}
       ${backendNotice}
     </div>`;
@@ -3818,7 +3885,7 @@ function renderReport(report) {
       ${isShopify ? renderShopifyOverview(report) : ""}
       ${renderProblemDiscoveryCard(problemDiscovery)}
       <article class="report-card full-span">
-        <h3>Tool routing</h3>
+        <h3>Routing interno</h3>
         <p>${escapeHtml(ai?.executiveBrief?.recommendedPath || `Solicitud recibida en lenguaje natural. Tool seleccionada: ${toolLabel(report.selectedInternalTool)}.`)}</p>
         <div class="pill-row">
           <span class="pill"><i data-lucide="sparkles"></i>Entrada natural</span>

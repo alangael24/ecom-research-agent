@@ -1260,6 +1260,62 @@ textarea:focus {
   margin: 16px 0 8px;
 }
 
+.agent-answer-card {
+  background: #fbfcf8;
+}
+
+.answer-kicker {
+  align-items: center;
+  color: var(--teal);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 8px;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+
+.answer-kicker svg {
+  height: 16px;
+  width: 16px;
+}
+
+.report-card .answer-lead {
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 760;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.answer-columns {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 20px;
+}
+
+.answer-columns section {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.agent-trace {
+  border-top: 1px solid var(--line);
+  margin-top: 18px;
+  padding-top: 14px;
+}
+
+.agent-trace summary {
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.agent-trace .agent-work-grid {
+  margin-top: 14px;
+}
+
 .notice-card {
   background: #fff8ed;
 }
@@ -2279,6 +2335,7 @@ textarea:focus {
   .report-grid,
   .metric-row,
   .agent-work-grid,
+  .answer-columns,
   .creative-split,
   .creative-split.three,
   .inspiration-card {

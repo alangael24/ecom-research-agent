@@ -138,6 +138,15 @@ const harnessCases = [
     },
   },
   {
+    name: "product recommendation infers problem discovery harness",
+    tool: "problem-discovery-agent",
+    payload: {
+      naturalRequest: "Quiero vender algo en Mexico, que me recomiendas que sea estructuralmente fuerte?",
+      businessStage: "starter",
+      market: "MX",
+    },
+  },
+  {
     name: "product customization routes to harness",
     tool: "product-customization-agent",
     payload: {
