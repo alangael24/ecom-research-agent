@@ -250,8 +250,9 @@ export async function onRequestPost(context) {
         storagePath: storedAttachments[index]?.storage_path || "",
       })),
     };
+    const forceHarnessForAvatarResearch = shouldUseAvatarResearchHarness(agentPayload);
 
-    if (shouldUseBrandWhitespaceTool(agentPayload)) {
+    if (!forceHarnessForAvatarResearch && shouldUseBrandWhitespaceTool(agentPayload)) {
       const report = runBrandWhitespaceTool(agentPayload);
       const diagnostics = {
         tool: "brand_whitespace_tool",
@@ -262,7 +263,7 @@ export async function onRequestPost(context) {
       return json({ ok: true, report, diagnostics, runId: runContext.id });
     }
 
-    if (shouldUseToolFactory(agentPayload)) {
+    if (!forceHarnessForAvatarResearch && shouldUseToolFactory(agentPayload)) {
       const report = runToolFactory(agentPayload);
       await maybeExecuteToolFactoryAction({ request, env, payload: agentPayload, report });
       const diagnostics = {
@@ -274,7 +275,7 @@ export async function onRequestPost(context) {
       return json({ ok: true, report, diagnostics, runId: runContext.id });
     }
 
-    if (shouldUseShopifyPageBuilder(agentPayload)) {
+    if (!forceHarnessForAvatarResearch && shouldUseShopifyPageBuilder(agentPayload)) {
       const report = runShopifyPageBuilderTool(agentPayload);
       const diagnostics = {
         tool: "shopify_page_builder",
@@ -285,7 +286,7 @@ export async function onRequestPost(context) {
       return json({ ok: true, report, diagnostics, runId: runContext.id });
     }
 
-    if (shouldUseRetailToOnlineTool(agentPayload)) {
+    if (!forceHarnessForAvatarResearch && shouldUseRetailToOnlineTool(agentPayload)) {
       const report = await runRetailToOnlineTool(agentPayload, env);
       const diagnostics = {
         tool: "retail_to_online_agent",
@@ -295,7 +296,7 @@ export async function onRequestPost(context) {
       return json({ ok: true, report, diagnostics, runId: runContext.id });
     }
 
-    if (shouldUseShippingRateTool(agentPayload)) {
+    if (!forceHarnessForAvatarResearch && shouldUseShippingRateTool(agentPayload)) {
       const report = await runShippingRateTool(agentPayload, env);
       const diagnostics = {
         tool: "shipping_rate_quote",
@@ -306,7 +307,7 @@ export async function onRequestPost(context) {
       return json({ ok: true, report, diagnostics, runId: runContext.id });
     }
 
-    if (agentPayload.businessStage !== "brand" && shouldUseProfitabilityTool(agentPayload)) {
+    if (!forceHarnessForAvatarResearch && agentPayload.businessStage !== "brand" && shouldUseProfitabilityTool(agentPayload)) {
       const report = await runProfitabilityTool(agentPayload, env);
       const diagnostics = {
         tool: "unit_economics_filter",
@@ -668,6 +669,13 @@ function optionalString(value, maxLength) {
 function payloadText(payload) {
   const brand = payload.brand || {};
   return `${payload.naturalRequest || ""} ${payload.reference || ""} ${payload.problem || ""} ${payload.product || ""} ${payload.productDetails || ""} ${brand.name || ""} ${brand.url || ""} ${brand.channels || ""} ${brand.goal || ""}`;
+}
+
+function shouldUseAvatarResearchHarness(payload) {
+  const text = payloadText(payload).toLowerCase();
+  return /avatar research|investigaci[oó]n del avatar|research del avatar|voice of customer|\bvoc\b|frases reales|lenguaje real|objeciones?|deseos?|momentos de uso|creencias?|why now|jobs? to be done|\bjtbd\b|pain points?|pains?|puntos de dolor|dolores?|miedos?|detonadores?|triggers?|urgencia de compra|avatar profundo/.test(
+    text,
+  );
 }
 
 function shouldUseRetailToOnlineTool(payload) {

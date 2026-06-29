@@ -345,6 +345,161 @@
       ],
       "additionalProperties": false
     },
+    "avatarResearch": {
+      "type": "object",
+      "properties": {
+        "summary": { "type": "string" },
+        "confidence": { "type": "string" },
+        "sourceCoverage": { "type": "array", "items": { "type": "string" } },
+        "avatarSegments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "stageOfAwareness": { "type": "string" },
+              "buyingContext": { "type": "string" },
+              "urgencyLevel": { "type": "string" }
+            },
+            "required": ["name", "description", "stageOfAwareness", "buyingContext", "urgencyLevel"],
+            "additionalProperties": false
+          }
+        },
+        "voiceOfCustomer": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "quote": { "type": "string" },
+              "sourceType": { "type": "string" },
+              "source": { "type": "string" },
+              "interpretation": { "type": "string" },
+              "evidenceType": { "type": "string" }
+            },
+            "required": ["quote", "sourceType", "source", "interpretation", "evidenceType"],
+            "additionalProperties": false
+          }
+        },
+        "pains": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string" },
+              "severity": { "type": "string" },
+              "language": { "type": "string" },
+              "evidenceType": { "type": "string" }
+            },
+            "required": ["label", "severity", "language", "evidenceType"],
+            "additionalProperties": false
+          }
+        },
+        "objections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "objection": { "type": "string" },
+              "underlyingFear": { "type": "string" },
+              "rebuttalAngle": { "type": "string" },
+              "evidenceType": { "type": "string" }
+            },
+            "required": ["objection", "underlyingFear", "rebuttalAngle", "evidenceType"],
+            "additionalProperties": false
+          }
+        },
+        "desires": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "desire": { "type": "string" },
+              "emotionalPayoff": { "type": "string" },
+              "functionalOutcome": { "type": "string" },
+              "evidenceType": { "type": "string" }
+            },
+            "required": ["desire", "emotionalPayoff", "functionalOutcome", "evidenceType"],
+            "additionalProperties": false
+          }
+        },
+        "momentsOfUse": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "moment": { "type": "string" },
+              "trigger": { "type": "string" },
+              "context": { "type": "string" },
+              "implication": { "type": "string" }
+            },
+            "required": ["moment", "trigger", "context", "implication"],
+            "additionalProperties": false
+          }
+        },
+        "beliefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "belief": { "type": "string" },
+              "impact": { "type": "string" },
+              "messagingAngle": { "type": "string" }
+            },
+            "required": ["belief", "impact", "messagingAngle"],
+            "additionalProperties": false
+          }
+        },
+        "whyNowTriggers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "trigger": { "type": "string" },
+              "urgency": { "type": "string" },
+              "proofNeeded": { "type": "string" }
+            },
+            "required": ["trigger", "urgency", "proofNeeded"],
+            "additionalProperties": false
+          }
+        },
+        "creativeAngles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "angle": { "type": "string" },
+              "hook": { "type": "string" },
+              "avatar": { "type": "string" },
+              "painPoint": { "type": "string" },
+              "proof": { "type": "string" },
+              "risk": { "type": "string" }
+            },
+            "required": ["angle", "hook", "avatar", "painPoint", "proof", "risk"],
+            "additionalProperties": false
+          }
+        },
+        "researchGaps": { "type": "array", "items": { "type": "string" } },
+        "claimSafetyNotes": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": [
+        "summary",
+        "confidence",
+        "sourceCoverage",
+        "avatarSegments",
+        "voiceOfCustomer",
+        "pains",
+        "objections",
+        "desires",
+        "momentsOfUse",
+        "beliefs",
+        "whyNowTriggers",
+        "creativeAngles",
+        "researchGaps",
+        "claimSafetyNotes"
+      ],
+      "additionalProperties": false
+    },
     "beginnerNextSteps": { "type": "array", "items": { "type": "string" } },
     "limitations": { "type": "array", "items": { "type": "string" } }
   },
