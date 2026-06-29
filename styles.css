@@ -1371,6 +1371,10 @@ textarea:focus {
   margin-bottom: 16px;
 }
 
+.metric-row.compact-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .metric-card {
   background: #f8fbf9;
 }
@@ -1822,6 +1826,15 @@ textarea:focus {
   color: var(--teal-dark);
 }
 
+.angle-validator-card .comparison-table small {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  margin-top: 4px;
+}
+
 .link-pill {
   color: var(--teal-dark);
   text-decoration: none;
@@ -2068,6 +2081,10 @@ textarea:focus {
 
   .inspiration-card div:last-child {
     border-bottom: 0;
+  }
+
+  .metric-row.compact-metrics {
+    grid-template-columns: 1fr;
   }
 
   .hero > h2 {

@@ -1437,7 +1437,9 @@ function runBrandWhitespaceTool(payload) {
   const catalogSignals = extractCatalogSignals(products);
   const competitorSignals = extractCompetitorSignals(payloadText(payload), brand);
   const candidates = buildWhitespaceCandidates({ payload, brand, products, declaredSignals, catalogSignals, competitorSignals });
+  const angleValidation = buildAngleWhitespaceValidation({ payload, brand, products, declaredSignals, catalogSignals, competitorSignals, candidates });
   const primary = candidates[0];
+  const primaryAngle = angleValidation.angles.find((angle) => angle.verdict === "libre_necesita_test") || angleValidation.angles.find((angle) => angle.verdict === "debil") || angleValidation.angles[0];
 
   return {
     type: "brand_whitespace",
@@ -1457,19 +1459,20 @@ function runBrandWhitespaceTool(payload) {
     sourceCoverage: buildWhitespaceCoverage(payload, products, declaredSignals, competitorSignals),
     executiveBrief: {
       decision: primary
-        ? `El espacio mas defendible para ${brand.name} parece ser: ${primary.title}. Validalo antes de cambiar catalogo o invertir fuerte.`
+        ? `El espacio mas defendible para ${brand.name} parece ser: ${primary.title}. Angulo recomendado: ${primaryAngle?.angle || "pendiente"}. Validalo antes de cambiar catalogo o invertir fuerte.`
         : `Todavia no hay suficiente contexto para elegir un whitespace confiable para ${brand.name}.`,
       primaryWhitespace: primary?.title || "pendiente",
-      confidence: primary?.confidence || "baja",
+      confidence: primaryAngle?.confidence || primary?.confidence || "baja",
       guardrail: "Esto es una hipotesis de posicionamiento basada en contexto declarado y catalogo conectado; no reemplaza research live de Meta, Amazon o TikTok.",
     },
     candidates,
+    angleValidation,
     evidence: buildWhitespaceEvidence({ declaredSignals, catalogSignals, competitorSignals, products }),
     risks: buildWhitespaceRisks(payload, products),
-    validationPlan: buildWhitespaceValidationPlan(primary, brand),
+    validationPlan: buildWhitespaceValidationPlan(primary, brand, angleValidation),
     nextSteps: [
-      "Escoger un solo whitespace para probar durante 7-14 dias.",
-      "Crear una landing o PDP con ese angulo y medir conversion, add-to-cart y preguntas repetidas.",
+      angleValidation.primaryRecommendation || "Escoger un solo whitespace para probar durante 7-14 dias.",
+      primaryAngle?.nextTest || "Crear una landing o PDP con ese angulo y medir conversion, add-to-cart y preguntas repetidas.",
       "Comparar hooks contra 3 competidores directos antes de producir mas creativos.",
       "Si el test gana, conectar la decision con margen, inventario y canal principal.",
     ],
@@ -1629,6 +1632,320 @@ function buildWhitespaceCandidates({ payload, brand, products, declaredSignals, 
   return candidates.slice(0, 4);
 }
 
+function buildAngleWhitespaceValidation({ payload, brand, products, declaredSignals, catalogSignals, competitorSignals, candidates }) {
+  const text = payloadText(payload).toLowerCase();
+  const requestedAngles = extractRequestedAngles(text);
+  const candidateAngles = candidates.map((candidate) => candidate.positioningAngle || candidate.title).filter(Boolean);
+  const angles = uniqueStrings([...requestedAngles, ...candidateAngles]).slice(0, 6);
+  const category = inferWhitespaceCategory(text, products);
+  const competitors = buildCompetitorAngleMap({ text, competitorSignals, category });
+  const validatedAngles = angles.map((angle, index) =>
+    classifyWhitespaceAngle({
+      angle,
+      index,
+      category,
+      text,
+      brand,
+      products,
+      declaredSignals,
+      catalogSignals,
+      competitorSignals,
+      competitors,
+    }),
+  );
+  const verdictCounts = countAngleVerdicts(validatedAngles);
+  const primary =
+    validatedAngles.find((angle) => angle.verdict === "libre_necesita_test") ||
+    validatedAngles.find((angle) => angle.verdict === "debil") ||
+    validatedAngles.find((angle) => angle.verdict === "explotado") ||
+    validatedAngles[0] ||
+    null;
+
+  return {
+    summary: summarizeAngleValidation(validatedAngles, competitorSignals),
+    primaryRecommendation: primary
+      ? `Probar primero "${primary.angle}" con un test pequeño; veredicto actual: ${primary.verdictLabel}.`
+      : "Faltan angulos o competidores concretos para validar whitespace.",
+    verdictCounts,
+    competitors,
+    angles: validatedAngles,
+    guardrails: [
+      "No tratar un angulo libre como demanda real hasta medir conversion, add-to-cart, comentarios con intencion o CAC.",
+      "No copiar claims de competidores; usar la comparacion para encontrar objeciones no atendidas.",
+      "Si la categoria es sensible, cualquier claim de resultado necesita substanciacion antes de usarlo en ads o PDP.",
+    ],
+  };
+}
+
+function extractRequestedAngles(text) {
+  const angles = [];
+  for (const match of String(text || "").matchAll(/[\"“”']([^\"“”']{8,120})[\"“”']/g)) {
+    angles.push(cleanSentence(match[1]));
+  }
+  const explicit = text.match(/(?:angulo|ángulo|angulos|ángulos|angle|angles)\s*[:=-]\s*([^.!?\n]{8,220})/i);
+  if (explicit?.[1]) {
+    explicit[1]
+      .split(/[,;|]|\s+vs\.?\s+/i)
+      .map((item) => cleanSentence(item))
+      .filter((item) => item.length >= 8)
+      .forEach((item) => angles.push(item));
+  }
+  return uniqueStrings(angles).slice(0, 4);
+}
+
+function buildCompetitorAngleMap({ text, competitorSignals, category }) {
+  return competitorSignals.map((competitor) => {
+    const cleanCompetitor = cleanSentence(competitor);
+    const surrounding = textWindowAround(text, cleanCompetitor.toLowerCase(), 160);
+    const observedAngles = inferCompetitorAnglePatterns(`${surrounding} ${cleanCompetitor}`, category);
+    return {
+      name: cleanCompetitor,
+      observedAngles,
+      evidence: surrounding
+        ? "mencionado en el prompt/contexto del usuario"
+        : "competidor declarado; falta leer ads, reviews o PDP para confirmar patrones",
+    };
+  });
+}
+
+function textWindowAround(text, needle, size) {
+  const index = String(text || "").indexOf(String(needle || "").toLowerCase());
+  if (index === -1) return "";
+  return String(text || "").slice(Math.max(0, index - size), index + needle.length + size);
+}
+
+function inferCompetitorAnglePatterns(text, category) {
+  const patterns = [];
+  const source = String(text || "").toLowerCase();
+  if (/barat|precio|discount|descuento|promo/.test(source)) patterns.push("precio/descuento");
+  if (/premium|lujo|calidad|ingrediente|material|clin|certific|derma/.test(source)) patterns.push("calidad/confianza");
+  if (/natural|organico|orgánico|clean|limpio|sin quimicos|sin químicos/.test(source)) patterns.push("natural/clean");
+  if (/rapido|f[aá]cil|simple|convenien|sin complic/.test(source)) patterns.push("conveniencia/simple");
+  if (/rutina|educa|guia|guía|how to|tutorial|compar/.test(source)) patterns.push("educacion/comparacion");
+  if (/comunidad|lifestyle|identidad|aspiracional|viral|tiktok|ugc/.test(source)) patterns.push("identidad/contenido");
+  if (category === "skincare" && !patterns.length) patterns.push("beneficio skincare generico");
+  if (category === "suplementos" && !patterns.length) patterns.push("bienestar/performance generico");
+  return uniqueStrings(patterns).slice(0, 4);
+}
+
+function classifyWhitespaceAngle({ angle, index, category, text, brand, products, declaredSignals, catalogSignals, competitorSignals, competitors }) {
+  const normalized = cleanSentence(angle).toLowerCase();
+  const competitorPressure = scoreCompetitorPressure(normalized, competitorSignals, competitors);
+  const demandSignal = scoreDemandSignal(normalized, text, declaredSignals, products);
+  const defensibility = scoreAngleDefensibility(normalized, declaredSignals, catalogSignals);
+  const riskLevel = angleRiskLevel(normalized, category, text);
+  const verdict = chooseAngleVerdict({ normalized, competitorPressure, demandSignal, defensibility, riskLevel, competitorCount: competitorSignals.length, index });
+  const verdictMeta = angleVerdictMeta(verdict);
+
+  return {
+    angle: cleanSentence(angle),
+    verdict,
+    verdictLabel: verdictMeta.label,
+    saturationLevel: saturationLabel(competitorPressure),
+    demandSignal: demandLabel(demandSignal),
+    competitorPressure: competitorPressureLabel(competitorPressure),
+    confidence: angleConfidence({ competitorSignals, demandSignal, defensibility, products }),
+    evidence: angleEvidence({ competitorSignals, declaredSignals, catalogSignals, demandSignal, defensibility, riskLevel }),
+    why: explainAngleVerdict({ verdict, normalized, brand, competitorPressure, demandSignal, defensibility }),
+    risk: angleRiskCopy({ verdict, normalized, category, riskLevel }),
+    nextTest: angleNextTest({ verdict, angle: cleanSentence(angle), brand, category }),
+    decisionRule: angleDecisionRule(verdict),
+    recommendedAction: verdictMeta.action,
+  };
+}
+
+function scoreCompetitorPressure(angle, competitorSignals, competitors) {
+  let score = Math.min(3, competitorSignals.length);
+  const competitorPatterns = competitors.flatMap((competitor) => competitor.observedAngles || []);
+  if (/precio|barat|descuento|generico|natural|premium|calidad|simple/.test(angle)) score += 2;
+  if (competitorPatterns.some((pattern) => angleIncludesPattern(angle, pattern))) score += 2;
+  if (/problema especifico|objecion|objeción|errores comunes|comparativo|rutina|recompra/.test(angle)) score -= 1;
+  return clamp(score, 0, 6);
+}
+
+function scoreDemandSignal(angle, text, declaredSignals, products) {
+  let score = 0;
+  if (declaredSignals.length > 1) score += 1;
+  if (products.length) score += 1;
+  if (/review|reseñ|coment|ticket|pregunta|cliente|conversion|add-to-cart|cac|roas|ventas|search|tiktok|amazon|meta/.test(text)) score += 2;
+  if (/dolor|problema|objecion|objeción|rutina|confianza|envio|devolucion|recompra|educacion/.test(angle)) score += 1;
+  return clamp(score, 0, 5);
+}
+
+function scoreAngleDefensibility(angle, declaredSignals, catalogSignals) {
+  let score = 0;
+  if (/especific|avatar|rutina|garantia|garantía|prueba|material|ingrediente|educacion|comparativo|recompra/.test(angle)) score += 2;
+  if (/precio|barat|generico|producto generico/.test(angle)) score -= 1;
+  if (declaredSignals.some((signal) => /calidad|confianza|educacion|recompra|comunidad/.test(signal))) score += 1;
+  if (catalogSignals.some((signal) => /productos leidos|categorias|activos/.test(signal))) score += 1;
+  return clamp(score, 0, 5);
+}
+
+function angleRiskLevel(angle, category, text) {
+  if ((category === "skincare" || category === "suplementos") && /cura|curar|clinico|cl[ií]nico|derma|medic|antes y despues|before after|garantizado|resultados garantizados/.test(`${angle} ${text}`)) {
+    return "alto";
+  }
+  if (/precio|barat|descuento/.test(angle)) return "medio";
+  return "normal";
+}
+
+function chooseAngleVerdict({ normalized, competitorPressure, demandSignal, defensibility, riskLevel, competitorCount, index }) {
+  if (riskLevel === "alto") return "no_recomendado";
+  if (competitorPressure >= 5 && defensibility <= 2) return "explotado";
+  if (competitorCount >= 2 && /precio|barat|descuento|generico|natural|premium|calidad/.test(normalized) && defensibility <= 3) return "explotado";
+  if (demandSignal <= 1 || defensibility <= 1) return "debil";
+  if (competitorPressure >= 3 && defensibility >= 3) return "debil";
+  if (index === 0 && competitorCount === 0) return "libre_necesita_test";
+  return "libre_necesita_test";
+}
+
+function angleVerdictMeta(verdict) {
+  if (verdict === "explotado") {
+    return {
+      label: "Explotado",
+      action: "No competir con el mismo hook. Estrechar avatar, mecanismo o prueba antes de producir creativos.",
+    };
+  }
+  if (verdict === "debil") {
+    return {
+      label: "Debil / mal defendido",
+      action: "Puede funcionar si se vuelve mas especifico y se apoya con prueba, oferta o insight de cliente.",
+    };
+  }
+  if (verdict === "no_recomendado") {
+    return {
+      label: "No recomendado",
+      action: "No usar hasta tener substanciacion, margen y revision de claims.",
+    };
+  }
+  return {
+    label: "Libre, necesita test",
+    action: "Probar pequeno con landing/PDP o 3-5 creativos antes de invertir fuerte.",
+  };
+}
+
+function saturationLabel(score) {
+  if (score >= 5) return "alta";
+  if (score >= 3) return "media";
+  return "baja";
+}
+
+function demandLabel(score) {
+  if (score >= 4) return "fuerte";
+  if (score >= 2) return "media";
+  return "debil";
+}
+
+function competitorPressureLabel(score) {
+  if (score >= 5) return "muchos competidores o angulo muy comun";
+  if (score >= 3) return "competencia presente; diferenciar antes de escalar";
+  return "poca presion declarada; falta benchmark vivo";
+}
+
+function angleConfidence({ competitorSignals, demandSignal, defensibility, products }) {
+  const score = competitorSignals.length + demandSignal + defensibility + (products.length ? 1 : 0);
+  if (score >= 9) return "media-alta";
+  if (score >= 6) return "media";
+  return "baja-media";
+}
+
+function angleEvidence({ competitorSignals, declaredSignals, catalogSignals, demandSignal, defensibility, riskLevel }) {
+  const items = [];
+  if (competitorSignals.length) items.push(`Competidores declarados: ${competitorSignals.join(", ")}.`);
+  items.push(`Senales del prompt: ${declaredSignals.slice(0, 3).join(", ")}.`);
+  items.push(`Catalogo/contexto: ${catalogSignals.slice(0, 2).join(", ")}.`);
+  items.push(`Senal de demanda: ${demandLabel(demandSignal)}; defensibilidad: ${defensibility >= 3 ? "aceptable" : "baja"}.`);
+  if (riskLevel === "alto") items.push("Riesgo alto de claim: requiere evidencia antes de usarse.");
+  return items;
+}
+
+function explainAngleVerdict({ verdict, normalized, brand, competitorPressure, demandSignal, defensibility }) {
+  if (verdict === "explotado") {
+    return `El angulo suena facil de copiar o ya muy usado. Para ${brand.name}, competir ahi obligaria a ganar por precio, volumen de ads o mejor prueba.`;
+  }
+  if (verdict === "debil") {
+    return `Tiene algo de senal, pero todavia no hay suficiente prueba o especificidad. Debe estrecharse antes de convertirlo en posicionamiento.`;
+  }
+  if (verdict === "no_recomendado") {
+    return "El riesgo de claim o expectativa falsa es mayor que la evidencia disponible.";
+  }
+  if (competitorPressure <= 2 && demandSignal >= 2 && defensibility >= 2) {
+    return "No aparece claramente ocupado en el contexto declarado y puede diferenciarse con un test controlado.";
+  }
+  return "Parece abierto solo como hipotesis; necesita validacion con competidores reales y una metrica de negocio.";
+}
+
+function angleRiskCopy({ verdict, normalized, category, riskLevel }) {
+  if (riskLevel === "alto") return "Claims sensibles: no prometer resultados medicos, clinicos o garantizados sin substanciacion.";
+  if (verdict === "explotado") return "Riesgo de parecer otra marca mas y comprar trafico caro sin diferenciacion real.";
+  if (verdict === "debil") return "Riesgo de que el cliente entienda el mensaje, pero no vea razon suficiente para elegir la marca.";
+  if (category === "skincare" || category === "suplementos") return "Validar lenguaje de claims y expectativas antes de ads.";
+  return "Riesgo principal: confundir poca competencia visible con demanda real.";
+}
+
+function angleNextTest({ verdict, angle, brand, category }) {
+  if (verdict === "explotado") {
+    return `Crear una variante mas estrecha de "${angle}" para un avatar especifico y medir si supera el CTR/CVR del mensaje actual.`;
+  }
+  if (verdict === "debil") {
+    return `Convertir "${angle}" en un bloque de PDP con prueba, FAQ y oferta; medir add-to-cart y preguntas repetidas por 7 dias.`;
+  }
+  if (verdict === "no_recomendado") {
+    return "No testear en paid ads todavia; primero reunir evidencia, revisar claims y definir una promesa segura.";
+  }
+  if (category === "skincare") {
+    return `Lanzar una landing de rutina simple para ${brand.name} con "${angle}" y medir conversion, add-to-cart y comentarios con intencion.`;
+  }
+  return `Probar "${angle}" con 3 creativos y una landing/PDP dedicada; avanzar solo si mejora conversion o CAC vs baseline.`;
+}
+
+function angleDecisionRule(verdict) {
+  if (verdict === "explotado") return "Continuar solo si una variante mas especifica supera al baseline y no compite por precio.";
+  if (verdict === "debil") return "Continuar solo si el test genera senales cualitativas claras y mejora add-to-cart/conversion.";
+  if (verdict === "no_recomendado") return "No continuar hasta resolver evidencia, margen y claims.";
+  return "Continuar si el test gana en conversion, CAC, comentarios con intencion o preguntas precompra reducidas.";
+}
+
+function angleIncludesPattern(angle, pattern) {
+  const source = `${angle} ${pattern}`.toLowerCase();
+  if (/precio|descuento/.test(pattern)) return /precio|barat|descuento|promo/.test(source);
+  if (/calidad|confianza/.test(pattern)) return /premium|calidad|confianza|prueba|garantia|ingrediente|material/.test(source);
+  if (/natural|clean/.test(pattern)) return /natural|clean|limpio|organico|orgánico/.test(source);
+  if (/educacion|comparacion/.test(pattern)) return /educa|compar|errores|guia|guía|rutina/.test(source);
+  if (/identidad|contenido/.test(pattern)) return /comunidad|identidad|lifestyle|tiktok|ugc|viral/.test(source);
+  return false;
+}
+
+function countAngleVerdicts(angles) {
+  return angles.reduce(
+    (counts, angle) => {
+      counts[angle.verdict] = (counts[angle.verdict] || 0) + 1;
+      return counts;
+    },
+    { explotado: 0, debil: 0, libre_necesita_test: 0, no_recomendado: 0 },
+  );
+}
+
+function summarizeAngleValidation(angles, competitorSignals) {
+  if (!angles.length) return "No hay angulos suficientes para validar.";
+  const counts = countAngleVerdicts(angles);
+  const parts = [
+    `${counts.explotado} explotado(s)`,
+    `${counts.debil} debil(es)`,
+    `${counts.libre_necesita_test} libre(s) que necesitan test`,
+  ];
+  if (counts.no_recomendado) parts.push(`${counts.no_recomendado} no recomendado(s)`);
+  return `Se evaluaron ${angles.length} angulos contra ${competitorSignals.length || "0"} competidor(es) declarados: ${parts.join(", ")}.`;
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.map((value) => cleanSentence(value)).filter(Boolean))];
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function inferWhitespaceCategory(text, products) {
   if (/skin|skincare|piel|beauty|belleza|serum|acne|acné/.test(text)) return "skincare";
   if (/suplement|prote[ií]na|vitamin|creatina|col[aá]geno|magnesio/.test(text)) return "suplementos";
@@ -1727,7 +2044,12 @@ function buildWhitespaceRisks(payload, products) {
   return risks;
 }
 
-function buildWhitespaceValidationPlan(primary, brand) {
+function buildWhitespaceValidationPlan(primary, brand, angleValidation = null) {
+  const recommendedAngle =
+    angleValidation?.angles?.find((angle) => angle.verdict === "libre_necesita_test") ||
+    angleValidation?.angles?.find((angle) => angle.verdict === "debil") ||
+    angleValidation?.angles?.[0] ||
+    null;
   if (!primary) {
     return [
       "Agregar 3 competidores directos y 3 productos top de la marca.",
@@ -1737,11 +2059,13 @@ function buildWhitespaceValidationPlan(primary, brand) {
   }
   return [
     `Hipotesis: ${primary.title}.`,
+    recommendedAngle ? `Veredicto de angulo: ${recommendedAngle.verdictLabel} - ${recommendedAngle.angle}.` : "",
     `Pagina/test: ${primary.validationTest}`,
+    recommendedAngle ? `Test especifico: ${recommendedAngle.nextTest}` : "",
     `Oferta minima: ${primary.firstOffer}.`,
     `Canal: ${primary.channel}.`,
     `Decision: continuar solo si mejora conversion, add-to-cart, respuesta cualitativa o CAC vs el posicionamiento actual de ${brand.name}.`,
-  ];
+  ].filter(Boolean);
 }
 
 function runShopifyPageBuilderTool(payload) {
