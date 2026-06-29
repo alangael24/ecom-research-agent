@@ -2125,6 +2125,7 @@ function renderToolFactoryReport(report) {
   const requested = report.requestedTool || {};
   const brief = report.executiveBrief || {};
   const strategy = report.buildStrategy || {};
+  const replacement = report.appReplacement || {};
   const mvp = report.mvp || {};
   const savings = report.savings || {};
   const risks = Array.isArray(report.risks) ? report.risks : [];
@@ -2136,7 +2137,7 @@ function renderToolFactoryReport(report) {
   const adminActions = Array.isArray(strategy.adminActions) ? strategy.adminActions : [];
   const publication = report.publication || null;
   const shop = report.shopify?.shop || "";
-  const runtime = toolFactoryRuntimeSupport(requested.category);
+  const runtime = toolFactoryRuntimeSupport(report);
   const canCreateTool = Boolean(shop && (requested.name || requested.category) && runtime.supported && !publication);
   const publishedCard = publication
     ? `<article class="report-card full-span success-card">
@@ -2172,6 +2173,15 @@ function renderToolFactoryReport(report) {
         <h3>Tesis de valor</h3>
         <p>${escapeHtml(brief.valueThesis || "Agent Genia crea la herramienta exacta que necesita el merchant.")}</p>
       </article>
+      <article class="report-card full-span">
+        <h3>Build vs buy</h3>
+        <p>${escapeHtml(replacement.buildOrBuyDecision || "Construir solo la parte que resuelve el trabajo real; pagar una app solo si el merchant necesita profundidad que Agent Genia no debe improvisar.")}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="route"></i>${escapeHtml(replacement.replaceabilityLevel || "definir alcance")}</span>
+          <span class="pill"><i data-lucide="cpu"></i>${escapeHtml(replacement.runtimeLabel || requested.runtimeLabel || "runtime por definir")}</span>
+          <span class="pill"><i data-lucide="rocket"></i>${replacement.canCreateNow ? "crear ahora" : "runtime avanzado"}</span>
+        </div>
+      </article>
       <article class="report-card full-span notice-card">
         <h3>Guardrail</h3>
         <p>${escapeHtml(brief.guardrail || "No prometemos paridad enterprise; construimos el 20% que resuelve el 80% de la necesidad.")}</p>
@@ -2189,6 +2199,14 @@ function renderToolFactoryReport(report) {
       <article class="report-card full-span">
         <h3>Acciones del agente</h3>
         <ol>${adminActions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
+      </article>
+      <article class="report-card full-span">
+        <h3>Mapa de reemplazo</h3>
+        <dl class="calculation-list">
+          <div><dt>Primera version</dt><dd>${escapeHtml(replacement.firstVersion || "MVP por definir")}</dd></div>
+          <div><dt>Runtime</dt><dd>${escapeHtml(replacement.runtimeLabel || requested.runtimeLabel || "por definir")}</dd></div>
+          <div><dt>Ruta si funciona</dt><dd>${escapeHtml(replacement.upgradePath || "Convertirlo en herramienta reutilizable solo si se usa varias veces.")}</dd></div>
+        </dl>
       </article>
     </div>`;
 
@@ -2270,17 +2288,38 @@ function renderToolFactoryReport(report) {
   lucide.createIcons();
 }
 
-function toolFactoryRuntimeSupport(category) {
+function toolFactoryRuntimeSupport(reportOrCategory) {
+  const report = typeof reportOrCategory === "object" && reportOrCategory ? reportOrCategory : null;
+  const publishMode = report?.appReplacement?.publishMode || report?.requestedTool?.publishMode || "";
+  const runtimeLabel = report?.appReplacement?.runtimeLabel || report?.requestedTool?.runtimeLabel || "runtime avanzado";
+  if (publishMode && publishMode !== "shopify_page_mvp") {
+    return {
+      supported: false,
+      publishMode,
+      message: `Esta herramienta necesita ${runtimeLabel}. Agent Genia puede planearla, pero no debe publicarla como Page simple.`,
+    };
+  }
+  if (publishMode === "shopify_page_mvp") {
+    return {
+      supported: true,
+      publishMode,
+      message: "Se puede publicar como una primera herramienta MVP usando una pagina segura de Shopify.",
+    };
+  }
+
+  const category = report?.requestedTool?.category || reportOrCategory;
   const normalized = String(category || "herramienta ecommerce personalizada").toLowerCase();
   if (["retencion y mensajes", "tracking y analytics", "ofertas, bundles y carrito"].includes(normalized)) {
     return {
       supported: false,
+      publishMode: "advanced_runtime",
       message:
         "Esta categoria toca mensajes, pixels, checkout o descuentos. Agent Genia debe construirla como extension/runtime avanzado antes de publicarla.",
     };
   }
   return {
     supported: true,
+    publishMode: "shopify_page_mvp",
     message: "Se puede publicar como una primera herramienta MVP usando una pagina segura de Shopify.",
   };
 }
@@ -2302,7 +2341,7 @@ async function createShopifyTool(button) {
 
   const status = document.querySelector("#shopifyToolCreateStatus");
   const shop = report.shopify?.shop || "";
-  const runtime = toolFactoryRuntimeSupport(report.requestedTool?.category);
+  const runtime = toolFactoryRuntimeSupport(report);
   if (!shop) {
     showToast("Conecta Shopify antes de crear la herramienta");
     return;
@@ -2363,6 +2402,7 @@ function pickToolFactoryPayload(report) {
     requestedTool: report.requestedTool || {},
     executiveBrief: report.executiveBrief || {},
     buildStrategy: report.buildStrategy || {},
+    appReplacement: report.appReplacement || {},
     mvp: report.mvp || {},
     savings: report.savings || {},
     risks: Array.isArray(report.risks) ? report.risks : [],
@@ -4203,6 +4243,7 @@ function buildToolFactoryMarkdown(report) {
   const requested = report.requestedTool || {};
   const brief = report.executiveBrief || {};
   const strategy = report.buildStrategy || {};
+  const replacement = report.appReplacement || {};
   const mvp = report.mvp || {};
   const savings = report.savings || {};
 
@@ -4229,6 +4270,16 @@ Guardrail: ${brief.guardrail || ""}
 - Usuario: ${requested.merchantUser || ""}
 - Job-to-be-done: ${requested.jobToBeDone || ""}
 - Resultado deseado: ${requested.desiredOutcome || ""}
+- Runtime: ${replacement.runtimeLabel || requested.runtimeLabel || ""}
+- Reemplazabilidad: ${replacement.replaceabilityLevel || ""}
+
+## Build vs buy
+
+${replacement.buildOrBuyDecision || ""}
+
+Primera version: ${replacement.firstVersion || ""}
+
+Ruta si funciona: ${replacement.upgradePath || ""}
 
 ## Arquitectura
 

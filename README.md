@@ -128,9 +128,16 @@ Internal tools currently handled directly by `/api/research`:
 - `shipping_rate_quote`: rate-only Envia shipping quotes when a shipping-only intent is detected.
 - `unit_economics_filter`: beginner-friendly profitability filter for non-brand-stage ideas.
 
-`agentgenia_tool_factory` identifies the smallest native Shopify MVP that can replace the merchant's actual job-to-be-done, plus the cases where a third-party app is still safer because of deliverability, compliance, fraud, payments, carrier labels, or enterprise support.
+`agentgenia_tool_factory` identifies the smallest native Shopify MVP that can replace the merchant's actual job-to-be-done, plus the cases where a third-party app is still safer because of deliverability, compliance, fraud, payments, carrier labels, or enterprise support. It treats paid apps as jobs-to-be-done, not as brands to clone.
 
-For supported low-risk categories, it can publish a real Shopify Page MVP through `POST /api/shopify/tools`. Current Page runtime categories include simple quiz/recommendation tools, support/trust hubs, landing/section-builder outputs, lightweight social-proof pages, and generic ecommerce helper pages. Deep categories such as email/SMS retention, pixels/analytics, checkout, discounts, and bundles remain blueprint-only until Agent Genia has a Shopify extension/function/runtime layer for them.
+For supported low-risk categories, it can publish a real Shopify Page MVP through `POST /api/shopify/tools`. Current Page runtime categories include simple quiz/recommendation tools, support/trust hubs, landing/section-builder outputs, lightweight social-proof pages, lead-capture pages, returns/post-purchase forms, and generic ecommerce helper pages. Deep categories such as email/SMS retention, pixels/analytics, checkout, discounts, bundles, loyalty, subscriptions, and advanced search remain blueprint-only until Agent Genia has the right Shopify extension/function/provider runtime for them.
+
+Each Tool Factory report now includes an `appReplacement` decision with:
+
+- `publishMode`: `shopify_page_mvp`, `theme_app_extension`, `shopify_function`, `web_pixel_extension`, `provider_integration`, or `provider_required`.
+- `canCreateNow`: whether the current Shopify Page runtime may publish a safe MVP today.
+- `buildOrBuyDecision`: when Agent Genia should build, integrate, validate first, or keep a third-party app.
+- `firstVersion` and `upgradePath`: the smallest useful version and the runtime path if it proves valuable.
 
 `brand_whitespace_tool` labels output as hypotheses. It does not perform live Meta Ads, Amazon review, or TikTok collection by itself; use the deeper competitive research harness/skills to confirm demand, saturation, and customer language.
 

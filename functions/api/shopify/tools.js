@@ -18,10 +18,19 @@ const PAGE_RUNTIME_CATEGORIES = new Set([
   "quiz y recomendacion",
   "soporte y confianza",
   "prueba social y reviews",
+  "captura de leads y popups",
+  "devoluciones y postcompra",
   "herramienta ecommerce personalizada",
 ]);
 
-const DEEP_RUNTIME_CATEGORIES = new Set(["retencion y mensajes", "tracking y analytics", "ofertas, bundles y carrito"]);
+const DEEP_RUNTIME_CATEGORIES = new Set([
+  "busqueda, filtros y merchandising",
+  "retencion y mensajes",
+  "tracking y analytics",
+  "ofertas, bundles y carrito",
+  "lealtad y referidos",
+  "suscripciones y membresias",
+]);
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -154,6 +163,16 @@ function validateToolPayload(payload) {
 
 function toolRuntimeSupport(report) {
   const category = cleanText(report?.requestedTool?.category, "herramienta ecommerce personalizada", 120).toLowerCase();
+  const publishMode = cleanText(report?.appReplacement?.publishMode || report?.requestedTool?.publishMode, "", 80);
+  const runtimeLabel = cleanText(report?.appReplacement?.runtimeLabel || report?.requestedTool?.runtimeLabel, "runtime avanzado", 120);
+  if (publishMode && publishMode !== "shopify_page_mvp") {
+    return {
+      supported: false,
+      nextRuntime: publishMode,
+      message: `Esta herramienta necesita ${runtimeLabel}. Agent Genia ya puede planearla, pero no debe publicarla como Page simple.`,
+    };
+  }
+
   if (PAGE_RUNTIME_CATEGORIES.has(category)) {
     return {
       supported: true,
@@ -258,6 +277,8 @@ function renderCategoryTool({ category, toolName, requested, mvp, strategy }) {
   if (category === "soporte y confianza") return renderTrustTool(requested);
   if (category === "constructor de paginas y secciones") return renderPageBuilderTool(requested, mvp);
   if (category === "prueba social y reviews") return renderReviewTool(requested);
+  if (category === "captura de leads y popups") return renderLeadCaptureTool(toolName, requested);
+  if (category === "devoluciones y postcompra") return renderPostPurchaseTool(toolName, requested);
   return renderGenericTool(requested, mvp, strategy);
 }
 
@@ -356,6 +377,41 @@ function renderReviewTool(requested) {
       <input name="contact[email]" type="email" required style="min-height:44px;border:1px solid #cbd8d1;padding:10px;" placeholder="Email">
       <textarea name="contact[review]" rows="4" style="border:1px solid #cbd8d1;padding:10px;" placeholder="Cuenta tu experiencia"></textarea>
       <button type="submit" style="min-height:48px;background:#14201b;color:white;border:0;font-weight:900;padding:0 18px;">Enviar review</button>
+    </form>
+  </section>`;
+}
+
+function renderLeadCaptureTool(toolName, requested) {
+  const outcome = cleanText(requested.desiredOutcome, "recibir una recomendacion, descuento o seguimiento", 180);
+  return `<section style="margin-top:18px;border:1px solid #dbe5df;padding:22px;">
+    <h2 style="font-size:28px;margin:0 0 8px;">Captura de leads</h2>
+    <p style="color:#5d6f68;line-height:1.55;margin:0 0 18px;">Deja tus datos para ${escapeHtml(outcome)}.</p>
+    <form method="post" action="/contact#contact_form" style="display:grid;gap:12px;">
+      <input type="hidden" name="form_type" value="contact">
+      <input type="hidden" name="utf8" value="&#10003;">
+      <input type="hidden" name="contact[subject]" value="${escapeHtml(toolName)}">
+      <input name="contact[email]" type="email" required style="min-height:44px;border:1px solid #cbd8d1;padding:10px;" placeholder="Email">
+      <input name="contact[name]" type="text" style="min-height:44px;border:1px solid #cbd8d1;padding:10px;" placeholder="Nombre">
+      <textarea name="contact[body]" rows="3" style="border:1px solid #cbd8d1;padding:10px;" placeholder="Que estas buscando?"></textarea>
+      <p style="font-size:13px;color:#5d6f68;margin:0;">Al enviar, aceptas que la tienda te contacte sobre esta solicitud.</p>
+      <button type="submit" style="min-height:48px;background:#14201b;color:white;border:0;font-weight:900;padding:0 18px;">Enviar solicitud</button>
+    </form>
+  </section>`;
+}
+
+function renderPostPurchaseTool(toolName, requested) {
+  const job = cleanText(requested.jobToBeDone, "recibir solicitudes postcompra claras sin friccion", 220);
+  return `<section style="margin-top:18px;border:1px solid #dbe5df;padding:22px;">
+    <h2 style="font-size:28px;margin:0 0 8px;">Portal postcompra</h2>
+    <p style="color:#5d6f68;line-height:1.55;margin:0 0 18px;">${escapeHtml(job)}</p>
+    <form method="post" action="/contact#contact_form" style="display:grid;gap:12px;">
+      <input type="hidden" name="form_type" value="contact">
+      <input type="hidden" name="utf8" value="&#10003;">
+      <input type="hidden" name="contact[subject]" value="${escapeHtml(toolName)}">
+      <input name="contact[email]" type="email" required style="min-height:44px;border:1px solid #cbd8d1;padding:10px;" placeholder="Email de compra">
+      <input name="contact[order]" type="text" style="min-height:44px;border:1px solid #cbd8d1;padding:10px;" placeholder="Numero de orden">
+      <textarea name="contact[request]" rows="4" style="border:1px solid #cbd8d1;padding:10px;" placeholder="Describe cambio, devolucion o duda"></textarea>
+      <button type="submit" style="min-height:48px;background:#14201b;color:white;border:0;font-weight:900;padding:0 18px;">Enviar solicitud</button>
     </form>
   </section>`;
 }

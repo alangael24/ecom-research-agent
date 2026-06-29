@@ -11,6 +11,201 @@ import {
 const DEFAULT_TIMEOUT_MS = 900000;
 const ATTACHMENT_BUCKET = "research-attachments";
 
+const TOOL_FACTORY_CAPABILITIES = [
+  {
+    category: "constructor de paginas y secciones",
+    matcher: /page|landing|constructor|p[aá]gina|secci[oó]n|bloque|pagefly|gempages|shogun|web|sitio/,
+    defaultName: "constructor de paginas nativo",
+    job: "crear paginas y bloques de conversion sin instalar un page builder pesado",
+    publishMode: "shopify_page_mvp",
+    runtimeLabel: "Page MVP publicable hoy",
+    feasibility: "alta: publicable hoy como Shopify Page MVP",
+    primitives: ["Shopify Pages", "Admin API", "Agent Genia backend", "configuracion JSON por seccion"],
+    dataModel: ["page_handle", "section_order", "section_copy", "cta", "published_url"],
+    events: ["page_published", "cta_clicked", "section_viewed"],
+    firstVersion: "Page de conversion con hero, beneficios, objeciones, CTA y medicion basica.",
+    upgradePath: "Theme App Extension con bloques editables si el merchant la usa repetidamente.",
+    savings: "$20-$100/mes si evita page builders ligeros",
+    notIncluded: ["edicion visual drag-and-drop completa", "plantillas enterprise", "A/B testing avanzado"],
+  },
+  {
+    category: "quiz y recomendacion",
+    matcher: /quiz|recomendador|rutina|diagn[oó]stico|selector|finder|product finder|routine finder/,
+    defaultName: "quiz recomendador",
+    job: "guiar al comprador hacia producto/rutina correcta y guardar la senal para seguimiento",
+    publishMode: "shopify_page_mvp",
+    runtimeLabel: "Page MVP publicable hoy",
+    feasibility: "alta: publicable hoy como Shopify Page MVP",
+    primitives: ["Shopify Pages", "contact form", "Admin API", "customer tags si aplica"],
+    dataModel: ["question", "answer", "result_rule", "recommended_product", "customer_signal"],
+    events: ["quiz_started", "answer_submitted", "recommendation_requested"],
+    firstVersion: "Quiz guiado con formulario de contacto y CTA de recomendacion.",
+    upgradePath: "Theme App Extension con logica dinamica, productos conectados y tags de cliente.",
+    savings: "$20-$100/mes si evita quiz builders simples",
+    notIncluded: ["logica condicional avanzada", "personalizacion en tiempo real", "sincronizacion profunda con CRM"],
+  },
+  {
+    category: "soporte y confianza",
+    matcher: /faq|preguntas|soporte|chat|help|garant[ií]a|confianza|trust|dudas|contact/,
+    defaultName: "centro de confianza",
+    job: "resolver dudas repetidas antes de compra y reducir friccion",
+    publishMode: "shopify_page_mvp",
+    runtimeLabel: "Page MVP publicable hoy",
+    feasibility: "alta: publicable hoy como Shopify Page MVP",
+    primitives: ["Shopify Pages", "contact form", "Admin API", "copy guiado por agente"],
+    dataModel: ["faq_question", "faq_answer", "policy_link", "support_cta"],
+    events: ["faq_viewed", "support_clicked", "contact_submitted"],
+    firstVersion: "FAQ/garantia/politicas con preguntas desplegables y CTA de contacto.",
+    upgradePath: "Help center dinamico o chat conectado si el volumen de tickets lo justifica.",
+    savings: "$10-$60/mes si evita apps simples de FAQ/help center",
+    notIncluded: ["chatbot 24/7", "ticketing multiagente", "SLA de soporte"],
+  },
+  {
+    category: "prueba social y reviews",
+    matcher: /review|reviews|reseñ|testimonio|estrellas|rating|ugc|social proof|loox|judgeme|judge\.me|yotpo/,
+    defaultName: "reviews ligeras nativas",
+    job: "capturar, mostrar y reutilizar prueba social sin pagar una app separada desde el dia uno",
+    publishMode: "shopify_page_mvp",
+    runtimeLabel: "Page MVP publicable hoy",
+    feasibility: "media-alta: publicable hoy para prueba social basica",
+    primitives: ["Shopify Pages", "contact form", "Admin API", "moderacion en Agent Genia"],
+    dataModel: ["review_author", "rating", "review_body", "product_id", "moderation_status"],
+    events: ["review_submitted", "review_viewed", "trust_cta_clicked"],
+    firstVersion: "Pagina de prueba social con quotes moderadas y formulario para nuevas reviews.",
+    upgradePath: "Metaobjects + Theme App Extension para reviews por producto y schema markup.",
+    savings: "$15-$80/mes si cubre reviews basicas",
+    notIncluded: ["syndication externa", "fraud detection avanzada", "imports complejos de todas las plataformas"],
+  },
+  {
+    category: "captura de leads y popups",
+    matcher: /popup|pop-up|lead|newsletter|email capture|spin|ruleta|descuento de bienvenida|bienvenida|privy|wisepops/,
+    defaultName: "captura de leads ligera",
+    job: "capturar emails o solicitudes sin pagar una app de popups antes de validar el incentivo",
+    publishMode: "shopify_page_mvp",
+    runtimeLabel: "Page MVP publicable hoy",
+    feasibility: "media-alta: page MVP hoy; popup real requiere theme extension",
+    primitives: ["Shopify Pages", "contact form", "customer tags", "Admin API"],
+    dataModel: ["lead_email", "lead_source", "incentive", "consent_text", "followup_status"],
+    events: ["lead_page_viewed", "lead_submitted", "incentive_requested"],
+    firstVersion: "Pagina de captura con incentivo, consentimiento y CTA.",
+    upgradePath: "Theme App Extension para popup/embedded block con reglas de frecuencia.",
+    savings: "$10-$70/mes si evita popups simples",
+    notIncluded: ["trigger por comportamiento", "frequency capping avanzado", "ruletas/promos complejas"],
+  },
+  {
+    category: "devoluciones y postcompra",
+    matcher: /return|returns|devoluci[oó]n|cambio|postcompra|post-compra|aftership|loop returns|seguimiento/,
+    defaultName: "portal postcompra ligero",
+    job: "recibir solicitudes postcompra claras sin pagar una app antes de tener volumen alto",
+    publishMode: "shopify_page_mvp",
+    runtimeLabel: "Page MVP publicable hoy",
+    feasibility: "media-alta: publicable hoy como formulario/politica",
+    primitives: ["Shopify Pages", "contact form", "order lookup manual", "Admin API"],
+    dataModel: ["order_number", "customer_email", "request_type", "reason", "status"],
+    events: ["return_request_started", "return_request_submitted", "policy_viewed"],
+    firstVersion: "Pagina de cambios/devoluciones con politica clara y formulario de solicitud.",
+    upgradePath: "Workflow con webhooks/order API cuando el volumen haga dolorosa la revision manual.",
+    savings: "$20-$100/mes si evita returns apps tempranas",
+    notIncluded: ["labels automaticas", "portal con tracking por orden", "reglas logisticas avanzadas"],
+  },
+  {
+    category: "busqueda, filtros y merchandising",
+    matcher: /search|busqueda|b[uú]squeda|filter|filtro|filtros|merchandising|collection sort|boost|doofinder|algolia/,
+    defaultName: "merchandising guiado",
+    job: "ayudar a encontrar productos y ordenar colecciones sin instalar search enterprise",
+    publishMode: "theme_app_extension",
+    runtimeLabel: "requiere Theme App Extension",
+    feasibility: "media: requiere extension para tocar storefront de forma nativa",
+    primitives: ["Theme App Extension", "Search & Discovery config", "metafields", "collection rules"],
+    dataModel: ["filter_rule", "boost_rule", "collection_handle", "synonym", "no_result_query"],
+    events: ["search_performed", "filter_applied", "product_clicked"],
+    firstVersion: "Auditoria y configuracion de filtros/colecciones antes de construir UI custom.",
+    upgradePath: "Bloque de busqueda/filtros propio si hay suficientes queries repetidas.",
+    savings: "$20-$200/mes si evita search apps simples",
+    notIncluded: ["ranking ML avanzado", "synonyms enterprise", "analytics de busqueda profundo"],
+  },
+  {
+    category: "retencion y mensajes",
+    matcher: /email|sms|flow|flujo|newsletter|klaviyo|retenci[oó]n|winback|abandono|omnisend|postscript|attentive/,
+    defaultName: "flows basicos de retencion",
+    job: "activar flows simples sin depender de una suite cara desde el dia uno",
+    publishMode: "provider_integration",
+    runtimeLabel: "requiere proveedor o email runtime",
+    feasibility: "media: contenido y segmentos si; entregabilidad avanzada requiere proveedor",
+    primitives: ["Customer tags", "segments basicos", "email templates", "webhooks/order events", "proveedor email si se necesita deliverability"],
+    dataModel: ["customer_segment", "message_template", "trigger_event", "consent_status", "send_status"],
+    events: ["customer_created", "order_paid", "cart_abandoned", "repeat_purchase"],
+    firstVersion: "Generador de segmentos, copy y calendario; envio real con proveedor autorizado.",
+    upgradePath: "Integracion con ESP o email app cuando haya volumen y consentimiento.",
+    savings: "$20-$150/mes en etapa temprana; no reemplaza suites avanzadas aun",
+    notIncluded: ["deliverability avanzada", "SMS compliance completo", "IP/domain warming", "reporting enterprise"],
+  },
+  {
+    category: "tracking y analytics",
+    matcher: /pixel|tracking|evento|meta pixel|tiktok pixel|analytics|medici[oó]n|capi|server-side|attribution/,
+    defaultName: "pixel y eventos propios",
+    job: "medir eventos clave sin duplicar pixels ni perder trazabilidad",
+    publishMode: "web_pixel_extension",
+    runtimeLabel: "requiere Web Pixel Extension",
+    feasibility: "alta para MVP nativo, pero no como Page",
+    primitives: ["Web Pixel Extension", "Customer Events", "consent mode", "server logs basicos", "Agent Genia backend"],
+    dataModel: ["event_name", "destination", "consent_required", "dedupe_key", "last_seen_at"],
+    events: ["page_viewed", "product_viewed", "add_to_cart", "checkout_started", "purchase_completed"],
+    firstVersion: "Mapa de eventos, QA y especificacion; publicar solo con Web Pixel Extension.",
+    upgradePath: "CAPI/server-side si se valida que el problema es atribucion y no configuracion.",
+    savings: "$0-$50/mes; el valor principal es calidad de medicion",
+    notIncluded: ["server-side CAPI completo", "attribution multi-touch avanzada", "garantia contra bloqueadores"],
+  },
+  {
+    category: "ofertas, bundles y carrito",
+    matcher: /bundle|paquete|descuento|promo|upsell|cross.?sell|carrito|checkout|discount|rebuy|zipify|bold/,
+    defaultName: "motor de bundles/ofertas",
+    job: "subir AOV con reglas simples de oferta, bundle o descuento controlado",
+    publishMode: "shopify_function",
+    runtimeLabel: "requiere Shopify Function/extension",
+    feasibility: "media-alta si el alcance inicial es simple",
+    primitives: ["Shopify Functions", "Discount API", "cart attributes", "Theme App Extension", "metafields"],
+    dataModel: ["trigger", "discount_value", "bundle_items", "eligibility_rule", "margin_guardrail"],
+    events: ["offer_viewed", "bundle_added", "discount_applied", "cart_updated"],
+    firstVersion: "Especificacion de regla y guardrail de margen antes de activar descuento real.",
+    upgradePath: "Shopify Function con limites de margen y preview antes de publicar.",
+    savings: "$10-$80/mes si cubre bundles/descuentos simples",
+    notIncluded: ["reglas complejas incompatibles con Shopify Functions", "checkout custom fuera de permisos Shopify"],
+  },
+  {
+    category: "lealtad y referidos",
+    matcher: /loyalty|lealtad|puntos|referidos|referral|reward|rewards|smile|loyaltylion/,
+    defaultName: "programa de lealtad ligero",
+    job: "probar recompra o referidos antes de pagar una plataforma de loyalty",
+    publishMode: "theme_app_extension",
+    runtimeLabel: "requiere customer/account runtime",
+    feasibility: "media: se puede validar manualmente; automatizacion requiere runtime de clientes",
+    primitives: ["customer tags", "metafields", "account extensions", "discount codes", "Agent Genia backend"],
+    dataModel: ["customer_id", "points_balance", "referral_code", "reward_rule", "redemption_status"],
+    events: ["referral_submitted", "reward_earned", "reward_redeemed"],
+    firstVersion: "Programa manual con reglas claras, codigos y tracking simple por customer tag.",
+    upgradePath: "Account extension y reglas automatizadas si hay uso real.",
+    savings: "$20-$200/mes si evita loyalty apps tempranas",
+    notIncluded: ["puntos en tiempo real", "fraud controls avanzados", "programas omnicanal"],
+  },
+  {
+    category: "suscripciones y membresias",
+    matcher: /subscription|suscripci[oó]n|membres[ií]a|membership|recurring|recharge|skio|bold subscriptions/,
+    defaultName: "suscripciones/membresias",
+    job: "validar venta recurrente sin tocar cobros recurrentes de forma insegura",
+    publishMode: "provider_required",
+    runtimeLabel: "requiere proveedor de billing/subscriptions",
+    feasibility: "baja-media: pagos recurrentes reales requieren infraestructura autorizada",
+    primitives: ["Shopify Subscriptions API", "provider billing", "customer portal", "webhooks"],
+    dataModel: ["subscription_plan", "billing_status", "renewal_date", "customer_consent"],
+    events: ["subscription_requested", "subscription_started", "renewal_paid", "subscription_cancelled"],
+    firstVersion: "Landing/waitlist para validar interes antes de implementar cobro recurrente.",
+    upgradePath: "Proveedor de subscriptions o app autorizada si el modelo se valida.",
+    savings: "$0-$50/mes al validar antes de pagar; no reemplaza billing real todavia",
+    notIncluded: ["cobro recurrente real", "dunning", "portal de cancelacion", "compliance de billing"],
+  },
+];
+
 export async function onRequestPost(context) {
   const { request, env } = context;
   let runContext = null;
@@ -512,7 +707,12 @@ function shouldUseBrandWhitespaceTool(payload) {
 
 function shouldUseToolFactory(payload) {
   const text = payloadText(payload).toLowerCase();
+  const knownPaidAppNeed =
+    /klaviyo|omnisend|postscript|attentive|loox|judgeme|judge\.me|yotpo|pagefly|gempages|shogun|privy|wisepops|rebuy|zipify|bold|recharge|skio|smile|loyaltylion|aftership|algolia|doofinder/.test(
+      text,
+    );
   const appNeed =
+    knownPaidAppNeed ||
     /app(s)?|plugin|plug-?in|extensi[oó]n|herramienta|tool|widget|feature|funci[oó]n|automatizaci[oó]n|bloque|secci[oó]n/.test(text);
   const replacementIntent =
     /paga|pagada|mensualidad|subscription|suscripci[oó]n|gratis|sin pagar|ahorrar|reemplaz|sustituir|alternativa|evitar pagar|third[- ]party|terceros|otra app/.test(text);
@@ -532,6 +732,7 @@ function runToolFactory(payload) {
   const mvp = buildToolFactoryMvp(profile, primitives);
   const limitations = buildToolFactoryLimitations(profile);
   const risks = buildToolFactoryRisks(profile);
+  const appReplacement = buildAppReplacementPlan(profile, limitations);
 
   return {
     type: "tool_factory",
@@ -549,7 +750,7 @@ function runToolFactory(payload) {
     },
     requestedTool: profile,
     executiveBrief: {
-      decision: `${profile.name} si puede avanzar como herramienta nativa de Agent Genia, empezando por un MVP pequeño y medible.`,
+      decision: `${profile.name} si puede avanzar como herramienta nativa de Agent Genia. Ruta actual: ${profile.runtimeLabel}.`,
       valueThesis: "La meta no es copiar apps de pago; es construir la parte exacta que el merchant necesita para evitar subscriptions innecesarias.",
       feasibility: profile.feasibility,
       guardrail: "Si la necesidad requiere infraestructura regulada, entregabilidad, pagos, fraude, SMS compliance o marketplace externo, Agent Genia debe integrarse con un proveedor o limitar el alcance.",
@@ -561,6 +762,7 @@ function runToolFactory(payload) {
       events: buildToolFactoryEvents(profile),
       adminActions: buildToolFactoryAdminActions(profile),
     },
+    appReplacement,
     mvp,
     savings: {
       replacementCategory: profile.category,
@@ -581,10 +783,15 @@ function runToolFactory(payload) {
 function inferToolFactoryProfile(text, payload) {
   const lower = text.toLowerCase();
   const brandName = cleanSentence(payload.brand?.name) || inferBrandFromUrl(payload.brand?.url) || "la tienda";
-  const category = inferToolFactoryCategory(lower);
+  const capability = inferToolFactoryCapability(lower);
+  const category = capability.category;
   return {
     name: inferToolFactoryName(lower, category),
     category,
+    capabilityId: slugify(category),
+    publishMode: capability.publishMode,
+    runtimeLabel: capability.runtimeLabel,
+    canPublishNow: capability.publishMode === "shopify_page_mvp",
     jobToBeDone: inferToolFactoryJob(lower, category, brandName),
     merchantUser: inferToolFactoryUser(lower),
     feasibility: inferToolFactoryFeasibility(category),
@@ -593,39 +800,46 @@ function inferToolFactoryProfile(text, payload) {
 }
 
 function inferToolFactoryCategory(text) {
-  if (/review|reviews|reseñ|testimonio|estrellas|rating/.test(text)) return "prueba social y reviews";
-  if (/email|sms|flow|flujo|newsletter|klaviyo|retenci[oó]n|winback|abandono/.test(text)) return "retencion y mensajes";
-  if (/page|landing|constructor|p[aá]gina|secci[oó]n|bloque|pagefly|web/.test(text)) return "constructor de paginas y secciones";
-  if (/quiz|recomendador|rutina|diagn[oó]stico|selector|finder/.test(text)) return "quiz y recomendacion";
-  if (/bundle|paquete|descuento|promo|upsell|cross.?sell|carrito|checkout/.test(text)) return "ofertas, bundles y carrito";
-  if (/pixel|tracking|evento|meta pixel|tiktok pixel|analytics|medici[oó]n/.test(text)) return "tracking y analytics";
-  if (/faq|preguntas|soporte|chat|help|garant[ií]a/.test(text)) return "soporte y confianza";
-  return "herramienta ecommerce personalizada";
+  return inferToolFactoryCapability(text).category;
+}
+
+function inferToolFactoryCapability(text) {
+  return TOOL_FACTORY_CAPABILITIES.find((capability) => capability.matcher.test(text)) || fallbackToolFactoryCapability();
+}
+
+function toolCapabilityByCategory(category) {
+  return TOOL_FACTORY_CAPABILITIES.find((capability) => capability.category === category) || fallbackToolFactoryCapability();
+}
+
+function fallbackToolFactoryCapability() {
+  return {
+    category: "herramienta ecommerce personalizada",
+    defaultName: "mini-app Agent Genia",
+    job: "convertir una necesidad repetida de la tienda en herramienta configurable dentro de Agent Genia",
+    publishMode: "shopify_page_mvp",
+    runtimeLabel: "Page MVP publicable hoy",
+    feasibility: "media: necesita definicion del job-to-be-done",
+    primitives: ["Shopify Pages", "Admin API", "metafields/metaobjects", "Agent Genia backend"],
+    dataModel: ["tool_config", "tool_status", "merchant_visible_copy", "last_updated_by_agent"],
+    events: ["tool_viewed", "tool_completed", "conversion_event"],
+    firstVersion: "Pagina/herramienta MVP para validar la necesidad antes de construir app profunda.",
+    upgradePath: "Theme App Extension o runtime especializado solo si el merchant la usa repetidamente.",
+    savings: "$10-$100/mes segun la herramienta reemplazada",
+    notIncluded: ["edge cases enterprise", "soporte de todas las plataformas externas", "automatizacion sin aprobacion del merchant"],
+  };
 }
 
 function inferToolFactoryName(text, category) {
   const explicit = text.match(/(?:app|herramienta|tool|widget|funci[oó]n)\s+(?:de|para)\s+([a-z0-9 áéíóúñ-]{3,48})/i);
   if (explicit?.[1]) return cleanSentence(explicit[1]);
-  return {
-    "prueba social y reviews": "reviews ligeras nativas",
-    "retencion y mensajes": "flows basicos de retencion",
-    "constructor de paginas y secciones": "constructor de secciones nativas",
-    "quiz y recomendacion": "quiz recomendador",
-    "ofertas, bundles y carrito": "motor de bundles/ofertas",
-    "tracking y analytics": "pixel y eventos propios",
-    "soporte y confianza": "FAQ/confianza dinamica",
-  }[category] || "mini-app Agent Genia";
+  return toolCapabilityByCategory(category).defaultName;
 }
 
 function inferToolFactoryJob(text, category, brandName) {
-  if (category === "prueba social y reviews") return `capturar, mostrar y reutilizar prueba social de ${brandName} sin pagar una app separada`;
+  const job = toolCapabilityByCategory(category).job;
+  if (category === "prueba social y reviews") return `capturar, mostrar y reutilizar prueba social de ${brandName} sin pagar una app separada desde el dia uno`;
   if (category === "retencion y mensajes") return `activar flows simples para que ${brandName} no dependa de una suite cara desde el dia uno`;
-  if (category === "constructor de paginas y secciones") return `crear paginas y bloques de conversion sin instalar un page builder pesado`;
-  if (category === "quiz y recomendacion") return "guiar al comprador hacia producto/rutina correcta y guardar la señal para seguimiento";
-  if (category === "ofertas, bundles y carrito") return "subir AOV con reglas simples de oferta, bundle o descuento controlado";
-  if (category === "tracking y analytics") return "medir eventos clave sin duplicar pixels ni perder trazabilidad";
-  if (category === "soporte y confianza") return "resolver dudas repetidas antes de compra y reducir friccion";
-  return "convertir una necesidad repetida de la tienda en herramienta configurable dentro de Agent Genia";
+  return job;
 }
 
 function inferToolFactoryUser(text) {
@@ -635,10 +849,7 @@ function inferToolFactoryUser(text) {
 }
 
 function inferToolFactoryFeasibility(category) {
-  if (["constructor de paginas y secciones", "quiz y recomendacion", "soporte y confianza", "tracking y analytics"].includes(category)) return "alta para MVP nativo";
-  if (["prueba social y reviews", "ofertas, bundles y carrito"].includes(category)) return "media-alta si el alcance inicial es simple";
-  if (category === "retencion y mensajes") return "media; contenido y segmentos si, entregabilidad avanzada requiere proveedor";
-  return "media; necesita definicion del job-to-be-done";
+  return toolCapabilityByCategory(category).feasibility;
 }
 
 function inferToolFactoryOutcome(text, category) {
@@ -653,59 +864,49 @@ function inferToolFactoryOutcome(text, category) {
 }
 
 function inferShopifyPrimitives(profile) {
-  const base = ["Admin API", "metafields/metaobjects", "Agent Genia backend"];
-  if (profile.category === "constructor de paginas y secciones") return ["Theme App Extension", "Shopify Pages", ...base, "configuracion JSON por bloque"];
-  if (profile.category === "quiz y recomendacion") return ["Theme App Extension", "metaobjects", "customer tags", "Shopify Customer API si aplica", "Agent Genia backend"];
-  if (profile.category === "tracking y analytics") return ["Web Pixel Extension", "Customer Events", "consent mode", "server logs basicos", "Agent Genia backend"];
-  if (profile.category === "ofertas, bundles y carrito") return ["Shopify Functions", "Discount API", "cart attributes", "Theme App Extension", "metafields"];
-  if (profile.category === "prueba social y reviews") return ["Theme App Extension", "metaobjects para reviews", "Admin API", "moderacion en Agent Genia", "schema markup limitado"];
-  if (profile.category === "retencion y mensajes") return ["Customer tags", "segments basicos", "email templates", "webhooks/order events", "proveedor email si se necesita deliverability"];
-  return ["Theme App Extension", ...base];
+  return toolCapabilityByCategory(profile.category).primitives;
 }
 
 function buildToolFactoryDataModel(profile) {
   const common = ["tool_config", "tool_status", "merchant_visible_copy", "last_updated_by_agent"];
-  if (profile.category === "prueba social y reviews") return [...common, "review_author", "rating", "review_body", "product_id", "moderation_status"];
-  if (profile.category === "quiz y recomendacion") return [...common, "question", "answer", "result_rule", "recommended_product", "customer_tag"];
-  if (profile.category === "constructor de paginas y secciones") return [...common, "page_handle", "section_order", "section_copy", "cta", "published_url"];
-  if (profile.category === "tracking y analytics") return [...common, "event_name", "destination", "consent_required", "dedupe_key"];
-  if (profile.category === "ofertas, bundles y carrito") return [...common, "trigger", "discount_value", "bundle_items", "eligibility_rule"];
-  return common;
+  return [...new Set([...common, ...toolCapabilityByCategory(profile.category).dataModel])];
 }
 
 function buildToolFactoryEvents(profile) {
-  if (profile.category === "tracking y analytics") return ["page_viewed", "product_viewed", "add_to_cart", "checkout_started", "purchase_completed"];
-  if (profile.category === "quiz y recomendacion") return ["quiz_started", "answer_selected", "result_viewed", "recommendation_clicked"];
-  if (profile.category === "constructor de paginas y secciones") return ["page_published", "cta_clicked", "section_viewed"];
-  if (profile.category === "retencion y mensajes") return ["customer_created", "order_paid", "cart_abandoned", "repeat_purchase"];
-  return ["tool_viewed", "tool_completed", "conversion_event"];
+  return toolCapabilityByCategory(profile.category).events;
 }
 
 function buildToolFactoryAdminActions(profile) {
+  const capability = toolCapabilityByCategory(profile.category);
   return [
     `Crear/configurar ${profile.name}`,
     "Previsualizar antes de publicar",
-    "Publicar en la tienda conectada",
+    capability.publishMode === "shopify_page_mvp" ? "Publicar en la tienda conectada" : `Preparar runtime requerido: ${capability.runtimeLabel}`,
     "Editar copy/reglas desde Agent Genia",
     "Ver resultados y decidir si mantener, iterar o apagar",
   ];
 }
 
 function buildToolFactoryMvp(profile, primitives) {
+  const capability = toolCapabilityByCategory(profile.category);
+  const publishable = capability.publishMode === "shopify_page_mvp";
   return {
     name: `${profile.name} MVP`,
     included: [
       "Configuracion guiada desde el agente",
       "Preview antes de publicar",
-      "Bloque o flujo nativo conectado a Shopify",
+      publishable ? "Publicacion como Shopify Page segura" : `Especificacion lista para ${capability.runtimeLabel}`,
+      capability.firstVersion,
       "Datos guardados en metafields/metaobjects o configuracion propia",
       "Metricas minimas para decidir si vale la pena",
     ],
     notIncluded: buildToolFactoryNotIncluded(profile),
     buildSteps: [
       "Definir campos configurables y copy inicial.",
-      `Crear la primera version usando ${primitives.slice(0, 3).join(", ")}.`,
-      "Publicar en una pagina/producto de prueba.",
+      publishable
+        ? `Crear la primera version usando ${primitives.slice(0, 3).join(", ")}.`
+        : `Crear primero la especificacion y guardrails usando ${primitives.slice(0, 3).join(", ")}.`,
+      publishable ? "Publicar en una pagina/producto de prueba." : `No publicar hasta tener ${capability.runtimeLabel}.`,
       "Medir uso y friccion durante 7 dias.",
       "Convertirlo en herramienta reutilizable si se usa mas de una vez.",
     ],
@@ -719,30 +920,32 @@ function buildToolFactoryMvp(profile, primitives) {
 }
 
 function buildToolFactoryNotIncluded(profile) {
-  if (profile.category === "retencion y mensajes") return ["deliverability avanzada", "SMS compliance completo", "IP/domain warming", "reporting enterprise"];
-  if (profile.category === "prueba social y reviews") return ["syndication externa", "fraud detection avanzada", "imports complejos de todas las plataformas"];
-  if (profile.category === "tracking y analytics") return ["server-side CAPI completo", "attribution multi-touch avanzada", "garantia contra bloqueadores"];
-  if (profile.category === "ofertas, bundles y carrito") return ["reglas complejas incompatibles con Shopify Functions", "checkout custom fuera de permisos Shopify"];
-  return ["edge cases enterprise", "soporte de todas las plataformas externas", "automatizacion sin aprobacion del merchant"];
+  return toolCapabilityByCategory(profile.category).notIncluded;
 }
 
 function buildToolFactoryLimitations(profile) {
+  const capability = toolCapabilityByCategory(profile.category);
   return {
     thirdPartyStillBetter: [
       "Cuando la app de pago resuelve una infraestructura especializada que Agent Genia no debe operar aun.",
       "Cuando hay compliance legal/regulatorio fuerte.",
       "Cuando el merchant necesita soporte enterprise, integraciones profundas o SLA.",
+      ...capability.notIncluded.map((item) => `Cuando necesitas ${item}.`),
       `${profile.name} debe empezar como MVP nativo antes de prometer paridad total.`,
     ],
   };
 }
 
 function buildToolFactoryRisks(profile) {
+  const capability = toolCapabilityByCategory(profile.category);
   const risks = [
     "Prometer reemplazo total de una app madura antes de validar el 20% de funcionalidad que realmente usa el merchant.",
     "Crear demasiadas herramientas custom sin sistema de apagado, versionado y soporte.",
     "Romper confianza si la herramienta toca datos sensibles sin permisos claros.",
   ];
+  if (capability.publishMode !== "shopify_page_mvp") {
+    risks.push(`Publicar esto como Page simple seria falso; requiere ${capability.runtimeLabel}.`);
+  }
   if (profile.category === "retencion y mensajes") risks.push("Entregabilidad y consentimiento pueden convertir una herramienta simple en infraestructura seria.");
   if (profile.category === "tracking y analytics") risks.push("Pixels duplicados o eventos mal deduplicados pueden empeorar decisiones de ads.");
   if (profile.category === "ofertas, bundles y carrito") risks.push("Descuentos mal configurados pueden destruir margen.");
@@ -750,23 +953,64 @@ function buildToolFactoryRisks(profile) {
 }
 
 function estimateToolFactorySavings(profile) {
-  if (profile.category === "constructor de paginas y secciones") return "$20-$100/mes si evita page builders ligeros";
-  if (profile.category === "prueba social y reviews") return "$15-$80/mes si cubre reviews basicas";
-  if (profile.category === "retencion y mensajes") return "$20-$150/mes en etapa temprana; no reemplaza suites avanzadas aun";
-  if (profile.category === "quiz y recomendacion") return "$20-$100/mes si evita quiz builders simples";
-  if (profile.category === "tracking y analytics") return "$0-$50/mes; el valor principal es calidad de medicion";
-  if (profile.category === "ofertas, bundles y carrito") return "$10-$80/mes si cubre bundles/descuentos simples";
-  return "$10-$100/mes segun la herramienta reemplazada";
+  return toolCapabilityByCategory(profile.category).savings;
 }
 
 function buildToolFactoryValidationPlan(profile, mvp) {
+  const capability = toolCapabilityByCategory(profile.category);
   return [
     `Construir solo ${mvp.name}, no una plataforma completa.`,
-    `Instalarlo en una pagina/producto de bajo riesgo para validar ${profile.desiredOutcome}.`,
+    capability.publishMode === "shopify_page_mvp"
+      ? `Instalarlo en una pagina/producto de bajo riesgo para validar ${profile.desiredOutcome}.`
+      : `Validar el flujo manualmente o con especificacion antes de invertir en ${capability.runtimeLabel}.`,
     "Comparar contra el costo de la app que se queria pagar.",
     "Medir adopcion del merchant: si no lo usa dos veces, no merece convertirse en producto permanente.",
     "Medir impacto de cliente: conversion, leads, AOV, tickets reducidos o eventos limpios.",
+    `Si se valida, evolucionar por esta ruta: ${capability.upgradePath}`,
   ];
+}
+
+function buildAppReplacementPlan(profile, limitations) {
+  const capability = toolCapabilityByCategory(profile.category);
+  const replaceabilityLevel = replacementLevelForMode(capability.publishMode);
+  return {
+    principle:
+      "Agent Genia no debe clonar una app pagada completa. Debe extraer el trabajo que el merchant necesita, construir la version minima nativa, medir valor y solo escalar si se usa.",
+    replaceabilityLevel,
+    publishMode: capability.publishMode,
+    runtimeLabel: capability.runtimeLabel,
+    canCreateNow: capability.publishMode === "shopify_page_mvp",
+    firstVersion: capability.firstVersion,
+    upgradePath: capability.upgradePath,
+    buildOrBuyDecision: buildOrBuyDecision(capability),
+    nativeAdvantages: [
+      "Menos subscriptions antes de validar valor real.",
+      "Menos ruido: solo se construye la funcion exacta que el merchant pidio.",
+      "Menos riesgo operacional: cada herramienta debe poder apagarse sin romper la tienda.",
+    ],
+    keepThirdPartyWhen: limitations.thirdPartyStillBetter,
+  };
+}
+
+function replacementLevelForMode(mode) {
+  if (mode === "shopify_page_mvp") return "crear ahora";
+  if (mode === "theme_app_extension" || mode === "shopify_function" || mode === "web_pixel_extension") return "crear con runtime propio";
+  if (mode === "provider_integration") return "integrar proveedor";
+  if (mode === "provider_required") return "validar antes de pagar proveedor";
+  return "definir alcance";
+}
+
+function buildOrBuyDecision(capability) {
+  if (capability.publishMode === "shopify_page_mvp") {
+    return "Construir con Agent Genia ahora como MVP seguro. Pagar app solo si el merchant necesita automatizacion o profundidad que el MVP no cubre.";
+  }
+  if (capability.publishMode === "provider_required") {
+    return "No intentar reemplazo completo gratis todavia. Validar demanda con Agent Genia y comprar/integrar proveedor solo cuando el caso de uso pague el costo.";
+  }
+  if (capability.publishMode === "provider_integration") {
+    return "Agent Genia puede crear estrategia, segmentos, copy y QA; la ejecucion sensible debe pasar por proveedor autorizado.";
+  }
+  return `Agent Genia debe construir el runtime ${capability.runtimeLabel} antes de prometer reemplazo real.`;
 }
 
 function runBrandWhitespaceTool(payload) {
