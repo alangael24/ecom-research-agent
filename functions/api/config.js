@@ -2,12 +2,14 @@ import { json, optionsResponse, publicSupabaseConfig } from "../_shared/supabase
 
 export async function onRequestGet(context) {
   const { supabaseUrl, supabaseAnonKey } = publicSupabaseConfig(context.env);
-  if (!supabaseUrl || !supabaseAnonKey) {
+  const authRequired = String(context.env.AUTH_REQUIRED || "").toLowerCase() === "true";
+
+  if (authRequired && (!supabaseUrl || !supabaseAnonKey)) {
     return json(
       {
         ok: false,
         code: "supabase_public_config_missing",
-        message: "SUPABASE_URL and SUPABASE_ANON_KEY are required.",
+        message: "SUPABASE_URL and SUPABASE_ANON_KEY are required when AUTH_REQUIRED=true.",
       },
       503,
     );
@@ -17,7 +19,8 @@ export async function onRequestGet(context) {
     ok: true,
     supabaseUrl,
     supabaseAnonKey,
-    authRequired: true,
+    authRequired,
+    mvpMode: !authRequired,
   });
 }
 

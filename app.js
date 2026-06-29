@@ -7,6 +7,7 @@ const state = {
   shopifyStores: [],
   pendingShopifyShop: "",
   user: null,
+  mvpMode: false,
 };
 
 const MAX_ATTACHMENTS = 6;
@@ -550,10 +551,6 @@ function usesLocalPreview() {
 }
 
 async function bootAuth() {
-  document.body.classList.add("auth-required");
-  if (authGate) authGate.hidden = false;
-  setAuthStatus("Conectando con Supabase...");
-
   try {
     const response = await fetch("./api/config", { headers: { "cache-control": "no-store" } });
     const config = await response.json();
@@ -561,10 +558,22 @@ async function bootAuth() {
       throw new Error(config?.message || "Supabase no esta configurado.");
     }
 
-    state.config = {
-      supabaseUrl: config.supabaseUrl,
-      supabaseAnonKey: config.supabaseAnonKey,
-    };
+    state.config = config.supabaseUrl && config.supabaseAnonKey
+      ? {
+          supabaseUrl: config.supabaseUrl,
+          supabaseAnonKey: config.supabaseAnonKey,
+          authRequired: Boolean(config.authRequired),
+        }
+      : null;
+
+    if (!config.authRequired) {
+      enterMvpApp();
+      return;
+    }
+
+    document.body.classList.add("auth-required");
+    if (authGate) authGate.hidden = false;
+    setAuthStatus("Conectando con Supabase...");
 
     const restored = await restoreSession();
     if (restored) {
@@ -572,8 +581,8 @@ async function bootAuth() {
     } else {
       setAuthStatus("Usa una cuenta invitada para entrar.");
     }
-  } catch (error) {
-    setAuthStatus(error.message || "No se pudo conectar Supabase.");
+  } catch {
+    enterMvpApp();
   }
 }
 
@@ -609,10 +618,21 @@ async function handleSignIn(event) {
 
 async function enterAuthenticatedApp() {
   document.body.classList.remove("auth-required");
+  document.body.classList.remove("mvp-mode");
   document.body.classList.add("authenticated");
+  state.mvpMode = false;
   if (authGate) authGate.hidden = true;
   setAuthStatus("");
   await loadHistory();
+}
+
+function enterMvpApp() {
+  state.mvpMode = true;
+  document.body.classList.remove("auth-required", "authenticated");
+  document.body.classList.add("mvp-mode");
+  if (authGate) authGate.hidden = true;
+  setAuthStatus("");
+  renderAuthState();
 }
 
 async function restoreSession() {
@@ -640,6 +660,7 @@ async function restoreSession() {
 }
 
 async function signOut() {
+  const authRequired = Boolean(state.config?.authRequired);
   if (state.session?.access_token && state.config) {
     await fetch(`${state.config.supabaseUrl}/auth/v1/logout`, {
       method: "POST",
@@ -652,10 +673,14 @@ async function signOut() {
   closeHistory();
   renderAuthState();
   document.body.classList.remove("authenticated", "report-ready");
-  document.body.classList.add("auth-required");
   resultPanel.hidden = true;
-  if (authGate) authGate.hidden = false;
-  setAuthStatus("Sesion cerrada.");
+  if (authRequired) {
+    document.body.classList.add("auth-required");
+    if (authGate) authGate.hidden = false;
+    setAuthStatus("Sesion cerrada.");
+  } else {
+    enterMvpApp();
+  }
 }
 
 async function supabaseAuthRequest(path, options = {}) {
@@ -827,20 +852,7 @@ function serializeAttachments() {
 
 async function handleSubmit(event) {
   event.preventDefault();
-  if (!state.session?.access_token) {
-    document.body.classList.add("auth-required");
-    if (authGate) authGate.hidden = false;
-    setAuthStatus("Inicia sesion para usar el agente.");
-    return;
-  }
-
   const data = readForm();
-  if (!state.user) {
-    document.body.classList.add("auth-required");
-    if (authGate) authGate.hidden = false;
-    setAuthStatus("Inicia sesion para usar el agente.");
-    return;
-  }
   await runResearch(data);
 }
 
@@ -1327,6 +1339,10 @@ function buildReport(data) {
 }
 
 async function requestBackendReport(data) {
+  if (!state.session?.access_token) {
+    return null;
+  }
+
   const headers = {
     "content-type": "application/json",
     authorization: `Bearer ${state.session.access_token}`,

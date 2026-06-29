@@ -132,9 +132,11 @@ Internal tools currently handled directly by `/api/research`:
 
 `brand_whitespace_tool` labels output as hypotheses. It does not perform live Meta Ads, Amazon review, or TikTok collection by itself; use the deeper competitive research harness/skills to confirm demand, saturation, and customer language.
 
-## Browser login
+## MVP login mode
 
-The main page uses a minimal Supabase email/password gate before the agent can run. The browser sends `Authorization: Bearer <supabase_access_token>` to `/api/research`, `/api/runs`, and `/api/runs/:id`.
+By default the app runs as an MVP without forcing email/password login. If Supabase is not configured, or if `AUTH_REQUIRED` is not set to `true`, the main page opens directly and uses the local guided agent/report flow.
+
+Set `AUTH_REQUIRED=true` when you want production private mode with Supabase users, saved runs, uploads, and history. In that mode the browser sends `Authorization: Bearer <supabase_access_token>` to `/api/research`, `/api/runs`, and `/api/runs/:id`.
 
 Google/Shopify OAuth endpoints remain in the repo for connector/login experiments, but they are not the primary production auth path for the research agent.
 
