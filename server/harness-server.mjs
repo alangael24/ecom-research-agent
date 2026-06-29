@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || process.env.HARNESS_PORT || 8788);
@@ -13,6 +14,8 @@ const CODEX_BIN = process.env.CODEX_BIN || "codex";
 const MODEL = process.env.CODEX_MODEL || "";
 const TIMEOUT_MS = Number(process.env.CODEX_TIMEOUT_MS || 900000);
 const SCHEMA_PATH = join(__dirname, "research-schema.json");
+const JOB_TTL_MS = Number(process.env.HARNESS_JOB_TTL_MS || 30 * 60 * 1000);
+const jobs = new Map();
 
 if (!TOKEN) {
   console.error("HARNESS_TOKEN is required. Example: HARNESS_TOKEN=$(openssl rand -hex 32) node server/harness-server.mjs");
@@ -21,11 +24,43 @@ if (!TOKEN) {
 
 const server = createServer(async (request, response) => {
   try {
-    if (request.method === "GET" && request.url === "/healthz") {
+    const url = new URL(request.url || "/", "http://127.0.0.1");
+
+    if (request.method === "GET" && url.pathname === "/healthz") {
       return sendJson(response, 200, { ok: true, service: "alibaba-sourcing-harness" });
     }
 
-    if (request.method !== "POST" || request.url !== "/research") {
+    if (request.method === "POST" && url.pathname === "/jobs") {
+      if (!isAuthorized(request)) {
+        return sendJson(response, 401, { ok: false, code: "unauthorized" });
+      }
+      const payload = await readJson(request);
+      const validationError = validatePayload(payload);
+      if (validationError) {
+        return sendJson(response, 400, { ok: false, code: "invalid_payload", message: validationError });
+      }
+      const job = createJob(payload);
+      return sendJson(response, 202, {
+        ok: true,
+        jobId: job.id,
+        status: job.status,
+        pending: true,
+      });
+    }
+
+    const jobMatch = url.pathname.match(/^\/jobs\/([^/]+)$/);
+    if (request.method === "GET" && jobMatch) {
+      if (!isAuthorized(request)) {
+        return sendJson(response, 401, { ok: false, code: "unauthorized" });
+      }
+      const job = jobs.get(jobMatch[1]);
+      if (!job) {
+        return sendJson(response, 404, { ok: false, code: "job_not_found", message: "Job not found or expired." });
+      }
+      return sendJson(response, 200, serializeJob(job));
+    }
+
+    if (request.method !== "POST" || url.pathname !== "/research") {
       return sendJson(response, 404, { ok: false, code: "not_found" });
     }
 
@@ -49,6 +84,63 @@ const server = createServer(async (request, response) => {
     });
   }
 });
+
+function createJob(payload) {
+  const now = new Date().toISOString();
+  const job = {
+    id: randomUUID(),
+    status: "queued",
+    pending: true,
+    createdAt: now,
+    updatedAt: now,
+    report: null,
+    diagnostics: null,
+    error: null,
+  };
+  jobs.set(job.id, job);
+
+  queueMicrotask(async () => {
+    job.status = "running";
+    job.updatedAt = new Date().toISOString();
+    try {
+      const result = await runCodexResearch(payload);
+      job.status = "done";
+      job.pending = false;
+      job.report = result.report;
+      job.diagnostics = result.diagnostics;
+      job.updatedAt = new Date().toISOString();
+    } catch (error) {
+      job.status = "error";
+      job.pending = false;
+      job.error = error instanceof Error ? error.message : String(error);
+      job.updatedAt = new Date().toISOString();
+    }
+  });
+
+  return job;
+}
+
+function serializeJob(job) {
+  return {
+    ok: job.status !== "error",
+    jobId: job.id,
+    status: job.status,
+    pending: job.pending,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    report: job.report || undefined,
+    diagnostics: job.diagnostics || undefined,
+    code: job.status === "error" ? "job_failed" : undefined,
+    message: job.error || undefined,
+  };
+}
+
+setInterval(() => {
+  const cutoff = Date.now() - JOB_TTL_MS;
+  for (const [id, job] of jobs.entries()) {
+    if (Date.parse(job.updatedAt || job.createdAt || 0) < cutoff) jobs.delete(id);
+  }
+}, Math.min(JOB_TTL_MS, 5 * 60 * 1000)).unref();
 
 server.listen(PORT, HOST, () => {
   console.log(`Alibaba sourcing harness listening on http://${HOST}:${PORT}`);

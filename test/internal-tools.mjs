@@ -198,6 +198,7 @@ const harnessCases = [
 ];
 
 const harnessRequests = [];
+const harnessJobs = new Map();
 const harness = createServer(async (request, response) => {
   if (request.url === "/healthz" && request.method === "GET") {
     response.writeHead(200, { "content-type": "application/json" });
@@ -205,7 +206,21 @@ const harness = createServer(async (request, response) => {
     return;
   }
 
-  if (request.url !== "/research" || request.method !== "POST") {
+  const jobMatch = request.url.match(/^\/jobs\/([^/]+)$/);
+  if (request.method === "GET" && jobMatch) {
+    assert.equal(request.headers.authorization, `Bearer ${HARNESS_TOKEN}`);
+    const job = harnessJobs.get(jobMatch[1]);
+    if (!job) {
+      response.writeHead(404, { "content-type": "application/json" });
+      response.end(JSON.stringify({ ok: false, code: "job_not_found" }));
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify(job));
+    return;
+  }
+
+  if (request.url !== "/jobs" || request.method !== "POST") {
     response.writeHead(404, { "content-type": "application/json" });
     response.end(JSON.stringify({ ok: false, code: "not_found" }));
     return;
@@ -215,10 +230,14 @@ const harness = createServer(async (request, response) => {
   for await (const chunk of request) chunks.push(chunk);
   const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
   harnessRequests.push(payload);
-  response.writeHead(200, { "content-type": "application/json" });
-  response.end(
-    JSON.stringify({
-      ok: true,
+  const jobId = `job-${harnessRequests.length}`;
+  harnessJobs.set(jobId, {
+    ok: true,
+    jobId,
+    status: "done",
+    pending: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
       report: {
         executiveBrief: {
           decision: `Harness executed ${payload.selectedInternalTool}`,
@@ -236,8 +255,9 @@ const harness = createServer(async (request, response) => {
         ],
       },
       diagnostics: { fakeHarness: true },
-    }),
-  );
+  });
+  response.writeHead(202, { "content-type": "application/json" });
+  response.end(JSON.stringify({ ok: true, jobId, status: "queued", pending: true }));
 });
 
 await new Promise((resolve) => harness.listen(0, "127.0.0.1", resolve));
@@ -256,11 +276,21 @@ try {
     const body = await callResearch(testCase.payload, {
       HARNESS_URL: `http://127.0.0.1:${port}`,
       HARNESS_TOKEN,
+    }, {
+      expectedStatus: 202,
     });
     assert.equal(body.ok, true, testCase.name);
-    assert.equal(body.report?.executiveBrief?.decision, `Harness executed ${testCase.tool}`, testCase.name);
+    assert.equal(body.pending, true, `${testCase.name} starts async job`);
+    assert.equal(typeof body.jobId, "string", `${testCase.name} job id`);
     assert.equal(harnessRequests.length, before + 1, `${testCase.name} called harness`);
     assert.equal(harnessRequests.at(-1).selectedInternalTool, testCase.tool, `${testCase.name} selected tool`);
+    const completed = await callResearchJob(body.jobId, {
+      HARNESS_URL: `http://127.0.0.1:${port}`,
+      HARNESS_TOKEN,
+    });
+    assert.equal(completed.ok, true, `${testCase.name} poll ok`);
+    assert.equal(completed.pending, false, `${testCase.name} completed`);
+    assert.equal(completed.report?.executiveBrief?.decision, `Harness executed ${testCase.tool}`, testCase.name);
   }
 
   const unauthenticated = await callResearch(
@@ -282,6 +312,7 @@ try {
   assert.equal(health.harness.reachable, true);
   assert.equal(health.harness.status, "ok");
 
+  await assertHarnessSchemaStrictShape();
   await assertFrontendDoesNotSimulateHarnessReports();
 
   console.log(`internal tools ok: ${directCases.length} direct, ${harnessCases.length} harness`);
@@ -297,6 +328,24 @@ async function assertFrontendDoesNotSimulateHarnessReports() {
   assert.match(app, /isBackendHarnessReport\(report\) \? null : report\?\.customizationPlan/, "no local customization fallback for harness");
   assert.match(app, /backendMode \? \[\] : report\.supplierProfiles/, "no local supplier fallback for harness");
   assert.match(app, /missingNegotiationPlan\(\)/, "missing harness negotiation is explicit");
+}
+
+async function assertHarnessSchemaStrictShape() {
+  const schema = JSON.parse(await readFile(new URL("../server/research-schema.json", import.meta.url), "utf8"));
+  const propertyKeys = Object.keys(schema.properties || {});
+  assert.deepEqual([...schema.required].sort(), propertyKeys.sort(), "top-level schema requires every property");
+  for (const key of [
+    "shopifyPlan",
+    "brandPlan",
+    "websitePlan",
+    "problemDiscovery",
+    "angleWhitespaceValidator",
+    "creativePerformance",
+    "avatarResearch",
+    "customizationPlan",
+  ]) {
+    assert.deepEqual(schema.properties[key].type, ["object", "null"], `${key} is nullable`);
+  }
 }
 
 async function callResearch(payload, envOverrides = {}, options = {}) {
@@ -319,5 +368,23 @@ async function callResearch(payload, envOverrides = {}, options = {}) {
     },
   });
   assert.equal(response.status, options.expectedStatus || 200, `${payload.selectedInternalTool || payload.naturalRequest} status`);
+  return response.json();
+}
+
+async function callResearchJob(jobId, envOverrides = {}, options = {}) {
+  const headers = {};
+  if (options.includeAuth !== false) headers["x-app-password"] = APP_PASSWORD;
+  const response = await onRequestGet({
+    request: new Request(`https://agentgenia.test/api/research?jobId=${encodeURIComponent(jobId)}`, {
+      method: "GET",
+      headers,
+    }),
+    env: {
+      APP_PASSWORD,
+      AUTH_SECRET: "test-auth-secret",
+      ...envOverrides,
+    },
+  });
+  assert.equal(response.status, options.expectedStatus || 200, `${jobId} poll status`);
   return response.json();
 }

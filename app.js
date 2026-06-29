@@ -985,7 +985,11 @@ async function runResearch(data) {
   }
 
   try {
-    const backend = await requestBackendReport(data);
+    let backend = await requestBackendReport(data);
+    if (backend?.pending && backend.jobId) {
+      showToast("Agente ejecutandose en backend");
+      backend = await pollBackendReport(backend);
+    }
     if (backend?.ok && backend.report) {
       if (renderTypedBackendReport(backend.report)) {
         saveState(backend.report);
@@ -1691,6 +1695,48 @@ async function requestBackendReport(data) {
   }
 
   return body;
+}
+
+async function pollBackendReport(initial) {
+  const startedAt = Date.now();
+  const maxWaitMs = 12 * 60 * 1000;
+  let delayMs = Number(initial.pollAfterMs) || 2500;
+  let latest = initial;
+
+  while (Date.now() - startedAt < maxWaitMs) {
+    await sleep(delayMs);
+    latest = await requestBackendJobStatus(latest);
+    if (!latest.pending) return latest;
+    delayMs = Math.min(Number(latest.pollAfterMs) || delayMs + 500, 6000);
+  }
+
+  throw new Error("El agente sigue ejecutandose, pero la espera del navegador se agoto. Intenta abrir el historial en unos minutos.");
+}
+
+async function requestBackendJobStatus(job) {
+  const headers = {};
+  if (state.session?.access_token) {
+    headers.authorization = `Bearer ${state.session.access_token}`;
+  }
+  const params = new URLSearchParams({
+    jobId: job.jobId,
+  });
+  if (job.runId) params.set("runId", job.runId);
+
+  const response = await fetch(`./api/research?${params.toString()}`, {
+    method: "GET",
+    headers,
+    credentials: "include",
+  });
+  const body = await response.json();
+  if (!response.ok || body.ok === false) {
+    throw new Error(body.message || "No se pudo leer el resultado del job agentico.");
+  }
+  return body;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function defaultDestination(market) {

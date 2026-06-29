@@ -277,7 +277,13 @@ export async function onRequestPost(context) {
   }
 }
 
-export async function onRequestGet({ env } = {}) {
+export async function onRequestGet(context = {}) {
+  const { request, env } = context;
+  const url = new URL(request?.url || "https://agentgenia.local/api/research");
+  if (url.searchParams.get("jobId")) {
+    return pollHarnessJob(context, url);
+  }
+
   return json({
     ok: true,
     service: "agent-genia-supabase-research",
@@ -405,7 +411,27 @@ async function executeResearchFlow({ request, env, agentPayload, persistence }) 
     );
   }
 
-  const upstream = await requestHarness(env, agentPayload);
+  const upstream = env.HARNESS_SYNC === "true"
+    ? await requestHarness(env, agentPayload)
+    : await requestHarnessJob(env, agentPayload);
+
+  if (upstream.body?.ok && upstream.body?.pending && upstream.body?.jobId) {
+    return json(
+      {
+        ok: true,
+        pending: true,
+        jobId: upstream.body.jobId,
+        status: upstream.body.status || "queued",
+        pollAfterMs: 2500,
+        runId: persistence?.runId || "",
+        diagnostics: {
+          tool: agentPayload.selectedInternalTool || "codex-harness",
+          mode: "codex_harness_async",
+        },
+      },
+      202,
+    );
+  }
 
   if (upstream.body?.ok && upstream.body.report) {
     await persistReportIfNeeded(persistence, agentPayload, upstream.body.report);
@@ -554,6 +580,105 @@ async function requestHarness(env, payload) {
     );
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function requestHarnessJob(env, payload) {
+  const response = await fetch(new URL("/jobs", env.HARNESS_URL).toString(), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${env.HARNESS_TOKEN}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await safeJson(response);
+  return { status: response.status, body };
+}
+
+async function requestHarnessJobStatus(env, jobId) {
+  const response = await fetch(new URL(`/jobs/${encodeURIComponent(jobId)}`, env.HARNESS_URL).toString(), {
+    method: "GET",
+    headers: {
+      authorization: `Bearer ${env.HARNESS_TOKEN}`,
+    },
+  });
+
+  const body = await safeJson(response);
+  return { status: response.status, body };
+}
+
+async function safeJson(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { ok: false, code: "invalid_json_response", raw: text.slice(0, 1000) };
+  }
+}
+
+async function pollHarnessJob(context, url) {
+  const { request, env } = context;
+  try {
+    const auth = await resolveResearchAuth(request, env);
+    const jobId = url.searchParams.get("jobId") || "";
+    const runId = url.searchParams.get("runId") || "";
+    if (!jobId) throw httpError(400, "missing_job_id", "Missing harness job id.");
+    if (!env.HARNESS_URL || !env.HARNESS_TOKEN) {
+      throw httpError(503, "harness_not_configured", "HARNESS_URL/HARNESS_TOKEN are not configured.");
+    }
+
+    const upstream = await requestHarnessJobStatus(env, jobId);
+    const body = upstream.body || {};
+    if (body.pending) {
+      return json({
+        ok: true,
+        pending: true,
+        jobId,
+        status: body.status || "running",
+        pollAfterMs: 2500,
+        runId,
+      }, upstream.status);
+    }
+
+    if (body.ok && body.report) {
+      const persistence =
+        auth.kind === "supabase" && runId
+          ? {
+              config: auth.config,
+              accessToken: auth.accessToken,
+              userId: auth.user.id,
+              runId,
+            }
+          : null;
+      await persistReportIfNeeded(persistence, { selectedInternalTool: body.report.selectedInternalTool || "" }, body.report);
+      return json({
+        ok: true,
+        pending: false,
+        jobId,
+        status: body.status || "done",
+        report: body.report,
+        diagnostics: body.diagnostics || null,
+        runId,
+      }, upstream.status);
+    }
+
+    const message = body.message || "El harness job no devolvio un reporte valido.";
+    if (auth.kind === "supabase" && runId) {
+      await markRunError(auth.config, auth.accessToken, runId, message).catch(() => null);
+    }
+    return json({
+      ok: false,
+      pending: false,
+      jobId,
+      status: body.status || "error",
+      code: body.code || "harness_job_failed",
+      message,
+      runId,
+    }, upstream.status || 500);
+  } catch (error) {
+    return handleError(error);
   }
 }
 

@@ -141,6 +141,8 @@ For harness responses, the frontend must not fill missing agent sections with lo
 
 `GET /api/research` includes a harness health summary with `configured`, `reachable`, and `status`, based on the private harness `/healthz` endpoint. It does not expose `HARNESS_URL` or `HARNESS_TOKEN`.
 
+Deep harness execution is asynchronous to avoid Cloudflare request timeouts. `/api/research` starts a private harness job and returns `202` with `jobId`; the browser polls `GET /api/research?jobId=...&runId=...` until the real report is ready. Set `HARNESS_SYNC=true` only for local debugging.
+
 `agentgenia_tool_factory` identifies the smallest native Shopify MVP that can replace the merchant's actual job-to-be-done, plus the cases where a third-party app is still safer because of deliverability, compliance, fraud, payments, carrier labels, or enterprise support. It treats paid apps as jobs-to-be-done, not as brands to clone.
 
 For supported low-risk categories, `POST /api/shopify/tools` installs a native Agent Genia section into the store's main theme by writing `sections/agent-genia-tool.liquid`, creating/updating a Page JSON template, and assigning the target Shopify Page to that template. Current theme-template categories include simple quiz/recommendation tools, support/trust hubs, landing/section-builder outputs, lightweight social-proof blocks, lead-capture blocks, returns/post-purchase forms, and generic ecommerce helper blocks. Installed Tool Factory mini-tools are registered in the Shopify KV namespace so Agent Genia can list what already exists for a store. Deep categories such as email/SMS retention, pixels/analytics, checkout, discounts, bundles, loyalty, subscriptions, and advanced search remain blueprint-only until Agent Genia has the right Shopify extension/function/provider runtime for them.
@@ -166,7 +168,7 @@ Internal tool smoke test:
 node test/internal-tools.mjs
 ```
 
-The test calls `/api/research` module handlers directly with `x-app-password`, verifies direct tools (`unit_economics_filter`, `shipping_rate_quote`, `retail-to-online-agent`, `brand_whitespace_tool`, `agentgenia_tool_factory`, `shopify_page_builder`), starts a fake harness to verify harness-routed tools (`problem-discovery-agent`, `product-customization-agent`, `alibaba-sourcing-agent`, `brand-audit-agent`, `shopify-store-audit`), and checks that the frontend does not use local simulated fallbacks for real harness responses.
+The test calls `/api/research` module handlers directly with `x-app-password`, verifies direct tools (`unit_economics_filter`, `shipping_rate_quote`, `retail-to-online-agent`, `brand_whitespace_tool`, `agentgenia_tool_factory`, `shopify_page_builder`), starts a fake async harness to verify harness-routed tools (`problem-discovery-agent`, `product-customization-agent`, `alibaba-sourcing-agent`, `brand-audit-agent`, `shopify-store-audit`), and checks that the frontend does not use local simulated fallbacks for real harness responses.
 
 ## MVP login mode
 

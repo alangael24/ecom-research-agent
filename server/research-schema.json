@@ -129,7 +129,7 @@
       "additionalProperties": false
     },
     "shopifyPlan": {
-      "type": "object",
+      "type": ["object", "null"],
       "properties": {
         "storeSummary": { "type": "string" },
         "catalogOpportunities": { "type": "array", "items": { "type": "string" } },
@@ -141,7 +141,7 @@
       "additionalProperties": false
     },
     "brandPlan": {
-      "type": "object",
+      "type": ["object", "null"],
       "properties": {
         "namingBrief": { "type": "string" },
         "selectedName": {
@@ -206,7 +206,7 @@
       "additionalProperties": false
     },
     "websitePlan": {
-      "type": "object",
+      "type": ["object", "null"],
       "properties": {
         "recommendation": { "type": "string" },
         "firstBuild": { "type": "string" },
@@ -256,7 +256,7 @@
       "additionalProperties": false
     },
     "problemDiscovery": {
-      "type": "object",
+      "type": ["object", "null"],
       "properties": {
         "researchQuestion": { "type": "string" },
         "decision": { "type": "string" },
@@ -392,7 +392,7 @@
       "additionalProperties": false
     },
     "angleWhitespaceValidator": {
-      "type": "object",
+      "type": ["object", "null"],
       "properties": {
         "summary": { "type": "string" },
         "primaryRecommendation": { "type": "string" },
@@ -463,7 +463,7 @@
       "additionalProperties": false
     },
     "creativePerformance": {
-      "type": "object",
+      "type": ["object", "null"],
       "properties": {
         "summary": { "type": "string" },
         "confidence": { "type": "string" },
@@ -553,7 +553,7 @@
       "additionalProperties": false
     },
     "avatarResearch": {
-      "type": "object",
+      "type": ["object", "null"],
       "properties": {
         "summary": { "type": "string" },
         "confidence": { "type": "string" },
@@ -708,7 +708,7 @@
       "additionalProperties": false
     },
     "customizationPlan": {
-      "type": "object",
+      "type": ["object", "null"],
       "properties": {
         "productConcept": { "type": "string" },
         "differentiationAngle": { "type": "string" },
@@ -791,6 +791,14 @@
     "supplierOutreachQueue",
     "ddpPlan",
     "qualityPlan",
+    "shopifyPlan",
+    "brandPlan",
+    "websitePlan",
+    "problemDiscovery",
+    "angleWhitespaceValidator",
+    "creativePerformance",
+    "avatarResearch",
+    "customizationPlan",
     "beginnerNextSteps",
     "limitations"
   ],
