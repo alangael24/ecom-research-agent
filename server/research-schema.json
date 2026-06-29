@@ -255,6 +255,142 @@
       ],
       "additionalProperties": false
     },
+    "problemDiscovery": {
+      "type": "object",
+      "properties": {
+        "researchQuestion": { "type": "string" },
+        "decision": { "type": "string" },
+        "opportunityScore": { "type": "number" },
+        "confidence": { "type": "string" },
+        "sourceCoverage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": { "type": "string" },
+              "status": { "type": "string" },
+              "coverage": { "type": "string" },
+              "whatItCanProve": { "type": "string" },
+              "limitations": { "type": "string" }
+            },
+            "required": ["source", "status", "coverage", "whatItCanProve", "limitations"],
+            "additionalProperties": false
+          }
+        },
+        "evidenceMatrix": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": { "type": "string" },
+              "evidenceType": { "type": "string" },
+              "signal": { "type": "string" },
+              "avatar": { "type": "string" },
+              "pain": { "type": "string" },
+              "quoteOrObservation": { "type": "string" },
+              "confidence": { "type": "string" }
+            },
+            "required": ["source", "evidenceType", "signal", "avatar", "pain", "quoteOrObservation", "confidence"],
+            "additionalProperties": false
+          }
+        },
+        "avatars": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "problem": { "type": "string" },
+              "trigger": { "type": "string" },
+              "language": { "type": "array", "items": { "type": "string" } },
+              "objections": { "type": "array", "items": { "type": "string" } },
+              "whereToFind": { "type": "array", "items": { "type": "string" } },
+              "confidence": { "type": "string" }
+            },
+            "required": ["name", "problem", "trigger", "language", "objections", "whereToFind", "confidence"],
+            "additionalProperties": false
+          }
+        },
+        "painPoints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pain": { "type": "string" },
+              "urgency": { "type": "string" },
+              "currentAlternatives": { "type": "array", "items": { "type": "string" } },
+              "desiredOutcome": { "type": "string" },
+              "evidenceSources": { "type": "array", "items": { "type": "string" } },
+              "confidence": { "type": "string" }
+            },
+            "required": ["pain", "urgency", "currentAlternatives", "desiredOutcome", "evidenceSources", "confidence"],
+            "additionalProperties": false
+          }
+        },
+        "angleCandidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "angle": { "type": "string" },
+              "avatar": { "type": "string" },
+              "pain": { "type": "string" },
+              "whyItMayBeUnderused": { "type": "string" },
+              "creativeHook": { "type": "string" },
+              "proofNeeded": { "type": "string" },
+              "risk": { "type": "string" },
+              "score": { "type": "number" }
+            },
+            "required": ["angle", "avatar", "pain", "whyItMayBeUnderused", "creativeHook", "proofNeeded", "risk", "score"],
+            "additionalProperties": false
+          }
+        },
+        "productHypotheses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "product": { "type": "string" },
+              "whyItSolves": { "type": "string" },
+              "requiredFeatures": { "type": "array", "items": { "type": "string" } },
+              "sourcingNotes": { "type": "array", "items": { "type": "string" } },
+              "claimRisks": { "type": "array", "items": { "type": "string" } },
+              "validationStep": { "type": "string" }
+            },
+            "required": ["product", "whyItSolves", "requiredFeatures", "sourcingNotes", "claimRisks", "validationStep"],
+            "additionalProperties": false
+          }
+        },
+        "creativeBrief": {
+          "type": "object",
+          "properties": {
+            "corePromise": { "type": "string" },
+            "hooks": { "type": "array", "items": { "type": "string" } },
+            "contentFormats": { "type": "array", "items": { "type": "string" } },
+            "doNotSay": { "type": "array", "items": { "type": "string" } },
+            "firstTests": { "type": "array", "items": { "type": "string" } }
+          },
+          "required": ["corePromise", "hooks", "contentFormats", "doNotSay", "firstTests"],
+          "additionalProperties": false
+        },
+        "nextSteps": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": [
+        "researchQuestion",
+        "decision",
+        "opportunityScore",
+        "confidence",
+        "sourceCoverage",
+        "evidenceMatrix",
+        "avatars",
+        "painPoints",
+        "angleCandidates",
+        "productHypotheses",
+        "creativeBrief",
+        "nextSteps"
+      ],
+      "additionalProperties": false
+    },
     "creativePerformance": {
       "type": "object",
       "properties": {

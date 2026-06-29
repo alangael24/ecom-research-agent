@@ -194,6 +194,7 @@ function safeFileName(value) {
 }
 
 function buildPrompt(payload, attachmentFiles = []) {
+  const problemDiscoveryHelper = buildProblemDiscoveryHelper(payload);
   const brandHelper = buildBrandStrategyHelper(payload);
   const websiteHelper = buildWebsiteStrategyHelper(payload, brandHelper);
   const customizationHelper = buildProductCustomizationHelper(payload, brandHelper);
@@ -209,6 +210,8 @@ Instruccion de aislamiento:
 Solicitud del usuario: ${payload.naturalRequest}
 
 ${buildAttachmentPrompt(payload.attachments || [], attachmentFiles)}
+
+${problemDiscoveryHelper.prompt}
 
 ${brandHelper.prompt}
 
@@ -236,6 +239,7 @@ Inferencias del frontend, revisalas y corrigelas si hace falta:
 
 Herramientas internas disponibles:
 - $alibaba-sourcing-agent: usar cuando la solicitud mencione Alibaba, proveedores, fabricantes, sourcing, MOQ, DDP, muestras, precio de proveedor, negociar con proveedor o encontrar productos para vender.
+- problem discovery agent / $ecom-problem-research: usar cuando la solicitud pida buscar un problema real, validar una oportunidad, descubrir avatar, encontrar angulo no explotado, elegir producto desde un dolor, o lanzar una marca desde cero con evidencia de Meta Ads, Amazon reviews y TikTok pain points.
 - ecom research: usar para research de marca, problema, Meta Ads, Amazon reviews, TikTok, avatar, hooks, performance creativa y validacion de oportunidad.
 - unit economics filter: usar cuando la solicitud pida costos, margen, CAC, ROAS, break even, rentabilidad o si conviene lanzar.
 - shipping rate quote: usar cuando la solicitud pida cotizar envio, tarifa de paqueteria, costo de paquete, origen/destino, CP, peso o medidas.
@@ -247,6 +251,10 @@ Herramientas internas disponibles:
 - product customization helper: usar cuando la solicitud pida producto personalizado, private label, custom product, logo, empaque, packaging, envase, caja, etiqueta, sleeve, insert, unboxing, variantes, acabados, materiales, formula, fragancia o brief para fabricar.
 
 Reglas:
+- Si la solicitud pide buscar problema, validar oportunidad, encontrar producto desde dolor, avatar, angulo no explotado, niche research, research profundo de audiencia, o lanzar una marca desde cero, usa problem discovery agent y llena problemDiscovery. Trata Meta Ads, Amazon reviews y TikTok como fuentes separadas: no mezcles ads, reviews y comentarios organicos hasta la sintesis.
+- Para problemDiscovery, intenta usar las skills locales: $ecom-problem-research, meta-ads-library-downloader, amazon-reviews y tiktok-painpoint-research cuando el entorno lo permita. Si no puedes recolectar datos vivos, marca cada sourceCoverage.status como "pendiente/no ejecutado", no inventes ads/reviews/comments y entrega solo hipotesis accionables con limitations.
+- problemDiscovery debe separar: evidencia fuerte, prometedor pero necesita test, ruido/no confiar aun. Incluye sourceCoverage, evidenceMatrix, avatars, painPoints, angleCandidates, productHypotheses, creativeBrief y nextSteps.
+- problemDiscovery.opportunityScore debe ser 0-100 y explicar con confidence si esta basado en datos recolectados, adjuntos, links, contexto declarado o hipotesis.
 - Si la solicitud pide nombre, colores, identidad visual, nueva marca, o si brand strategy helper tiene señal alta, llena brandPlan en el JSON. Usa nombres memorables segun problema/nicho y colores en hex segun nombre, tono y categoria. No digas que el nombre esta legalmente disponible; pide revisar marca registrada, dominio y redes.
 - Si la solicitud pide web, pagina, landing, tienda online, homepage, PDP o si llenas brandPlan para una marca nueva, llena websitePlan. websitePlan debe aplicar el nombre recomendado, colores, tono y problema/nicho en hero, secciones, copy y guardrails. No afirmes que ya creaste/deployaste una web si solo estas entregando el plan.
 - Si la solicitud pide producto personalizado, private label, empaque, packaging, logo, variantes, materiales o unboxing, llena customizationPlan. Debe incluir 3 rutas accionables de producto/empaque, impacto cualitativo en MOQ/costo/flete, preguntas para proveedor y un supplierBrief en ingles listo para copiar en Alibaba. Si brandPlan existe, aplica su nombre, paleta y tono; si no existe, usa una direccion temporal y marca que debe validarse.
@@ -274,6 +282,69 @@ Reglas:
 - Entrega mensajes listos para enviar al proveedor en ingles, con terminos claros y profesionales.
 - Responde solo en JSON conforme al schema de salida.
 	`;
+}
+
+function buildProblemDiscoveryHelper(payload) {
+  const text = [
+    payload.naturalRequest,
+    payload.product,
+    payload.productDetails,
+    payload.problem,
+    payload.reference,
+    payload.brand?.name,
+    payload.brand?.goal,
+    payload.brand?.channels,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const wantsProblemDiscovery =
+    /buscar problema|encontrar problema|problema real|validar oportunidad|validar idea|oportunidad|nicho|avatar|pain points?|puntos? de dolor|angulo|ángulo|no explotado|whitespace|white space|research profundo|investigaci[oó]n profunda|audiencia|voz del cliente|voice of customer|meta ads|amazon reviews?|reseñas amazon|tiktok|comentarios|lanzar marca|empezar marca|producto que resuelva|soluci[oó]n de producto/.test(
+      text,
+    ) || payload.selectedInternalTool === "problem-discovery-agent";
+  const category = inferBrandNiche(text, payload.product || payload.productDetails || "");
+  const problem = inferBrandProblem(text, payload.productDetails || payload.naturalRequest || "");
+  const market = payload.market || "US";
+  const likelySources = buildProblemSourcePlan(text, category);
+
+  return {
+    wantsProblemDiscovery,
+    prompt: `Problem discovery agent:
+- Señal de descubrimiento de problema/oportunidad: ${wantsProblemDiscovery ? "alta" : "baja"}
+- Categoria/nicho inicial: ${category}
+- Problema inicial declarado o inferido: ${problem}
+- Mercado/lenguaje asumido: ${market}; si el usuario escribe español, considerar research bilingue ES/EN.
+- Fuentes a preparar: ${likelySources.map((source) => `${source.source}: ${source.plan}`).join("; ")}
+
+Reglas para problemDiscovery:
+- Si la señal es alta, devuelve problemDiscovery completo aunque tambien devuelvas brandPlan, websitePlan, creativePerformance, customizationPlan o sourcing.
+- Usa $ecom-problem-research como orquestador conceptual: Meta Ads para promesas/ofertas/hooks activos, Amazon reviews para frustraciones y requisitos de producto, TikTok pain points para lenguaje organico y deseo del avatar.
+- Si puedes recolectar datos vivos, preserva URLs, ad ids, ASINs, TikTok ids, row ids o archivos. Si no puedes, di exactamente que faltó y marca la evidencia como hipotesis.
+- No conviertas claims de ads, reseñas o comentarios en verdad cientifica. Para salud, piel, cabello, suplementos, baby, comida o body-effect, incluye claim-safety risks.
+- opportunityScore debe penalizar falta de evidencia, saturacion, claims riesgosos, margen incierto y sourcing dificil.
+- creativeBrief debe traducir el insight en hooks, formatos de contenido, cosas que NO decir y primeros tests pagados/organicos.`,
+  };
+}
+
+function buildProblemSourcePlan(text, category) {
+  const cleanCategory = category || "categoria";
+  const competitorHint = /competidor|competencia|similar|como |vs|contra/.test(text);
+  return [
+    {
+      source: "Meta Ads",
+      plan: competitorHint
+        ? "capturar promesas, ofertas, hooks y landing URLs de competidores declarados"
+        : `mapear anuncios activos de marcas en ${cleanCategory}`,
+    },
+    {
+      source: "Amazon reviews",
+      plan: `minar 1-3 estrellas para frustraciones y 4-5 estrellas para outcomes en ${cleanCategory}`,
+    },
+    {
+      source: "TikTok organic",
+      plan: "descubrir videos/comentarios organicos con gates de ruido antes de sintetizar lenguaje del avatar",
+    },
+  ];
 }
 
 function buildBrandStrategyHelper(payload) {
