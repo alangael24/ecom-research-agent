@@ -2,6 +2,7 @@ import { readSession } from "../../_auth.js";
 import { requireActiveUser } from "../../_shared/supabase.js";
 import {
   createShopifyPage,
+  fetchMainThemeFiles,
   fetchShopifyPage,
   findShopifyPageByHandle,
   getApiVersion,
@@ -11,17 +12,19 @@ import {
   normalizeShopifyDomain,
   requireShopifyConfig,
   updateShopifyPage,
+  upsertShopifyThemeFiles,
+  waitForShopifyJob,
 } from "../../_lib/shopify.js";
 
 const MAX_PAYLOAD_LENGTH = 200000;
-const MAX_PAGE_BODY_LENGTH = 500000;
 const MAX_TITLE_LENGTH = 255;
 const MAX_HANDLE_LENGTH = 255;
 const TOOL_PREFIX = "shopify:tool:";
 const PAGE_BACKUP_PREFIX = "shopify:page-backup:";
+const THEME_SECTION_FILENAME = "sections/agent-genia-tool.liquid";
 const TOOL_STATUSES = new Set(["active", "paused", "archived"]);
 
-const PAGE_RUNTIME_CATEGORIES = new Set([
+const THEME_BLOCK_RUNTIME_CATEGORIES = new Set([
   "constructor de paginas y secciones",
   "quiz y recomendacion",
   "soporte y confianza",
@@ -96,7 +99,7 @@ export async function onRequestPost(context) {
 
   if (targetPage) {
     try {
-      const result = await injectToolIntoExistingPage({
+      const result = await installToolThemeTemplateBlock({
         env,
         shop,
         store,
@@ -107,23 +110,34 @@ export async function onRequestPost(context) {
       return json({
         ok: true,
         tool: publicToolRecord(result.toolRecord),
-        injectedPage: true,
+        installedThemeBlock: true,
         backupKey: result.backupKey,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo inyectar la herramienta en la pagina existente.";
+      const message = error instanceof Error ? error.message : "No se pudo instalar la herramienta en el theme.";
       const needsScope = /scope|permission|forbidden|access denied|unauthorized/i.test(message) || error.status === 401 || error.status === 403;
       return json(
         {
           ok: false,
-          code: needsScope ? "shopify_scope_required" : error.code || "shopify_tool_injection_failed",
+          code: needsScope ? "shopify_scope_required" : error.code || "shopify_theme_tool_install_failed",
           message: needsScope
-            ? "Shopify no permitio leer o actualizar la pagina. Reinstala la app para aceptar permisos de contenido."
+            ? "Shopify no permitio leer o escribir archivos del theme. Reinstala la app para aceptar read_themes/write_themes y confirma que write_themes este autorizado."
             : message,
         },
         needsScope ? 403 : error.status || 502,
       );
     }
+  }
+
+  if (runtime.runtime === "theme_template_block") {
+    return json(
+      {
+        ok: false,
+        code: "target_page_required",
+        message: "Para instalar esta herramienta en el theme necesito la URL o handle de la LP existente. Ejemplo: /pages/mi-landing.",
+      },
+      400,
+    );
   }
 
   try {
@@ -409,7 +423,7 @@ function buildToolRecord({ shop, report, page, pageDraft, runtime, publicUrl, ad
     mode: "shopify_page_mvp",
     runtime: runtime.runtime,
     publishMode: replacement.publishMode || "shopify_page_mvp",
-    runtimeLabel: replacement.runtimeLabel || requested.runtimeLabel || "Page MVP publicable hoy",
+    runtimeLabel: replacement.runtimeLabel || requested.runtimeLabel || "Pagina Shopify legacy",
     replaceabilityLevel: replacement.replaceabilityLevel || "crear ahora",
     limitations: runtime.limitations || [],
     requestedTool: {
@@ -539,22 +553,33 @@ function validateToolReportPayload(report) {
 function toolRuntimeSupport(report) {
   const category = cleanText(report?.requestedTool?.category, "herramienta ecommerce personalizada", 120).toLowerCase();
   const publishMode = cleanText(report?.appReplacement?.publishMode || report?.requestedTool?.publishMode, "", 80);
-  const runtimeLabel = cleanText(report?.appReplacement?.runtimeLabel || report?.requestedTool?.runtimeLabel, "runtime avanzado", 120);
-  if (publishMode && publishMode !== "shopify_page_mvp") {
+  const runtimeLabel = cleanText(report?.appReplacement?.runtimeLabel || report?.requestedTool?.runtimeLabel, "runtime de theme", 120);
+  if (publishMode && publishMode !== "theme_template_block" && publishMode !== "shopify_page_mvp") {
     return {
       supported: false,
       nextRuntime: publishMode,
-      message: `Esta herramienta necesita ${runtimeLabel}. Agent Genia ya puede planearla, pero no debe publicarla como Page simple.`,
+      message: `Esta herramienta necesita ${runtimeLabel}. Agent Genia puede planearla, pero no debe fingir ejecucion sin ese runtime.`,
     };
   }
 
-  if (PAGE_RUNTIME_CATEGORIES.has(category)) {
+  if (publishMode === "shopify_page_mvp") {
     return {
       supported: true,
       runtime: "safe_shopify_page",
       limitations: [
-        "Se publica como Page segura de Shopify, sin JavaScript custom ni edicion directa del theme.",
-        "Sirve para validar la herramienta antes de convertirla en extension profunda.",
+        "Runtime legacy para herramientas que nacen como pagina nueva de Shopify.",
+        "No se usa para modificar LPs existentes cuando el usuario pide instalar una seccion o bloque.",
+      ],
+    };
+  }
+
+  if (THEME_BLOCK_RUNTIME_CATEGORIES.has(category) || publishMode === "theme_template_block") {
+    return {
+      supported: true,
+      runtime: "theme_template_block",
+      limitations: [
+        "Crea o actualiza un template JSON del theme principal.",
+        "Instala una seccion nativa Agent Genia y asigna la Page objetivo a ese template.",
       ],
     };
   }
@@ -564,15 +589,15 @@ function toolRuntimeSupport(report) {
       supported: false,
       nextRuntime: "shopify_extension_required",
       message:
-        "Esta herramienta requiere una capa mas profunda de Shopify (pixel, function, extension o proveedor de mensajes). Agent Genia ya puede planearla, pero no debe publicarla como Page simple.",
+        "Esta herramienta requiere una capa mas profunda de Shopify (pixel, function, extension o proveedor de mensajes). Agent Genia puede planearla, pero no debe fingir ejecucion sin ese runtime.",
     };
   }
 
   return {
     supported: true,
-    runtime: "safe_shopify_page",
+    runtime: "theme_template_block",
     limitations: [
-      "MVP de Page para validar demanda y copy antes de crear una app mas profunda.",
+      "Instala una seccion nativa en un template de Page existente.",
       "No modifica checkout, pixels, descuentos ni datos sensibles.",
     ],
   };
@@ -618,7 +643,7 @@ function buildToolPageDraft(report) {
   };
 }
 
-async function injectToolIntoExistingPage({ env, shop, store, report, runtime, targetPage }) {
+async function installToolThemeTemplateBlock({ env, shop, store, report, runtime, targetPage }) {
   const apiVersion = getApiVersion(env);
   const existingPage = await resolveTargetShopifyPage({
     shop,
@@ -633,22 +658,56 @@ async function injectToolIntoExistingPage({ env, shop, store, report, runtime, t
     throw error;
   }
 
-  const pageDraft = buildToolPageDraft(report);
-  const sectionDraft = buildInjectedToolSection(report, existingPage, targetPage);
-  const nextBodyHtml = injectSectionHtml(existingPage.bodyHtml, sectionDraft);
-  if (nextBodyHtml.length > MAX_PAGE_BODY_LENGTH) {
-    const error = new Error("La pagina resultante es demasiado grande para actualizarla de forma segura.");
-    error.status = 413;
-    error.code = "page_body_too_large";
-    throw error;
-  }
+  const currentTemplateFilename = pageTemplateFilename(existingPage.templateSuffix);
+  const templateSuffix = agentGeniaTemplateSuffix(existingPage);
+  const templateFilename = pageTemplateFilename(templateSuffix);
+  const sectionDraft = buildThemeToolSection(report, existingPage, targetPage);
+  const theme = await fetchMainThemeFiles({
+    shop,
+    accessToken: store.accessToken,
+    apiVersion,
+    filenames: [...new Set([currentTemplateFilename, templateFilename, THEME_SECTION_FILENAME])],
+  });
+  const files = themeFileMap(theme);
+  const templateSource = files.get(templateFilename) || files.get(currentTemplateFilename) || "";
+  const templateJson = installSectionInTemplate(
+    parsePageTemplateJson(templateSource, templateSource ? templateFilename : currentTemplateFilename),
+    sectionDraft,
+  );
 
-  const backupKey = await savePageBackup(env, {
+  const backupKey = await saveThemeTemplateBackup(env, {
     shop,
     page: existingPage,
     targetPage,
     report,
+    theme,
+    previousTemplateFilename: currentTemplateFilename,
+    nextTemplateFilename: templateFilename,
+    previousTemplateContent: files.get(templateFilename) || "",
+    baseTemplateContent: files.get(currentTemplateFilename) || "",
+    previousSectionContent: files.get(THEME_SECTION_FILENAME) || "",
   });
+
+  const themeUpsert = await upsertShopifyThemeFiles({
+    shop,
+    accessToken: store.accessToken,
+    apiVersion,
+    themeId: theme.id,
+    files: [
+      { filename: THEME_SECTION_FILENAME, content: buildAgentGeniaThemeSectionLiquid() },
+      { filename: templateFilename, content: `${JSON.stringify(templateJson, null, 2)}\n` },
+    ],
+  });
+  if (themeUpsert.jobId) {
+    await waitForShopifyJob({
+      shop,
+      accessToken: store.accessToken,
+      apiVersion,
+      jobId: themeUpsert.jobId,
+      attempts: 8,
+      delayMs: 500,
+    });
+  }
 
   const page = await updateShopifyPage({
     shop,
@@ -658,15 +717,16 @@ async function injectToolIntoExistingPage({ env, shop, store, report, runtime, t
     page: {
       title: existingPage.title,
       handle: existingPage.handle,
-      bodyHtml: nextBodyHtml,
+      bodyHtml: existingPage.bodyHtml,
       published: existingPage.isPublished,
+      templateSuffix,
     },
   });
   const publicUrl = buildPublicPageUrl(store, shop, page.handle);
   const adminId = numericShopifyId(page.id);
   const adminUrl = adminId ? `https://${shop}/admin/pages/${adminId}` : `https://${shop}/admin/pages`;
   const now = new Date().toISOString();
-  const id = `inject-${numericShopifyId(page.id) || normalizeHandle(page.handle)}-${sectionDraft.categorySlug}`;
+  const id = `theme-${numericShopifyId(page.id) || normalizeHandle(page.handle)}-${sectionDraft.categorySlug}`;
   const requested = report.requestedTool || {};
   const replacement = report.appReplacement || {};
   const toolRecord = {
@@ -676,16 +736,16 @@ async function injectToolIntoExistingPage({ env, shop, store, report, runtime, t
     status: "active",
     title: `${sectionDraft.toolName} en ${page.title}`,
     handle: page.handle,
-    category: pageDraft.category,
-    mode: "shopify_page_injection",
+    category: sectionDraft.category,
+    mode: "theme_template_block",
     runtime: runtime.runtime,
-    publishMode: "shopify_page_injection",
-    runtimeLabel: "Inyectado en Shopify Page existente",
+    publishMode: "theme_template_block",
+    runtimeLabel: "Bloque nativo en template del theme",
     replaceabilityLevel: replacement.replaceabilityLevel || "crear ahora",
     limitations: runtime.limitations || [],
     requestedTool: {
       name: requested.name || sectionDraft.toolName,
-      category: requested.category || pageDraft.category,
+      category: requested.category || sectionDraft.category,
       jobToBeDone: requested.jobToBeDone || "",
       desiredOutcome: requested.desiredOutcome || "",
     },
@@ -699,13 +759,20 @@ async function injectToolIntoExistingPage({ env, shop, store, report, runtime, t
     url: publicUrl,
     adminUrl,
     injection: {
+      runtime: "theme_template_block",
+      themeId: theme.id,
+      themeName: theme.name,
       targetPageId: page.id,
       targetPageHandle: page.handle,
       targetPageTitle: page.title,
-      markerId: sectionDraft.markerId,
+      previousTemplateSuffix: existingPage.templateSuffix || "",
+      templateSuffix,
+      templateFilename,
+      sectionFilename: THEME_SECTION_FILENAME,
+      sectionKey: sectionDraft.sectionKey,
       placement: sectionDraft.placement,
       backupKey,
-      injectedAt: now,
+      installedAt: now,
     },
     createdAt: now,
     updatedAt: now,
@@ -725,7 +792,7 @@ async function resolveTargetShopifyPage({ shop, accessToken, apiVersion, targetP
   return null;
 }
 
-async function savePageBackup(env, { shop, page, targetPage, report }) {
+async function saveThemeTemplateBackup(env, { shop, page, targetPage, report, theme, previousTemplateFilename, nextTemplateFilename, previousTemplateContent, baseTemplateContent, previousSectionContent }) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const id = numericShopifyId(page.id) || normalizeHandle(page.handle);
   const key = `${PAGE_BACKUP_PREFIX}${shop}:${id}:${timestamp}`;
@@ -736,7 +803,18 @@ async function savePageBackup(env, { shop, page, targetPage, report }) {
       pageId: page.id,
       title: page.title,
       handle: page.handle,
+      templateSuffix: page.templateSuffix || "",
       bodyHtml: page.bodyHtml,
+      theme: {
+        id: theme.id,
+        name: theme.name,
+        role: theme.role,
+      },
+      previousTemplateFilename,
+      nextTemplateFilename,
+      previousTemplateContent,
+      baseTemplateContent,
+      previousSectionContent,
       targetPage,
       requestedTool: report.requestedTool || null,
       createdAt: new Date().toISOString(),
@@ -745,49 +823,277 @@ async function savePageBackup(env, { shop, page, targetPage, report }) {
   return key;
 }
 
-function buildInjectedToolSection(report, targetPage, targetRequest = {}) {
+function buildThemeToolSection(report, targetPage, targetRequest = {}) {
   const requested = report.requestedTool || {};
-  const strategy = report.buildStrategy || {};
   const mvp = report.mvp || {};
   const toolSpec = normalizeToolSpec(report.toolSpec);
   const category = cleanText(requested.category, "herramienta ecommerce personalizada", 120).toLowerCase();
   const categorySlug = normalizeHandle(category).slice(0, 80);
+  const sectionSlug = categorySlug.replace(/-/g, "_") || "tool";
   const toolName = cleanText(requested.name || mvp.name, "Herramienta Agent Genia", 90);
-  const markerId = `agent-genia-${categorySlug}`;
   const placement = normalizePlacement(targetRequest.placement || "end");
-  const html = [
-    `<div class="agent-genia-injected-tool" data-agent-genia-tool="${escapeHtml(markerId)}" style="max-width:1100px;margin:32px auto;padding:0 18px;font-family:inherit;color:#14201b;">`,
-    `<section style="border:1px solid #dbe5df;padding:22px;background:#f8fbf9;margin-bottom:18px;">`,
-    `<p style="margin:0 0 8px;color:#0f7b68;font-size:12px;font-weight:800;text-transform:uppercase;">Seccion Agent Genia</p>`,
-    `<h2 style="font-size:clamp(28px,5vw,44px);line-height:1.08;margin:0 0 10px;">${escapeHtml(toolName)}</h2>`,
-    `<p style="color:#5d6f68;line-height:1.55;margin:0;">Agregada a ${escapeHtml(targetPage.title || targetPage.handle || "esta pagina")} para resolver una necesidad concreta sin instalar otra app.</p>`,
-    `</section>`,
-    renderCategoryTool({ category, toolName, requested, mvp, strategy, toolSpec }),
-    renderToolSpecSummary(toolSpec),
-    `<p style="margin-top:18px;color:#5d6f68;font-size:13px;">Seccion creada con Agent Genia. Si no aporta valor, pide al agente que la quite o la itere.</p>`,
-    `</div>`,
-  ].join("");
+  const fields = cleanToolSpecFields(toolSpec);
+  const defaults = defaultThemeFieldLabels(category);
   return {
-    markerId,
+    sectionKey: `agent_genia_${sectionSlug}`,
     categorySlug,
+    category,
     toolName,
     placement,
-    html: [
-      `<!-- agent-genia-tool:start ${markerId} -->`,
-      html,
-      `<!-- agent-genia-tool:end ${markerId} -->`,
-    ].join("\n"),
+    settings: {
+      tool_name: toolName,
+      category,
+      eyebrow: "Seccion Agent Genia",
+      value_thesis: cleanText(report.executiveBrief?.valueThesis, "Herramienta nativa creada para resolver una necesidad concreta sin instalar otra app.", 360),
+      job_to_be_done: cleanText(requested.jobToBeDone, `Ayudar al visitante de ${targetPage.title || targetPage.handle || "esta pagina"}.`, 360),
+      desired_outcome: cleanText(requested.desiredOutcome, "reducir friccion y mejorar conversion", 180),
+      primary_action: cleanText(toolSpec?.primaryAction?.label, primaryActionLabel(category), 100),
+      success_metric: cleanText(toolSpec?.successMetric, "uso repetido y valor claro para la tienda", 180),
+      field_1_label: cleanText(fields[0]?.label, defaults[0] || "Email", 90),
+      field_2_label: cleanText(fields[1]?.label, defaults[1] || "Solicitud", 90),
+      field_3_label: cleanText(fields[2]?.label, defaults[2] || "", 90),
+    },
   };
 }
 
-function injectSectionHtml(existingBodyHtml, sectionDraft) {
-  const body = String(existingBodyHtml || "");
-  const start = `<!-- agent-genia-tool:start ${sectionDraft.markerId} -->`;
-  const end = `<!-- agent-genia-tool:end ${sectionDraft.markerId} -->`;
-  const pattern = new RegExp(`${escapeRegExp(start)}[\\s\\S]*?${escapeRegExp(end)}`, "i");
-  if (pattern.test(body)) return body.replace(pattern, sectionDraft.html);
-  if (sectionDraft.placement === "top") return `${sectionDraft.html}\n${body}`;
-  return `${body}\n${sectionDraft.html}`;
+function themeFileMap(theme) {
+  return new Map((theme.files || []).filter((file) => file.filename).map((file) => [file.filename, file.content || ""]));
+}
+
+function pageTemplateFilename(templateSuffix) {
+  const suffix = normalizeTemplateSuffix(templateSuffix);
+  return suffix ? `templates/page.${suffix}.json` : "templates/page.json";
+}
+
+function normalizeTemplateSuffix(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^page\./i, "")
+    .replace(/\.json$/i, "")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
+function agentGeniaTemplateSuffix(page) {
+  const base = normalizeHandle(page.handle || numericShopifyId(page.id) || "page").slice(0, 70);
+  return normalizeTemplateSuffix(`agent-genia-${base}`);
+}
+
+function parsePageTemplateJson(content, filename) {
+  if (!String(content || "").trim()) {
+    return {
+      sections: {
+        main: {
+          type: "main-page",
+          settings: {},
+        },
+      },
+      order: ["main"],
+    };
+  }
+  try {
+    return ensurePageTemplateShape(JSON.parse(content));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "JSON invalido";
+    const parseError = new Error(`No pude leer ${filename} como template JSON valido: ${message}`);
+    parseError.status = 422;
+    parseError.code = "invalid_theme_template_json";
+    throw parseError;
+  }
+}
+
+function ensurePageTemplateShape(template) {
+  const next = template && typeof template === "object" && !Array.isArray(template) ? { ...template } : {};
+  next.sections = next.sections && typeof next.sections === "object" && !Array.isArray(next.sections) ? { ...next.sections } : {};
+  if (!Object.keys(next.sections).length) {
+    next.sections.main = {
+      type: "main-page",
+      settings: {},
+    };
+  }
+  next.order = Array.isArray(next.order) && next.order.length ? next.order.filter((key) => typeof key === "string") : Object.keys(next.sections);
+  return next;
+}
+
+function installSectionInTemplate(template, sectionDraft) {
+  const next = ensurePageTemplateShape(template);
+  next.sections[sectionDraft.sectionKey] = {
+    type: "agent-genia-tool",
+    settings: sectionDraft.settings,
+  };
+  const existingOrder = Array.isArray(next.order) ? next.order.filter((key) => key !== sectionDraft.sectionKey) : Object.keys(next.sections).filter((key) => key !== sectionDraft.sectionKey);
+  next.order = sectionDraft.placement === "top"
+    ? [sectionDraft.sectionKey, ...existingOrder]
+    : [...existingOrder, sectionDraft.sectionKey];
+  return next;
+}
+
+function defaultThemeFieldLabels(category) {
+  if (category === "prueba social y reviews") return ["Email", "Review", "Nombre visible"];
+  if (category === "quiz y recomendacion") return ["Problema principal", "Resultado esperado", "Email"];
+  if (category === "captura de leads y popups") return ["Email", "Nombre", "Que estas buscando?"];
+  if (category === "devoluciones y postcompra") return ["Email de compra", "Numero de orden", "Solicitud"];
+  if (category === "soporte y confianza") return ["Email", "Pregunta", ""];
+  return ["Email", "Solicitud", ""];
+}
+
+function primaryActionLabel(category) {
+  if (category === "constructor de paginas y secciones") return "Ver productos";
+  if (category === "soporte y confianza") return "Contactar a la tienda";
+  if (category === "prueba social y reviews") return "Enviar review";
+  if (category === "quiz y recomendacion") return "Recibir recomendacion";
+  if (category === "devoluciones y postcompra") return "Enviar solicitud";
+  return "Enviar solicitud";
+}
+
+function buildAgentGeniaThemeSectionLiquid() {
+  return `{% liquid
+  assign tool_name = section.settings.tool_name | default: 'Herramienta Agent Genia'
+  assign category = section.settings.category | default: 'ecommerce'
+  assign primary_action = section.settings.primary_action | default: 'Enviar solicitud'
+%}
+
+<section class="agent-genia-tool-section" data-agent-genia-tool="{{ section.id }}">
+  <style>
+    .agent-genia-tool-section {
+      max-width: 1120px;
+      margin: 36px auto;
+      padding: 0 20px;
+      color: rgb(var(--color-foreground, 20 32 27));
+    }
+    .agent-genia-tool-section__inner {
+      border: 1px solid rgba(var(--color-foreground, 20 32 27), 0.14);
+      background: rgba(var(--color-background, 255 255 255), 0.96);
+      padding: clamp(22px, 4vw, 42px);
+    }
+    .agent-genia-tool-section__eyebrow {
+      margin: 0 0 10px;
+      color: #0f7b68;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+    .agent-genia-tool-section h2 {
+      margin: 0 0 12px;
+      font-size: clamp(28px, 5vw, 48px);
+      line-height: 1.05;
+    }
+    .agent-genia-tool-section p {
+      color: rgba(var(--color-foreground, 20 32 27), 0.74);
+      line-height: 1.55;
+    }
+    .agent-genia-tool-section__grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin: 22px 0;
+    }
+    .agent-genia-tool-section__card {
+      border: 1px solid rgba(var(--color-foreground, 20 32 27), 0.12);
+      padding: 16px;
+      background: rgba(var(--color-foreground, 20 32 27), 0.035);
+    }
+    .agent-genia-tool-section form {
+      display: grid;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .agent-genia-tool-section label {
+      display: grid;
+      gap: 7px;
+      font-weight: 700;
+    }
+    .agent-genia-tool-section input,
+    .agent-genia-tool-section textarea {
+      min-height: 46px;
+      border: 1px solid rgba(var(--color-foreground, 20 32 27), 0.22);
+      background: rgb(var(--color-background, 255 255 255));
+      color: rgb(var(--color-foreground, 20 32 27));
+      padding: 11px 12px;
+      font: inherit;
+    }
+    .agent-genia-tool-section button {
+      min-height: 48px;
+      border: 0;
+      background: rgb(var(--color-foreground, 20 32 27));
+      color: rgb(var(--color-background, 255 255 255));
+      padding: 0 18px;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+  </style>
+
+  <div class="agent-genia-tool-section__inner">
+    <p class="agent-genia-tool-section__eyebrow">{{ section.settings.eyebrow | escape }}</p>
+    <h2>{{ tool_name | escape }}</h2>
+    <p>{{ section.settings.value_thesis | escape }}</p>
+    <div class="agent-genia-tool-section__grid">
+      <div class="agent-genia-tool-section__card">
+        <strong>Para que sirve</strong>
+        <p>{{ section.settings.job_to_be_done | escape }}</p>
+      </div>
+      <div class="agent-genia-tool-section__card">
+        <strong>Resultado</strong>
+        <p>{{ section.settings.desired_outcome | escape }}</p>
+      </div>
+      <div class="agent-genia-tool-section__card">
+        <strong>Como se mide</strong>
+        <p>{{ section.settings.success_metric | escape }}</p>
+      </div>
+    </div>
+
+    {% form 'contact' %}
+      <input type="hidden" name="contact[agent_genia_tool]" value="{{ tool_name | escape }}">
+      <input type="hidden" name="contact[agent_genia_category]" value="{{ category | escape }}">
+      {% if section.settings.field_1_label != blank %}
+        <label>
+          {{ section.settings.field_1_label | escape }}
+          <input name="contact[agent_genia_field_1]" type="text" autocomplete="email">
+        </label>
+      {% endif %}
+      {% if section.settings.field_2_label != blank %}
+        <label>
+          {{ section.settings.field_2_label | escape }}
+          <textarea name="contact[agent_genia_field_2]" rows="4"></textarea>
+        </label>
+      {% endif %}
+      {% if section.settings.field_3_label != blank %}
+        <label>
+          {{ section.settings.field_3_label | escape }}
+          <input name="contact[agent_genia_field_3]" type="text">
+        </label>
+      {% endif %}
+      <button type="submit">{{ primary_action | escape }}</button>
+    {% endform %}
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Agent Genia tool",
+  "settings": [
+    { "type": "text", "id": "tool_name", "label": "Tool name", "default": "Herramienta Agent Genia" },
+    { "type": "text", "id": "category", "label": "Category", "default": "ecommerce" },
+    { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "Seccion Agent Genia" },
+    { "type": "textarea", "id": "value_thesis", "label": "Value thesis", "default": "Herramienta nativa creada para resolver una necesidad concreta sin instalar otra app." },
+    { "type": "textarea", "id": "job_to_be_done", "label": "Job to be done", "default": "Ayudar al visitante a tomar una mejor decision." },
+    { "type": "text", "id": "desired_outcome", "label": "Desired outcome", "default": "reducir friccion y mejorar conversion" },
+    { "type": "text", "id": "primary_action", "label": "Primary action", "default": "Enviar solicitud" },
+    { "type": "text", "id": "success_metric", "label": "Success metric", "default": "uso repetido y valor claro para la tienda" },
+    { "type": "text", "id": "field_1_label", "label": "Field 1 label", "default": "Email" },
+    { "type": "text", "id": "field_2_label", "label": "Field 2 label", "default": "Solicitud" },
+    { "type": "text", "id": "field_3_label", "label": "Field 3 label" }
+  ],
+  "presets": [
+    { "name": "Agent Genia tool" }
+  ]
+}
+{% endschema %}
+`;
 }
 
 function normalizeTargetPage(value) {
@@ -838,10 +1144,6 @@ function normalizePlacement(value) {
   const normalized = cleanText(value, "end", 30).toLowerCase();
   if (/arriba|top|inicio|before/.test(normalized)) return "top";
   return "end";
-}
-
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function renderHero({ toolName, requested, brief }) {

@@ -122,7 +122,7 @@ The Envia integration is rate-only. The Cloudflare Function only calls the quote
 
 Internal tools currently handled directly by `/api/research`:
 
-- `agentgenia_tool_factory`: native Shopify mini-tool planner that can also publish safe Page-based MVP tools for selected categories.
+- `agentgenia_tool_factory`: native Shopify mini-tool planner that can install selected mini-tools as theme template blocks on existing Shopify landing pages.
 - `brand_whitespace_tool`: existing-brand whitespace hypotheses from declared brand context, attachments, and connected Shopify catalog data.
 - `shopify_page_builder`: creates an approved Shopify Page draft and lets the user publish it through `/api/shopify/pages`.
 - `shipping_rate_quote`: rate-only Envia shipping quotes when a shipping-only intent is detected.
@@ -130,18 +130,18 @@ Internal tools currently handled directly by `/api/research`:
 
 `agentgenia_tool_factory` identifies the smallest native Shopify MVP that can replace the merchant's actual job-to-be-done, plus the cases where a third-party app is still safer because of deliverability, compliance, fraud, payments, carrier labels, or enterprise support. It treats paid apps as jobs-to-be-done, not as brands to clone.
 
-For supported low-risk categories, it can publish a real Shopify Page MVP through `POST /api/shopify/tools`. Current Page runtime categories include simple quiz/recommendation tools, support/trust hubs, landing/section-builder outputs, lightweight social-proof pages, lead-capture pages, returns/post-purchase forms, and generic ecommerce helper pages. Published Tool Factory MVPs are registered in the Shopify KV namespace so Agent Genia can list the mini-tools already installed for a store. Deep categories such as email/SMS retention, pixels/analytics, checkout, discounts, bundles, loyalty, subscriptions, and advanced search remain blueprint-only until Agent Genia has the right Shopify extension/function/provider runtime for them.
+For supported low-risk categories, `POST /api/shopify/tools` installs a native Agent Genia section into the store's main theme by writing `sections/agent-genia-tool.liquid`, creating/updating a Page JSON template, and assigning the target Shopify Page to that template. Current theme-template categories include simple quiz/recommendation tools, support/trust hubs, landing/section-builder outputs, lightweight social-proof blocks, lead-capture blocks, returns/post-purchase forms, and generic ecommerce helper blocks. Installed Tool Factory mini-tools are registered in the Shopify KV namespace so Agent Genia can list what already exists for a store. Deep categories such as email/SMS retention, pixels/analytics, checkout, discounts, bundles, loyalty, subscriptions, and advanced search remain blueprint-only until Agent Genia has the right Shopify extension/function/provider runtime for them.
 
 Each Tool Factory report now includes an `appReplacement` decision with:
 
-- `publishMode`: `shopify_page_mvp`, `theme_app_extension`, `shopify_function`, `web_pixel_extension`, `provider_integration`, or `provider_required`.
-- `canCreateNow`: whether the current Shopify Page runtime may publish a safe MVP today.
+- `publishMode`: `theme_template_block`, `theme_app_extension`, `shopify_function`, `web_pixel_extension`, `provider_integration`, or `provider_required`.
+- `canCreateNow`: whether the current theme-template runtime can install the tool on a target LP today.
 - `buildOrBuyDecision`: when Agent Genia should build, integrate, validate first, or keep a third-party app.
 - `firstVersion` and `upgradePath`: the smallest useful version and the runtime path if it proves valuable.
 
-Tool Factory reports also include a `toolSpec` contract. This is the executable shape of the mini-tool: target surface/runtime, primary action, success metric, data destination, fields, blocks, automation rules, safety checks, and upgrade path. The Shopify Page runtime renders this spec when it can safely publish a Page MVP, and the registry stores it with the installed mini-tool.
+Tool Factory reports also include a `toolSpec` contract. This is the executable shape of the mini-tool: target surface/runtime, primary action, success metric, data destination, fields, blocks, automation rules, safety checks, and upgrade path. The theme-template runtime renders this spec into the Agent Genia section settings, and the registry stores it with the installed mini-tool.
 
-When Shopify is connected, the browser includes the store's registered Agent Genia mini-tools in the `/api/research` payload. Tool Factory uses that registry context to avoid duplicating work: if a matching active/paused mini-tool already exists, the agent recommends iterating, reactivating, pausing, or archiving the existing tool before creating another one. The user can stay in natural language: prompts such as "actualiza esta herramienta existente", "pausa esta herramienta", "archivala", "publicala en mi Shopify", or "agrega una seccion de reviews a /pages/mi-landing" let `/api/research` call the internal Shopify tool endpoint. `PATCH /api/shopify/tools` can update lifecycle status only, or accept a fresh Tool Factory report to refresh the existing Shopify Page and stored mini-tool spec. `POST /api/shopify/tools` can also inject a safe Tool Factory section into an existing Shopify Page when a `targetPage` id, handle, or `/pages/...` URL is provided; it stores the previous Page HTML in KV before calling Shopify `pageUpdate`. PageFly/GemPages/theme-template injection remains guarded until Agent Genia has a dedicated runtime for those surfaces.
+When Shopify is connected, the browser includes the store's registered Agent Genia mini-tools in the `/api/research` payload. Tool Factory uses that registry context to avoid duplicating work: if a matching active/paused mini-tool already exists, the agent recommends iterating, reactivating, pausing, or archiving the existing tool before creating another one. The user can stay in natural language: prompts such as "actualiza esta herramienta existente", "pausa esta herramienta", "archivala", "publicala en mi Shopify", or "agrega una seccion de reviews a /pages/mi-landing" let `/api/research` call the internal Shopify tool endpoint. `PATCH /api/shopify/tools` can update lifecycle status only, or accept a fresh Tool Factory report for registered tools. `POST /api/shopify/tools` installs the section into the target Page template when a `targetPage` id, handle, or `/pages/...` URL is provided; it stores the previous theme/template state in KV before calling `themeFilesUpsert` and `pageUpdate`.
 
 `brand_whitespace_tool` labels output as hypotheses. It does not perform live Meta Ads, Amazon review, or TikTok collection by itself; use the deeper competitive research harness/skills to confirm demand, saturation, and customer language.
 
@@ -168,7 +168,7 @@ Login endpoints:
 - `GET /api/shopify/callback`: connects the Shopify store and creates the Agent Genia session.
 - `POST /api/shopify/pages`: creates a real Shopify Online Store page after the user approves the preview.
 - `GET /api/shopify/tools?shop=store.myshopify.com`: lists Agent Genia mini-tools registered for a connected Shopify store.
-- `POST /api/shopify/tools`: creates a real Shopify Online Store Page MVP for supported Tool Factory reports and records it as an installed mini-tool.
+- `POST /api/shopify/tools`: installs a Tool Factory mini-tool as a native theme template block on a target Shopify Page and records it as an installed mini-tool.
 - `PATCH /api/shopify/tools`: changes an installed mini-tool status to `active`, `paused`, or `archived`.
 - `GET /api/auth/shopify/start?shop=store.myshopify.com`: optional direct-shop Shopify login.
 - `GET /api/auth/shopify/callback`: validates direct-shop Shopify OAuth and creates the session.
@@ -181,7 +181,7 @@ Create a Shopify Partner app and configure:
 - Allowed redirection URLs:
   - `https://YOUR_PAGES_DOMAIN/api/shopify/callback`
   - `https://YOUR_PAGES_DOMAIN/api/auth/shopify/callback`
-- Scopes: `read_products,write_content`
+- Scopes: `read_products,read_content,write_content,read_themes,write_themes`
 - API version: `2026-04`
 - Distribution/install link: save the Shopify Partner install link as `SHOPIFY_INSTALL_URL`.
 
@@ -197,11 +197,11 @@ Cloudflare endpoints:
 - `POST /api/shopify`: returns a sanitized catalog snapshot for a connected store.
 - `POST /api/shopify/pages`: publishes an approved Agent Genia page draft to Shopify Pages.
 - `GET /api/shopify/tools?shop=store.myshopify.com`: lists registered Agent Genia mini-tools for the store.
-- `POST /api/shopify/tools`: publishes an approved Tool Factory MVP as a safe Shopify Page when the category supports the Page runtime, then persists a public mini-tool record in KV.
+- `POST /api/shopify/tools`: installs an approved Tool Factory mini-tool as a theme template block on the target Shopify Page, then persists a public mini-tool record in KV.
 - `PATCH /api/shopify/tools`: updates mini-tool lifecycle status in KV without deleting Shopify content.
 - `DELETE /api/shopify`: disconnects a store by deleting its KV record.
 
-If `write_content` is added after a store was already connected, the merchant must reconnect/reinstall the Shopify app so Shopify grants a token with the new scope.
+If `read_themes`/`write_themes` are added after a store was already connected, the merchant must reconnect/reinstall the Shopify app so Shopify grants a token with the new scopes. Shopify also requires `write_themes` authorization for apps that modify theme files.
 
 The KV binding is declared in `wrangler.toml` as `SHOPIFY_STORES`.
 

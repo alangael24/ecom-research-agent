@@ -2206,7 +2206,7 @@ function renderToolFactoryReport(report) {
   const publishedCard = publication
     ? `<article class="report-card full-span success-card">
         <h3>Herramienta aplicada</h3>
-        <p>Agent Genia ya publico, actualizo o inyecto este MVP en Shopify.</p>
+        <p>Agent Genia ya publico, actualizo o instalo esta herramienta en Shopify.</p>
         <div class="pill-row">
           <a class="pill link-pill" href="${escapeHtml(publication.url || "#")}" target="_blank" rel="noreferrer"><i data-lucide="external-link"></i>Ver herramienta</a>
           <a class="pill link-pill" href="${escapeHtml(publication.adminUrl || "#")}" target="_blank" rel="noreferrer"><i data-lucide="settings"></i>Abrir en Shopify</a>
@@ -2442,18 +2442,25 @@ function toolFactoryRuntimeSupport(reportOrCategory) {
   const report = typeof reportOrCategory === "object" && reportOrCategory ? reportOrCategory : null;
   const publishMode = report?.appReplacement?.publishMode || report?.requestedTool?.publishMode || "";
   const runtimeLabel = report?.appReplacement?.runtimeLabel || report?.requestedTool?.runtimeLabel || "runtime avanzado";
+  if (publishMode === "theme_template_block") {
+    return {
+      supported: true,
+      publishMode,
+      message: "Se puede instalar como bloque nativo en el template del theme de una LP existente.",
+    };
+  }
   if (publishMode && publishMode !== "shopify_page_mvp") {
     return {
       supported: false,
       publishMode,
-      message: `Esta herramienta necesita ${runtimeLabel}. Agent Genia puede planearla, pero no debe publicarla como Page simple.`,
+      message: `Esta herramienta necesita ${runtimeLabel}. Agent Genia puede planearla, pero no debe fingir ejecucion sin ese runtime.`,
     };
   }
   if (publishMode === "shopify_page_mvp") {
     return {
       supported: true,
       publishMode,
-      message: "Se puede publicar como una primera herramienta MVP usando una pagina segura de Shopify.",
+      message: "Este reporte antiguo se puede publicar como pagina Shopify legacy.",
     };
   }
 
@@ -2469,8 +2476,8 @@ function toolFactoryRuntimeSupport(reportOrCategory) {
   }
   return {
     supported: true,
-    publishMode: "shopify_page_mvp",
-    message: "Se puede publicar como una primera herramienta MVP usando una pagina segura de Shopify.",
+    publishMode: "theme_template_block",
+    message: "Se puede instalar como bloque nativo en el template del theme de una LP existente.",
   };
 }
 
@@ -2481,7 +2488,7 @@ function toolFactoryPublishMessage({ shop, runtime, publication, replacement }) 
     return `Ya existe una herramienta parecida: ${replacement.existingTool.title || replacement.existingTool.category}. Para iterarla sin crear otra, pidele al agente que la actualice.`;
   }
   if (!runtime.supported) return runtime.message;
-  return "Esto crea una Page real en Shopify con la version minima de la herramienta: segura, reversible y medible.";
+  return "Esto instala un bloque nativo en el theme de la LP objetivo: editable, medible y reversible.";
 }
 
 function shopifyToolHeaders(extra = {}) {
