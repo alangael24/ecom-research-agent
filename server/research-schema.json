@@ -255,6 +255,96 @@
       ],
       "additionalProperties": false
     },
+    "creativePerformance": {
+      "type": "object",
+      "properties": {
+        "summary": { "type": "string" },
+        "confidence": { "type": "string" },
+        "sourceCoverage": { "type": "array", "items": { "type": "string" } },
+        "winners": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": { "type": "string" },
+              "format": { "type": "string" },
+              "performanceSignal": { "type": "string" },
+              "hookPattern": { "type": "string" },
+              "headlinePattern": { "type": "string" },
+              "avatar": { "type": "string" },
+              "painPoint": { "type": "string" },
+              "creativeElements": { "type": "array", "items": { "type": "string" } },
+              "whyItWorked": { "type": "string" },
+              "evidenceType": { "type": "string" },
+              "nextTest": { "type": "string" }
+            },
+            "required": [
+              "source",
+              "format",
+              "performanceSignal",
+              "hookPattern",
+              "headlinePattern",
+              "avatar",
+              "painPoint",
+              "creativeElements",
+              "whyItWorked",
+              "evidenceType",
+              "nextTest"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "underperformers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": { "type": "string" },
+              "format": { "type": "string" },
+              "performanceSignal": { "type": "string" },
+              "hookPattern": { "type": "string" },
+              "headlinePattern": { "type": "string" },
+              "avatar": { "type": "string" },
+              "painPoint": { "type": "string" },
+              "creativeElements": { "type": "array", "items": { "type": "string" } },
+              "whyItFailed": { "type": "string" },
+              "evidenceType": { "type": "string" },
+              "nextTest": { "type": "string" }
+            },
+            "required": [
+              "source",
+              "format",
+              "performanceSignal",
+              "hookPattern",
+              "headlinePattern",
+              "avatar",
+              "painPoint",
+              "creativeElements",
+              "whyItFailed",
+              "evidenceType",
+              "nextTest"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "organicViralPatterns": { "type": "array", "items": { "type": "string" } },
+        "paidAdPatterns": { "type": "array", "items": { "type": "string" } },
+        "measurementChecklist": { "type": "array", "items": { "type": "string" } },
+        "nextTests": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": [
+        "summary",
+        "confidence",
+        "sourceCoverage",
+        "winners",
+        "underperformers",
+        "organicViralPatterns",
+        "paidAdPatterns",
+        "measurementChecklist",
+        "nextTests"
+      ],
+      "additionalProperties": false
+    },
     "beginnerNextSteps": { "type": "array", "items": { "type": "string" } },
     "limitations": { "type": "array", "items": { "type": "string" } }
   },

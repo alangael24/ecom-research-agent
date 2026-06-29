@@ -1066,7 +1066,7 @@ function inferUrlFromText(value) {
 function inferChannelsFromText(value) {
   const channels = [];
   if (/meta|facebook|instagram|ig\b/.test(value)) channels.push("Meta Ads");
-  if (/tiktok/.test(value)) channels.push("TikTok");
+  if (/tiktok|reels|shorts|viral|org[aá]nico|organic/.test(value)) channels.push("TikTok/organico");
   if (/email|klaviyo|sms/.test(value)) channels.push("email/SMS");
   if (/google|search|seo/.test(value)) channels.push("Google/Search");
   if (/amazon|marketplace/.test(value)) channels.push("marketplace");
@@ -1074,6 +1074,9 @@ function inferChannelsFromText(value) {
 }
 
 function inferBrandGoalFromText(value) {
+  if (isCreativePerformanceText(value)) {
+    return "analizar patrones de performance creativa";
+  }
   if (/compet|inspiraci[oó]n|hooks?|headlines?|titulares?|avatar|pain points?|puntos? de dolor|formatos?|creativos?/.test(value)) {
     return "sacar inspiracion de competencia";
   }
@@ -1160,7 +1163,8 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     "branding",
     "logo",
   ]);
-  const inspirationIntent = hasAny(text, [
+  const creativePerformanceIntent = isCreativePerformanceText(text);
+  const inspirationIntent = creativePerformanceIntent || hasAny(text, [
     "inspiracion",
     "inspiración",
     "hook",
@@ -1178,6 +1182,9 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     "formatos",
     "creativo",
     "creativos",
+    "ugc",
+    "reels",
+    "shorts",
   ]);
   const retailToOnlineIntent =
     physicalRetailIntent ||
@@ -1187,6 +1194,7 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     businessStage === "brand" ||
     brandCreationIntent ||
     inspirationIntent ||
+    creativePerformanceIntent ||
     hasAny(text, ["marca", "brand", "negocio", "ventas", "aov", "retencion", "retención", "email", "ads", "roas"]);
   const whitespaceIntent = hasAny(text, [
     "whitespace",
@@ -1401,6 +1409,14 @@ function hasAny(text, words) {
   return words.some((word) => text.includes(word));
 }
 
+function isCreativePerformanceText(value) {
+  const text = String(value || "").toLowerCase();
+  const directSignal = /performance creativa|creative performance|mejor(?:es)? rendimiento|peor(?:es)? rendimiento|alto rendimiento|bajo rendimiento|ganador(?:es)?|perdedor(?:es)?|winner|los que no|no funcion|no convirti[oó]|viral(?:es)?|ctr|cpa|cpm|roas|watch time|retenci[oó]n de video|thumbstop|hook rate|views|vistas|engagement/.test(text);
+  const socialSource = /tiktok|reels|shorts|ugc|org[aá]nico|organic|paid ads|anuncios? pagados?|meta ads|creative|creativo/.test(text);
+  const performanceContext = /rendimiento|performance|ganador|perdedor|viral|hook|views|vistas|watch|retenci[oó]n|ctr|cpa|roas|conversion/.test(text);
+  return directSignal || (socialSource && performanceContext);
+}
+
 function normalizeDestination(value) {
   return value
     .split(/\s+/)
@@ -1490,7 +1506,7 @@ function buildAgentTasks(query, data, category) {
       ]);
     }
     if (data.selectedInternalTool === "brand-audit-agent") {
-      return firstStep.concat([
+      const tasks = [
         {
           key: "brand",
           title: "Leer contexto de marca",
@@ -1500,6 +1516,17 @@ function buildAgentTasks(query, data, category) {
             : "El agente necesita nombre, sitio o canales para entender mejor la marca.",
           nextAction: "Priorizar oferta, conversion, retencion y oportunidades de crecimiento.",
         },
+      ];
+      if (isCreativePerformanceText(`${data.naturalRequest || ""} ${data.brand?.goal || ""}`)) {
+        tasks.push({
+          key: "content",
+          title: "Separar performance creativa",
+          status: "listo para comparar",
+          result: "El agente comparara ads pagados, piezas organicas virales, ganadores, perdedores y creativos sin datos suficientes.",
+          nextAction: "Pegar links, subir capturas o adjuntar exports con CTR, CPA, ROAS, watch time y conversion.",
+        });
+      }
+      tasks.push(
         {
           key: "shopify",
           title: "Cruzar con Shopify",
@@ -1509,7 +1536,8 @@ function buildAgentTasks(query, data, category) {
             : "Shopify puede conectarse despues para leer catalogo, precios e inventario.",
           nextAction: "Combinar datos de marca con catalogo si la tienda esta conectada.",
         },
-      ]);
+      );
+      return firstStep.concat(tasks);
     }
     if (data.selectedInternalTool === "shopify-store-audit") {
       return firstStep.concat([
@@ -2837,6 +2865,7 @@ function renderBrandReport(report) {
   const brandPlan = extractBrandPlan(report);
   const websitePlan = extractWebsitePlan(report) || (brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
   const competitorInspiration = buildCompetitorInspiration(report, brand);
+  const creativePerformance = buildCreativePerformanceLab(report, brand, competitorInspiration);
   const shopifyOverview = report.shopify?.shop ? renderShopifyOverview(report) : "";
   const backendNotice = report.backendError
     ? `<article class="report-card full-span notice-card">
@@ -2882,6 +2911,7 @@ function renderBrandReport(report) {
   document.querySelector("#tools").innerHTML = `
     <div class="report-grid">
       ${renderCompetitorInspiration(competitorInspiration)}
+      ${renderCreativePerformanceLab(creativePerformance)}
       <article class="report-card full-span">
         <h3>Mapa de marca</h3>
         ${renderCompactSections([
@@ -2918,6 +2948,7 @@ function renderBrandReport(report) {
         <h3>Plan de crecimiento</h3>
         <ol>${audit.growth.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
       </article>
+      ${renderCreativeTestPlan(creativePerformance)}
       <article class="report-card full-span">
         <h3>Mensajes a probar</h3>
         <ul>${audit.messaging.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
@@ -3112,6 +3143,76 @@ function renderCompetitorInspiration(inspiration) {
   </article>`;
 }
 
+function renderCreativePerformanceLab(lab) {
+  if (!lab?.shouldRender) return "";
+  const rows = lab.rows || [];
+  return `<article class="report-card full-span creative-lab-card">
+    <h3>Patrones de performance creativa</h3>
+    <p>${escapeHtml(lab.summary)}</p>
+    <div class="pill-row">
+      <span class="pill"><i data-lucide="trending-up"></i>${escapeHtml(lab.confidence)}</span>
+      <span class="pill"><i data-lucide="badge-dollar-sign"></i>paid + organico</span>
+      <span class="pill"><i data-lucide="video"></i>ads y videos virales</span>
+    </div>
+    <div class="creative-split">
+      <section>
+        <h4>Patrones ganadores</h4>
+        <ul>${(lab.winnerPatterns || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </section>
+      <section>
+        <h4>Patrones que suelen perder</h4>
+        <ul>${(lab.loserPatterns || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </section>
+    </div>
+    <div class="table-wrap creative-table-wrap">
+      <table class="comparison-table creative-performance-table">
+        <thead>
+          <tr>
+            <th>Fuente</th>
+            <th>Estado</th>
+            <th>Formato</th>
+            <th>Hook</th>
+            <th>Elementos</th>
+            <th>Siguiente test</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `<tr>
+            <td>${escapeHtml(row.source)}</td>
+            <td><strong>${escapeHtml(row.status)}</strong><small>${escapeHtml(row.evidence || "")}</small></td>
+            <td>${escapeHtml(row.format)}</td>
+            <td>${escapeHtml(row.hook)}</td>
+            <td>${escapeHtml(row.elements)}</td>
+            <td>${escapeHtml(row.nextTest)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    <div class="creative-split three">
+      <section>
+        <h4>Video viral / organico</h4>
+        <ul>${(lab.organicElements || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </section>
+      <section>
+        <h4>Paid ads</h4>
+        <ul>${(lab.paidElements || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </section>
+      <section>
+        <h4>Metricas necesarias</h4>
+        <ul>${(lab.metricChecklist || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </section>
+    </div>
+  </article>`;
+}
+
+function renderCreativeTestPlan(lab) {
+  if (!lab?.shouldRender) return "";
+  return `<article class="report-card full-span">
+    <h3>Tests creativos</h3>
+    <ol>${(lab.nextTests || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
+  </article>`;
+}
+
 function normalizeBrandContext(report) {
   const brand = report.brand || {};
   const promptBrand = inferBrandContext(report.naturalRequest || "");
@@ -3195,6 +3296,239 @@ function buildCompetitorInspiration(report, brand) {
   };
 }
 
+function buildCreativePerformanceLab(report, brand, inspiration = {}) {
+  const aiLab = normalizeAiCreativePerformance(report.ai?.creativePerformance);
+  if (aiLab) return aiLab;
+
+  const text = `${report.naturalRequest || ""} ${brand.goal || ""} ${brand.channels || ""}`.toLowerCase();
+  const creativeSources = collectCreativeSources(report, brand);
+  const hasCreativeAttachments = (report.attachments || []).some((item) => ["image", "video", "text", "document"].includes(item.kind));
+  const shouldRender = isCreativePerformanceText(text) || (hasCreativeAttachments && /ad|ads|anuncio|creative|creativo|video|viral|tiktok|reels|ugc/.test(text));
+  if (!shouldRender) return { shouldRender: false };
+
+  const category = report.category?.category || report.product || "producto";
+  const defaultReferences = [
+    { source: "Paid ad ganador", label: "patron de anuncio con mejor rendimiento", kind: "paid", signal: "high" },
+    { source: "Paid ad con bajo rendimiento", label: "patron de anuncio que no convierte", kind: "paid", signal: "low" },
+    { source: "Video organico viral", label: "patron de TikTok/Reels viral", kind: "organic", signal: "high" },
+    { source: "Video organico sin traccion", label: "patron organico que no retiene", kind: "organic", signal: "low" },
+  ];
+  const references = creativeSources.length ? [...creativeSources] : defaultReferences;
+  if (creativeSources.length) {
+    const signals = new Set(creativeSources.map((source) => source.signal));
+    if (!signals.has("high")) {
+      references.push({ source: "Ganador pendiente", label: "agrega el mejor creative con metricas", kind: "asset", signal: "unknown", placeholder: "winner" });
+    }
+    if (!signals.has("low")) {
+      references.push({ source: "Bajo rendimiento pendiente", label: "agrega un creative que no funciono", kind: "asset", signal: "unknown", placeholder: "loser" });
+    }
+  }
+
+  const rows = references.slice(0, 8).map((source, index) => buildCreativePerformanceRow(source, index, category, brand));
+
+  return {
+    shouldRender: true,
+    summary: creativeSources.length
+      ? "Compara piezas declaradas por el usuario y separa lo observable de lo que falta medir antes de escalar."
+      : "Framework para analizar ganadores y perdedores creativos cuando todavia faltan links, metricas o exports de plataforma.",
+    confidence: creativeSources.length ? "confianza media si las metricas estan en los links/adjuntos" : "confianza baja hasta subir ejemplos y metricas",
+    rows,
+    winnerPatterns: [
+      "El primer segundo muestra problema, resultado o tension visual antes de explicar la marca.",
+      "El producto aparece en uso real: escala, textura, transformacion, prueba o comparacion.",
+      "El hook promete una decision concreta, no solo un beneficio generico.",
+      "Hay una razon para seguir viendo: curiosidad, contraste, error comun, prueba social o antes/despues.",
+    ],
+    loserPatterns: [
+      "Empieza con logo, intro lenta o contexto interno antes de mostrar el problema.",
+      "Usa claims amplios sin prueba, demo, review, comparacion o detalle verificable.",
+      "Mezcla demasiados mensajes en una sola pieza y no queda claro que hacer despues.",
+      "El creative no coincide con landing, oferta, precio o objecion principal del comprador.",
+    ],
+    organicElements: [
+      "Hook hablado o visual en 0-2 segundos.",
+      "Edicion nativa: ritmo rapido, cortes claros, captions utiles y prueba visible.",
+      "Comentario, pregunta o objecion real convertido en guion.",
+      "Señales de calidad: retencion, compartidos, guardados, comentarios con intencion y clicks al perfil.",
+    ],
+    paidElements: [
+      "Angle unico por anuncio: dolor, resultado, comparacion, prueba o oferta.",
+      "Headline y first frame repiten la misma promesa para reducir friccion.",
+      "CTA alineado con etapa: aprender, comparar, ver oferta o comprar.",
+      "Separar performance creativa de problemas de landing, precio, inventario o tracking.",
+    ],
+    metricChecklist: [
+      "Paid: spend, impressions, CTR, CPM, CPC, CPA, ROAS, purchases y hold rate.",
+      "Video: 3s views, average watch time, completion rate, shares, saves y comentarios con intencion.",
+      "Ecommerce: sesiones, add-to-cart, checkout, conversion, AOV, margen y devoluciones.",
+      "Clasificar cada pieza como ganador, prometedor, perdedor o sin datos suficientes.",
+    ],
+    nextTests: buildCreativeNextTests(category, brand, rows),
+  };
+}
+
+function normalizeAiCreativePerformance(value) {
+  if (!value || typeof value !== "object") return null;
+  const winners = Array.isArray(value.winners) ? value.winners : [];
+  const losers = Array.isArray(value.underperformers)
+    ? value.underperformers
+    : Array.isArray(value.losers)
+      ? value.losers
+      : [];
+  if (!winners.length && !losers.length) return null;
+
+  const rows = winners.map((item, index) => aiCreativeRow(item, "Ganador", index)).concat(
+    losers.map((item, index) => aiCreativeRow(item, "Bajo rendimiento", index)),
+  );
+
+  return {
+    shouldRender: true,
+    summary: value.summary || "Analisis estructurado de performance creativa desde el backend.",
+    confidence: value.confidence || "confianza segun evidencia disponible",
+    rows,
+    winnerPatterns: winners.map((item) => item.whyItWorked || item.hookPattern || item.performanceSignal).filter(Boolean).slice(0, 5),
+    loserPatterns: losers.map((item) => item.whyItFailed || item.performanceSignal || item.hookPattern).filter(Boolean).slice(0, 5),
+    organicElements: value.organicViralPatterns || [],
+    paidElements: value.paidAdPatterns || [],
+    metricChecklist: value.measurementChecklist || [],
+    nextTests: value.nextTests || [],
+  };
+}
+
+function aiCreativeRow(item, fallbackStatus, index) {
+  const elements = Array.isArray(item.creativeElements) ? item.creativeElements.join("; ") : item.creativeElements || "";
+  return {
+    source: item.source || `Creativo ${index + 1}`,
+    status: item.status || fallbackStatus,
+    format: item.format || "formato no especificado",
+    hook: item.hookPattern || item.hook || item.headlinePattern || "hook pendiente",
+    elements,
+    evidence: item.performanceSignal || item.evidenceType || "evidencia no especificada",
+    nextTest: item.nextTest || "crear variacion controlada y medir contra baseline",
+  };
+}
+
+function collectCreativeSources(report, brand) {
+  const urls = extractUrlsFromText(report.naturalRequest || "")
+    .filter((url) => url !== brand.url)
+    .map((url) => ({
+      source: inferCreativeSource(url),
+      label: url,
+      kind: inferCreativeKind(url),
+      signal: inferCreativeSignal(url),
+    }));
+  const attachments = (report.attachments || [])
+    .filter((item) => ["image", "video", "text", "document"].includes(item.kind))
+    .map((item) => ({
+      source: item.kind === "video" ? "Video adjunto" : item.kind === "image" ? "Creative adjunto" : "Archivo de contexto",
+      label: item.name || "adjunto",
+      kind: item.kind === "video" ? "organic" : "asset",
+      signal: inferCreativeSignal(`${item.name || ""} ${item.content || ""}`),
+    }));
+  return urls.concat(attachments);
+}
+
+function buildCreativePerformanceRow(source, index, category, brand) {
+  const status = source.placeholder === "winner"
+    ? "Ganador pendiente"
+    : source.placeholder === "loser"
+      ? "Bajo rendimiento pendiente"
+      : creativeStatusFromSignal(source.signal, index);
+  const isWinner = /ganador|viral/i.test(status);
+  const isPaid = source.kind === "paid";
+  const format = inferCreativeFormat(source, isPaid);
+  const evidence = creativeEvidenceCopy(source, status);
+  const hook = isWinner
+    ? winnerHookForCreative(category, source, brand)
+    : loserHookForCreative(category, source, brand);
+  return {
+    source: source.source,
+    status,
+    format,
+    hook,
+    elements: isWinner
+      ? "first frame claro, problema visible, prueba/uso real, CTA simple"
+      : "intro lenta, promesa generica, poca prueba o mismatch con oferta",
+    evidence,
+    nextTest: isWinner
+      ? "extraer 3 variaciones del hook cambiando avatar, pain point y primer frame"
+      : "reescribir primeros 3 segundos y aislar si falla hook, oferta, landing o tracking",
+  };
+}
+
+function creativeStatusFromSignal(signal, index) {
+  if (signal === "high") return index % 2 === 0 ? "Ganador / alto rendimiento" : "Viral o prometedor";
+  if (signal === "low") return "Bajo rendimiento";
+  return "Sin datos suficientes";
+}
+
+function creativeEvidenceCopy(source, status) {
+  if (source.placeholder) return "comparativo pendiente; no inventar evidencia";
+  if (status === "Sin datos suficientes") return "falta metrica verificable";
+  if (source.label?.startsWith("http")) return "señal declarada por URL/prompt";
+  return "señal declarada por adjunto o descripcion";
+}
+
+function inferCreativeSource(value) {
+  const text = String(value || "").toLowerCase();
+  if (/facebook\.com\/ads|facebook\.com\/ads\/library|meta/.test(text)) return "Meta Ads Library";
+  if (/tiktok/.test(text)) return "TikTok";
+  if (/instagram|reels/.test(text)) return "Instagram Reels";
+  if (/youtube|shorts/.test(text)) return "YouTube Shorts";
+  if (/facebook|instagram/.test(text)) return "Meta organic";
+  return "Referencia creativa";
+}
+
+function inferCreativeKind(value) {
+  const text = String(value || "").toLowerCase();
+  if (/facebook\.com\/ads|ads|paid|anuncio|meta/.test(text)) return "paid";
+  if (/tiktok|reels|shorts|organic|org[aá]nico|viral|ugc/.test(text)) return "organic";
+  return "asset";
+}
+
+function inferCreativeSignal(value) {
+  const text = String(value || "").toLowerCase();
+  if (/viral|ganador|winner|mejor|alto rendimiento|top|ctr alto|roas alto|muchas vistas|views|engagement/.test(text)) return "high";
+  if (/perdedor|peor|bajo rendimiento|no funcion|no convirti[oó]|roas bajo|cpa alto|pocas vistas/.test(text)) return "low";
+  return "unknown";
+}
+
+function inferCreativeFormat(source, isPaid) {
+  const text = `${source.source || ""} ${source.label || ""}`.toLowerCase();
+  if (/tiktok|reels|shorts|video/.test(text)) return "Video corto UGC / demo";
+  if (/carrusel|carousel/.test(text)) return "Carrusel comparativo";
+  if (/image|imagen|static|estatico|estático/.test(text)) return "Imagen estatica / paid social";
+  return isPaid ? "Paid social creative" : "Organic social creative";
+}
+
+function winnerHookForCreative(category, source, brand) {
+  if (source.kind === "organic") return `El error comun que la gente comete con ${category}`;
+  if (source.kind === "paid") return `${brand.name}: una forma mas clara de resolver ${category}`;
+  return `Mira esto antes de elegir ${category}`;
+}
+
+function loserHookForCreative(category, source, brand) {
+  if (source.kind === "organic") return `Por que este video no retiene: demasiado contexto antes del problema`;
+  if (source.kind === "paid") return `${brand.name} necesita una promesa mas especifica que "calidad"`;
+  return `Falta convertir la referencia en un angulo medible para ${category}`;
+}
+
+function buildCreativeNextTests(category, brand, rows) {
+  const winner = rows.find((row) => row.status.includes("Ganador") || row.status.includes("Viral"));
+  const loser = rows.find((row) => row.status.includes("Bajo"));
+  return [
+    winner
+      ? `Clonar la estructura del mejor patron: mismo pain point, 3 primeros frames distintos, 3 CTAs distintos.`
+      : `Subir 2-3 ejemplos ganadores con metricas para extraer patron real de ${category}.`,
+    loser
+      ? `Rehacer el perdedor cambiando solo el hook inicial para saber si falla la idea o la ejecucion.`
+      : "Subir tambien ejemplos que no funcionaron; sin perdedores no se puede ver el contraste.",
+    "Separar paid vs organico: un video viral no siempre tiene oferta suficiente para vender en ads.",
+    "Medir cada pieza con una etiqueta simple: avatar, pain point, hook, formato, oferta, metrica y decision.",
+    `Convertir el mejor patron en un brief reusable para ${brand.name}: guion, first frame, prueba visual y CTA.`,
+  ];
+}
+
 function extractUrlsFromText(value) {
   const matches = String(value || "").match(/https?:\/\/[^\s,]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s,]*)?/gi) || [];
   return [...new Set(matches.map((match) => normalizeBrandUrl(match)))];
@@ -3244,12 +3578,15 @@ function buildBrandAudit(report, brand) {
   const goal = brand.goal.toLowerCase();
   const conversionFocus = /conversion|conversi[oó]n|roas|cac|ads|anuncios/.test(goal);
   const retentionFocus = /retencion|retenci[oó]n|email|recompra|ltv|clientes/.test(goal);
+  const creativePerformanceFocus = isCreativePerformanceText(`${goal} ${report.naturalRequest || ""}`);
   const inspirationFocus = /compet|inspiraci[oó]n|hooks?|headlines?|titulares?|avatar|pain points?|puntos? de dolor|formatos?|creativos?/.test(
     `${goal} ${report.naturalRequest || ""}`.toLowerCase(),
   );
 
   return {
-    decision: inspirationFocus
+    decision: creativePerformanceFocus
+      ? `Analizar performance creativa para ${brand.name}: separar ads/videos ganadores, piezas con bajo rendimiento y contenido organico viral antes de producir mas.`
+      : inspirationFocus
       ? `Desglosar competencia para ${brand.name}: extraer patrones de hooks, headlines, formatos, avatar y pain points para inspirar nuevos angulos sin copiar.`
       : hasCatalog
         ? `Analizar ${brand.name} como una marca en operacion: cruzar posicionamiento, catalogo, pricing e inventario antes de sugerir crecimiento.`
@@ -3264,6 +3601,7 @@ function buildBrandAudit(report, brand) {
       "Optimizar anuncios sin tener clara la oferta y el margen real.",
       "Confundir trafico con problema de producto, precio o confianza.",
       "Tomar decisiones sin separar datos reales de supuestos.",
+      ...(creativePerformanceFocus ? ["Tratar un video viral como prueba de ventas sin revisar intencion, clicks, conversion y margen."] : []),
     ],
     positioning: [
       "Definir una frase: para quien es, que problema resuelve y por que comprar aqui.",
@@ -3302,12 +3640,15 @@ function buildBrandAudit(report, brand) {
       "Revisar si las fotos explican uso, escala, calidad y transformacion.",
     ],
     growth: [
-      conversionFocus ? "Auditar landing/PDP antes de subir presupuesto de ads." : "Elegir un canal principal y una metrica de decision por 14 dias.",
+      creativePerformanceFocus
+        ? "Crear una matriz de creativos: ganador, prometedor, perdedor y sin datos suficientes."
+        : conversionFocus ? "Auditar landing/PDP antes de subir presupuesto de ads." : "Elegir un canal principal y una metrica de decision por 14 dias.",
       "Crear tablero simple: visitas, conversion, AOV, margen, CAC, recompra y devoluciones.",
       "Probar mensajes por avatar antes de producir mas creativos.",
       "Usar clientes actuales para extraer objeciones, reviews y lenguaje real.",
     ],
     messaging: [
+      ...(creativePerformanceFocus ? ["Hook de performance: que diferencia al ganador del perdedor en los primeros 3 segundos."] : []),
       "Hook de dolor: lo que el cliente intenta resolver hoy.",
       "Hook de resultado: como se ve la vida despues de comprar.",
       "Hook de prueba: evidencia, reviews, antes/despues o comparacion.",
@@ -3334,6 +3675,12 @@ function buildBrandAudit(report, brand) {
       "Documentar cada experimento con hipotesis, metrica y decision.",
     ],
     nextExperiments: [
+      ...(creativePerformanceFocus
+        ? [
+            "Subir o pegar links de 3 creativos ganadores y 3 perdedores con metricas basicas.",
+            "Separar videos virales organicos de ads pagados; medir si el mismo angulo vende cuando tiene CTA/oferta.",
+          ]
+        : []),
       "Pegar URL de marca y 3 productos top para una auditoria mas precisa.",
       "Conectar Shopify cuando el install flow este listo para leer catalogo real.",
       "Ejecutar filtro de rentabilidad con AOV, costo, envio, margen y CAC objetivo.",
@@ -3788,7 +4135,7 @@ function buildPrompt(report) {
   }
   if (report.businessStage === "brand") {
     const brand = normalizeBrandContext(report);
-    return `Actua como Agent Genia. El usuario tiene o quiere crear una marca: ${brand.name}. Solicitud: "${report.naturalRequest}". Adjuntos: ${attachments}. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si pide competencia o inspiracion, desglosa hooks, headlines, formato, avatar y pain points; separa evidencia observada de hipotesis y no copies claims. Si pide naming, colores o identidad visual, crea brandPlan con nombre recomendado, opciones de nombre, paleta hex y checks de disponibilidad. Si pide pagina web/landing o creas brandPlan para marca nueva, crea websitePlan con hero, secciones, copy, aplicacion de colores y pasos de build. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
+    return `Actua como Agent Genia. El usuario tiene o quiere crear una marca: ${brand.name}. Solicitud: "${report.naturalRequest}". Adjuntos: ${attachments}. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si pide competencia o inspiracion, desglosa hooks, headlines, formato, avatar y pain points; separa evidencia observada de hipotesis y no copies claims. Si pide rendimiento de ads, creativos ganadores/perdedores, videos organicos virales, TikTok/Reels/UGC o performance creativa, compara paid vs organico y separa ganadores, bajo rendimiento y sin datos suficientes; analiza first frame, hook, guion, formato, avatar, pain point, prueba visual, CTA, oferta y metricas necesarias como CTR, CPA, ROAS, watch time, completion, shares, saves y conversion. No trates viralidad como prueba de ventas sin datos de intencion y conversion. Si pide naming, colores o identidad visual, crea brandPlan con nombre recomendado, opciones de nombre, paleta hex y checks de disponibilidad. Si pide pagina web/landing o creas brandPlan para marca nueva, crea websitePlan con hero, secciones, copy, aplicacion de colores y pasos de build. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
   }
   return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Adjuntos: ${attachments}. Decide que herramienta interna usar. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Si hay intencion de crear marca, naming, colores o identidad visual, usa brand strategy helper y devuelve brandPlan. Si hay intencion de pagina web/landing, o brandPlan necesita convertirse en web, devuelve websitePlan. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
 }
@@ -3875,6 +4222,7 @@ function buildBrandMarkdown(report) {
   const brand = normalizeBrandContext(report);
   const audit = buildBrandAudit(report, brand);
   const competitorInspiration = buildCompetitorInspiration(report, brand);
+  const creativePerformance = buildCreativePerformanceLab(report, brand, competitorInspiration);
   const shopifySection = report.shopify?.shop ? buildShopifyMarkdown(report) : "";
   const brandPlan = extractBrandPlan(report);
   const websitePlan = extractWebsitePlan(report) || (brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
@@ -3908,6 +4256,8 @@ ${audit.risks.map((item) => `- ${item}`).join("\n")}
 | --- | --- | --- | --- | --- |
 ${competitorInspiration.rows.map((row) => `| ${row.format} | ${row.avatar} | ${row.painPoint} | ${row.hook} | ${row.headline} |`).join("\n")}
 
+${buildCreativePerformanceMarkdown(creativePerformance)}
+
 ## Oferta
 
 ${audit.offer.map((item) => `- ${item}`).join("\n")}
@@ -3924,6 +4274,31 @@ ${audit.conversion.map((item) => `- ${item}`).join("\n")}
 
 ${audit.nextExperiments.map((item) => `- ${item}`).join("\n")}
 `;
+}
+
+function buildCreativePerformanceMarkdown(lab) {
+  if (!lab?.shouldRender) return "";
+  return `## Patrones de performance creativa
+
+${lab.summary}
+
+Confianza: ${lab.confidence}
+
+| Fuente | Estado | Formato | Hook | Elementos | Siguiente test |
+| --- | --- | --- | --- | --- | --- |
+${(lab.rows || []).map((row) => `| ${row.source} | ${row.status} | ${row.format} | ${row.hook} | ${row.elements} | ${row.nextTest} |`).join("\n")}
+
+### Patrones ganadores
+
+${(lab.winnerPatterns || []).map((item) => `- ${item}`).join("\n")}
+
+### Patrones que suelen perder
+
+${(lab.loserPatterns || []).map((item) => `- ${item}`).join("\n")}
+
+### Metricas necesarias
+
+${(lab.metricChecklist || []).map((item) => `- ${item}`).join("\n")}`;
 }
 
 function buildBrandPlanMarkdown(brandPlan) {
@@ -4484,6 +4859,7 @@ function attachmentKind(file) {
   const type = file.type || "";
   const name = file.name || "";
   if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(name)) return "video";
   if (type === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
   if (isDatabaseAttachment(file)) return "database";
   if (/\.(docx?|xlsx?|csv|json)$/i.test(name)) return "document";
@@ -4493,6 +4869,7 @@ function attachmentKind(file) {
 
 function attachmentLabel(attachment) {
   if (attachment.kind === "image") return "imagen";
+  if (attachment.kind === "video") return "video";
   if (attachment.kind === "pdf") return "PDF";
   if (attachment.kind === "database") return "base de datos";
   if (attachment.contentMode === "text" || attachment.kind === "text") return "texto";
@@ -4509,6 +4886,7 @@ function attachmentSummary(attachments = []) {
 
 function iconForAttachment(attachment) {
   if (attachment.kind === "image") return "image";
+  if (attachment.kind === "video") return "video";
   if (attachment.kind === "pdf") return "file-text";
   if (attachment.kind === "database") return "database";
   if (attachment.contentMode === "text" || attachment.kind === "text") return "file-type";
@@ -4541,6 +4919,10 @@ function isTextAttachment(file) {
 }
 
 function fallbackMimeType(name = "") {
+  if (/\.mp4$/i.test(name)) return "video/mp4";
+  if (/\.mov$/i.test(name)) return "video/quicktime";
+  if (/\.webm$/i.test(name)) return "video/webm";
+  if (/\.m4v$/i.test(name)) return "video/x-m4v";
   if (/\.pdf$/i.test(name)) return "application/pdf";
   if (/\.json$/i.test(name)) return "application/json";
   if (/\.csv$/i.test(name)) return "text/csv";

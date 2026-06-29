@@ -1314,6 +1314,50 @@ textarea:focus {
   line-height: 1.35;
 }
 
+.creative-lab-card .pill-row {
+  justify-content: flex-start;
+}
+
+.creative-split {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.creative-split.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.creative-split h4 {
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+.creative-split ul {
+  display: grid;
+  gap: 7px;
+}
+
+.creative-table-wrap {
+  margin-top: 16px;
+}
+
+.creative-performance-table td {
+  vertical-align: top;
+}
+
+.creative-performance-table small {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  margin-top: 4px;
+}
+
 .report-card ul,
 .report-card ol {
   margin: 0;
@@ -2011,6 +2055,8 @@ textarea:focus {
   .report-grid,
   .metric-row,
   .agent-work-grid,
+  .creative-split,
+  .creative-split.three,
   .inspiration-card {
     grid-template-columns: 1fr;
   }

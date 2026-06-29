@@ -233,10 +233,10 @@ Inferencias del frontend, revisalas y corrigelas si hace falta:
 
 Herramientas internas disponibles:
 - $alibaba-sourcing-agent: usar cuando la solicitud mencione Alibaba, proveedores, fabricantes, sourcing, MOQ, DDP, muestras, precio de proveedor, negociar con proveedor o encontrar productos para vender.
-- ecom research: usar para research de marca, problema, Meta Ads, Amazon reviews, TikTok, avatar, hooks y validacion de oportunidad.
+- ecom research: usar para research de marca, problema, Meta Ads, Amazon reviews, TikTok, avatar, hooks, performance creativa y validacion de oportunidad.
 - unit economics filter: usar cuando la solicitud pida costos, margen, CAC, ROAS, break even, rentabilidad o si conviene lanzar.
 - shipping rate quote: usar cuando la solicitud pida cotizar envio, tarifa de paqueteria, costo de paquete, origen/destino, CP, peso o medidas.
-- brand audit: usar cuando businessStage sea brand o el usuario tenga una marca/tienda existente. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y experimentos. Si pide competencia o inspiracion, desglosa hooks, headlines, formato, avatar y pain points.
+- brand audit: usar cuando businessStage sea brand o el usuario tenga una marca/tienda existente. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y experimentos. Si pide competencia o inspiracion, desglosa hooks, headlines, formato, avatar y pain points. Si pide ads/videos con mejor o peor rendimiento, usa creativePerformance.
 - shopify store audit: usar cuando businessStage sea shopify o cuando exista una tienda Shopify conectada. Lee el snapshot como contexto real; no pidas tokens manuales.
 - retail to online agent: usar cuando el usuario ya tiene tienda fisica/local/negocio offline y quiere vender en internet, crear pagina web, elegir TikTok organico vs paid ads, entender producto, analizar competencia o crear contenido.
 - brand strategy helper: usar cuando la solicitud pida nombre de marca, colores, identidad visual, branding, nicho/problema o crear una marca desde cero.
@@ -248,6 +248,8 @@ Reglas:
 - Si el usuario tiene tienda fisica y quiere vender online, primero entiende producto/oferta/margen/capacidad; recomienda web simple, canal inicial, research de competencia y contenido. No asumas que Shopify audit aplica si no hay tienda Shopify conectada.
 - Si businessStage es brand, responde como auditoria de marca existente. No trates al usuario como principiante sin tienda; separa lo que ya existe, lo que falta medir y las decisiones de crecimiento.
 - Si la solicitud pide competencia, competidores, inspiracion, hooks, headlines, formato, avatar o pain points, entrega un bloque de inspiracion competitiva. Separa evidencia observada de hipotesis; no inventes que viste anuncios si no los pudiste verificar. El desglose minimo debe cubrir: hook, headline, formato, avatar y pain point.
+- Si la solicitud pide ads con mejor rendimiento, bajo rendimiento, ganadores/perdedores, videos organicos virales, TikTok/Reels/UGC, CTR, CPA, ROAS, watch time o performance creativa, llena creativePerformance. Debe comparar paid ads vs organico viral cuando aplique, separar winners y underperformers, explicar first frame, hook, guion, formato, avatar, pain point, prueba visual, CTA, oferta y metrica. No trates viralidad como ventas; marca si la evidencia es observada, declarada por el usuario, adjunto, link o hipotesis.
+- Para creativePerformance, si faltan metricas, no inventes numeros. Pide o lista: spend, impressions, CTR, CPM, CPC, CPA, ROAS, purchases, 3s views, average watch time, completion rate, shares, saves, comentarios con intencion, profile clicks, sesiones, add-to-cart, conversion, AOV y margen.
 - Si businessStage es shopify, conserva la auditoria dentro del mismo schema y, cuando tengas datos suficientes, llena shopifyPlan con resumen de tienda, oportunidades de catalogo y acciones prioritarias.
 - Si eliges Alibaba sourcing, usa $alibaba-sourcing-agent como herramienta interna. No lo presentes como pagina separada ni pidas al usuario llenar formulario extra.
 - Si detectas intencion de costos, margen, CAC, ROAS, break even o rentabilidad, separa numeros dados de supuestos y no recomiendes lanzar sin pasar por unit economics.
@@ -576,10 +578,11 @@ function buildAttachmentPrompt(attachments, files) {
 ${fileLines.join("\n")}
 
 Reglas para adjuntos:
-- Usa los adjuntos como contexto de producto, proveedor, empaque, capturas de Alibaba, listas de precios o especificaciones.
+- Usa los adjuntos como contexto de producto, proveedor, empaque, capturas de Alibaba, listas de precios, especificaciones, capturas de ads, exports de performance o creativos/video de marca.
 - Si existe archivo local, puedes inspeccionarlo desde el directorio de trabajo antes de responder.
 - Si un adjunto solo tiene metadata o no puedes leerlo, dilo en limitations y no inventes contenido visual, precios ni specs.
-- Incorpora insights relevantes de los adjuntos en supplierSearchPlan, qualityPlan, negotiationPlan y beginnerNextSteps.`;
+- Si el usuario pide analisis de marca/ads/organico, incorpora adjuntos relevantes en creativePerformance y separa observacion real de hipotesis.
+- Incorpora insights relevantes de los adjuntos en supplierSearchPlan, qualityPlan, negotiationPlan, creativePerformance y beginnerNextSteps.`;
 }
 
 function runProcess(command, args, stdin, timeoutMs) {
