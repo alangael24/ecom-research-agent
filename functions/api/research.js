@@ -718,11 +718,11 @@ function shouldUseToolFactory(payload) {
     );
   const appNeed =
     knownPaidAppNeed ||
-    /app(s)?|plugin|plug-?in|extensi[oó]n|herramienta|tool|widget|feature|funci[oó]n|automatizaci[oó]n|bloque|secci[oó]n/.test(text);
+    /app(s)?|plugin|plug-?in|extensi[oó]n|herramienta|tool|widget|feature|funci[oó]n|automatizaci[oó]n|bloque|secci[oó]n|review|reviews|reseñ|testimonio|rating/.test(text);
   const replacementIntent =
     /paga|pagada|mensualidad|subscription|suscripci[oó]n|gratis|sin pagar|ahorrar|reemplaz|sustituir|alternativa|evitar pagar|third[- ]party|terceros|otra app/.test(text);
   const buildIntent =
-    /crear|hacer|construir|generar|instalar|configurar|necesito|quiero|puede hacer|que haga/.test(text);
+    /crear|hacer|construir|generar|instalar|configurar|necesito|quiero|puede hacer|que haga|agreg|añad|insert|inyect|meter|poner/.test(text);
   const lifecycleIntent =
     /actualiz|mejor|edit|itera|modific|cambi|refresc|paus|archiv|desactiv|apaga|apagar|reactiv|activar|enciende|elimin|borr/.test(text);
   const shopifyContext =
@@ -803,24 +803,43 @@ async function maybeExecuteToolFactoryAction({ request, env, payload, report }) 
   const replacement = report.appReplacement || {};
   const existingTool = replacement.existingTool || null;
   const text = payloadText(payload).toLowerCase();
+  const targetPage = inferTargetPageInjection(payload);
   const statusIntent = existingTool?.id ? inferExistingToolStatusIntent(text) : "";
-  const shouldUpdateExisting = Boolean(shop && existingTool?.id && wantsExistingToolUpdate(text));
+  const shouldInjectIntoPage = Boolean(shop && wantsExistingPageInjection(text));
+  const shouldUpdateExisting = Boolean(shop && existingTool?.id && wantsExistingToolUpdate(text) && !shouldInjectIntoPage);
   const shouldChangeStatus = Boolean(shop && existingTool?.id && statusIntent && !shouldUpdateExisting);
   const shouldPublishNew = Boolean(shop && !existingTool && replacement.canCreateNow && wantsToolPublication(text));
 
-  if (!shouldUpdateExisting && !shouldChangeStatus && !shouldPublishNew) return null;
+  if (shouldInjectIntoPage && !targetPage) {
+    applyToolFactoryActionResult(report, {
+      type: "inject_tool_section",
+      status: "failed",
+      message: "Puedo inyectar la herramienta en una Shopify Page existente, pero necesito la URL o handle de la LP. Ejemplo: /pages/mi-landing.",
+    });
+    return report.toolAction;
+  }
 
-  const actionType = shouldUpdateExisting ? "update_existing_tool" : shouldChangeStatus ? "change_tool_status" : "create_tool";
-  const method = shouldPublishNew ? "POST" : "PATCH";
-  const body = shouldUpdateExisting
-    ? { shop, id: existingTool.id, status: "active", report }
-    : shouldChangeStatus
-      ? { shop, id: existingTool.id, status: statusIntent }
+  if (!shouldInjectIntoPage && !shouldUpdateExisting && !shouldChangeStatus && !shouldPublishNew) return null;
+
+  const actionType = shouldInjectIntoPage
+    ? "inject_tool_section"
+    : shouldUpdateExisting
+      ? "update_existing_tool"
+      : shouldChangeStatus
+        ? "change_tool_status"
+        : "create_tool";
+  const method = shouldPublishNew || shouldInjectIntoPage ? "POST" : "PATCH";
+  const body = shouldInjectIntoPage
+    ? { shop, report, targetPage }
+    : shouldUpdateExisting
+      ? { shop, id: existingTool.id, status: "active", report }
+      : shouldChangeStatus
+        ? { shop, id: existingTool.id, status: statusIntent }
       : { shop, report };
 
   try {
     const actionRequest = buildInternalShopifyToolRequest(request, method, body);
-    const response = shouldPublishNew
+    const response = shouldPublishNew || shouldInjectIntoPage
       ? await createShopifyToolFromRequest({ request: actionRequest, env })
       : await updateShopifyToolFromRequest({ request: actionRequest, env });
     const result = await response.json().catch(() => ({}));
@@ -839,7 +858,9 @@ async function maybeExecuteToolFactoryAction({ request, env, payload, report }) 
       status: "completed",
       tool: result.tool,
       message:
-        actionType === "update_existing_tool"
+        actionType === "inject_tool_section"
+          ? `Listo: inyecte "${result.tool.title || "la herramienta"}" en la Page existente ${result.tool.injection?.targetPageHandle || ""}.`
+          : actionType === "update_existing_tool"
           ? `Listo: actualice la herramienta existente "${result.tool.title || existingTool.title || "Agent Genia"}" en Shopify.`
           : actionType === "change_tool_status"
             ? `Listo: deje "${result.tool.title || existingTool.title || "la herramienta"}" en estado ${result.tool.status}.`
@@ -898,6 +919,8 @@ function applyToolFactoryActionResult(report, action) {
     report.nextSteps = [
       action.type === "change_tool_status"
         ? "Para hacer otro cambio, pidelo en lenguaje natural: actualizar, reactivar, pausar, archivar o publicar."
+        : action.type === "inject_tool_section"
+          ? "Revisar la LP existente en Shopify y confirmar que la seccion insertada se ve bien en mobile y desktop."
         : "Revisar la pagina publicada en Shopify y validar que el texto, CTA y formulario sean correctos.",
       ...(Array.isArray(report.nextSteps) ? report.nextSteps : []),
     ].slice(0, 8);
@@ -923,6 +946,52 @@ function wantsToolPublication(text) {
   return /public[aá]|instal|sube|subir|aplica|cr[eé]ala|crear[^.]{0,80}(shopify|tienda)|hazlo[^.]{0,80}(shopify|tienda)|hacerlo[^.]{0,80}(shopify|tienda)/.test(text);
 }
 
+function wantsExistingPageInjection(text) {
+  const injectIntent = /agreg|añad|insert|inyect|meter|poner/.test(text);
+  const pageIntent = /lp|landing|p[aá]gina existente|page existente|\/pages\/|secci[oó]n|bloque/.test(text);
+  const toolIntent = /review|reviews|reseñ|testimonio|rating|quiz|faq|confianza|lead|formulario|devoluciones|herramienta|tool|widget|secci[oó]n/.test(text);
+  return injectIntent && pageIntent && toolIntent;
+}
+
+function inferTargetPageInjection(payload) {
+  const text = payloadText(payload);
+  const urlMatch = text.match(/https?:\/\/[^\s)]+\/pages\/[^\s)]+|\/pages\/[a-z0-9][a-z0-9-]*/i);
+  const handleMatch = text.match(/(?:handle|slug)\s*[:=]?\s*([a-z0-9][a-z0-9-]{1,120})/i);
+  const explicitPage = payload.shopify?.targetPage || payload.targetPage || null;
+  const source = explicitPage && typeof explicitPage === "object" ? explicitPage : {};
+  const url = source.url || source.href || urlMatch?.[0] || "";
+  const handle = source.handle || handleMatch?.[1] || handleFromTextPageUrl(url);
+  const id = source.id || "";
+  if (!id && !handle && !url) return null;
+  return {
+    id,
+    handle,
+    url,
+    placement: inferTargetPlacement(text),
+  };
+}
+
+function handleFromTextPageUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const path = raw.startsWith("/") ? raw : safeUrlPath(raw);
+  const match = path.match(/\/pages\/([^/?#\s]+)/i);
+  return match?.[1] ? decodeURIComponent(match[1]) : "";
+}
+
+function safeUrlPath(value) {
+  try {
+    return new URL(value).pathname;
+  } catch {
+    return "";
+  }
+}
+
+function inferTargetPlacement(text) {
+  if (/arriba|inicio|top|antes/.test(text)) return "top";
+  return "end";
+}
+
 function inferExistingToolStatusIntent(text) {
   if (/archiv|elimin|borr|quitar/.test(text)) return "archived";
   if (/paus|desactiv|apaga|apagar|deten|suspende/.test(text)) return "paused";
@@ -932,6 +1001,7 @@ function inferExistingToolStatusIntent(text) {
 
 function toolFactoryActionVerb(type) {
   if (type === "update_existing_tool") return "actualizar";
+  if (type === "inject_tool_section") return "inyectar";
   if (type === "change_tool_status") return "cambiar el estado de";
   return "publicar";
 }
@@ -960,7 +1030,21 @@ function inferToolFactoryCategory(text) {
 }
 
 function inferToolFactoryCapability(text) {
+  const prioritized = prioritizeToolCapability(text);
+  if (prioritized) return prioritized;
   return TOOL_FACTORY_CAPABILITIES.find((capability) => capability.matcher.test(text)) || fallbackToolFactoryCapability();
+}
+
+function prioritizeToolCapability(text) {
+  const priorities = [
+    ["prueba social y reviews", /review|reviews|reseñ|testimonio|rating|judgeme|judge\.me|loox|yotpo/],
+    ["quiz y recomendacion", /quiz|recomendador|rutina|diagn[oó]stico|selector|finder|product finder|routine finder/],
+    ["soporte y confianza", /faq|preguntas|soporte|garant[ií]a|confianza|trust|dudas/],
+    ["captura de leads y popups", /lead|leads|popup|pop-up|email capture|captura|newsletter|privy|wisepops/],
+    ["devoluciones y postcompra", /return|returns|devoluci[oó]n|cambio|postcompra|post-?purchase|aftership/],
+  ];
+  const match = priorities.find(([, pattern]) => pattern.test(text));
+  return match ? toolCapabilityByCategory(match[0]) : null;
 }
 
 function toolCapabilityByCategory(category) {
