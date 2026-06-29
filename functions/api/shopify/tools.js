@@ -14,6 +14,7 @@ const MAX_PAYLOAD_LENGTH = 200000;
 const MAX_TITLE_LENGTH = 255;
 const MAX_HANDLE_LENGTH = 255;
 const TOOL_PREFIX = "shopify:tool:";
+const TOOL_STATUSES = new Set(["active", "paused", "archived"]);
 
 const PAGE_RUNTIME_CATEGORIES = new Set([
   "constructor de paginas y secciones",
@@ -172,12 +173,72 @@ export async function onRequestGet(context) {
   });
 }
 
+export async function onRequestPatch(context) {
+  const { request, env } = context;
+  const configError = requireShopifyConfig(env);
+  if (configError) {
+    return json({ ok: false, code: "shopify_not_configured", message: configError }, 503);
+  }
+
+  const authorized = await authorizeToolRequest(request, env);
+  if (!authorized) {
+    return json({ ok: false, code: "auth_required", message: "Inicia sesion para gestionar herramientas de Shopify." }, 401);
+  }
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ ok: false, code: "invalid_json", message: "Request body must be JSON." }, 400);
+  }
+
+  const shop = normalizeShopifyDomain(payload.shop);
+  if (!isValidShopDomain(shop)) {
+    return json({ ok: false, code: "invalid_shop", message: "Use a valid connected Shopify shop." }, 400);
+  }
+  const id = cleanText(payload.id, "", 80);
+  if (!id) {
+    return json({ ok: false, code: "invalid_tool", message: "Missing tool id." }, 400);
+  }
+  const status = cleanText(payload.status, "", 30).toLowerCase();
+  if (!TOOL_STATUSES.has(status)) {
+    return json({ ok: false, code: "invalid_status", message: "Use active, paused, or archived." }, 400);
+  }
+
+  const store = await getConnectedStore(env, shop);
+  if (!store) {
+    return json(
+      {
+        ok: false,
+        code: "shop_not_connected",
+        message: "Esta tienda no esta conectada. Vuelve a iniciar sesion con Shopify.",
+      },
+      404,
+    );
+  }
+
+  const key = toolKey(shop, id);
+  const record = await env.SHOPIFY_STORES.get(key, { type: "json" });
+  if (!record) {
+    return json({ ok: false, code: "tool_not_found", message: "No se encontro esta herramienta." }, 404);
+  }
+
+  const updatedRecord = {
+    ...record,
+    status,
+    statusReason: cleanText(payload.reason, "", 180),
+    updatedAt: new Date().toISOString(),
+  };
+  await saveToolRecord(env, updatedRecord);
+  return json({ ok: true, tool: publicToolRecord(updatedRecord) });
+}
+
 export async function onRequestOptions() {
   return new Response(null, {
     status: 204,
     headers: {
       "access-control-allow-origin": "*",
-      "access-control-allow-methods": "GET,POST,OPTIONS",
+      "access-control-allow-methods": "GET,PATCH,POST,OPTIONS",
       "access-control-allow-headers": "accept,authorization,content-type,x-app-password",
     },
   });
@@ -266,6 +327,7 @@ function publicToolRecord(record) {
     shop: record.shop,
     source: record.source || "agentgenia_tool_factory",
     status: record.status || "active",
+    statusReason: record.statusReason || "",
     title: record.title || "",
     handle: record.handle || "",
     category: record.category || "",

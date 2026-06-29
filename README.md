@@ -165,6 +165,7 @@ Login endpoints:
 - `POST /api/shopify/pages`: creates a real Shopify Online Store page after the user approves the preview.
 - `GET /api/shopify/tools?shop=store.myshopify.com`: lists Agent Genia mini-tools registered for a connected Shopify store.
 - `POST /api/shopify/tools`: creates a real Shopify Online Store Page MVP for supported Tool Factory reports and records it as an installed mini-tool.
+- `PATCH /api/shopify/tools`: changes an installed mini-tool status to `active`, `paused`, or `archived`.
 - `GET /api/auth/shopify/start?shop=store.myshopify.com`: optional direct-shop Shopify login.
 - `GET /api/auth/shopify/callback`: validates direct-shop Shopify OAuth and creates the session.
 
@@ -193,6 +194,7 @@ Cloudflare endpoints:
 - `POST /api/shopify/pages`: publishes an approved Agent Genia page draft to Shopify Pages.
 - `GET /api/shopify/tools?shop=store.myshopify.com`: lists registered Agent Genia mini-tools for the store.
 - `POST /api/shopify/tools`: publishes an approved Tool Factory MVP as a safe Shopify Page when the category supports the Page runtime, then persists a public mini-tool record in KV.
+- `PATCH /api/shopify/tools`: updates mini-tool lifecycle status in KV without deleting Shopify content.
 - `DELETE /api/shopify`: disconnects a store by deleting its KV record.
 
 If `write_content` is added after a store was already connected, the merchant must reconnect/reinstall the Shopify app so Shopify grants a token with the new scope.

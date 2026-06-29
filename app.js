@@ -962,6 +962,11 @@ function handleDocumentClick(event) {
   const createToolButton = target?.closest("[data-create-shopify-tool]");
   if (createToolButton) {
     createShopifyTool(createToolButton);
+    return;
+  }
+  const statusButton = target?.closest("[data-tool-status-action]");
+  if (statusButton) {
+    updateShopifyToolStatus(statusButton);
   }
 }
 
@@ -2310,11 +2315,25 @@ function renderInstalledShopifyTools({ tools, loaded, loading, error }) {
       .map(
         (tool) => `<div>
           <dt>${tool.url ? `<a class="link-pill" href="${escapeHtml(tool.url)}" target="_blank" rel="noreferrer">${escapeHtml(tool.title || tool.requestedTool?.name || "Herramienta")}</a>` : escapeHtml(tool.title || tool.requestedTool?.name || "Herramienta")}</dt>
-          <dd>${escapeHtml([tool.category, tool.mode || tool.publishMode, tool.status].filter(Boolean).join(" · "))}</dd>
+          <dd>
+            ${escapeHtml([tool.category, tool.mode || tool.publishMode, tool.status].filter(Boolean).join(" · "))}
+            ${renderInstalledToolActions(tool)}
+          </dd>
         </div>`,
       )
       .join("")}
   </dl>`;
+}
+
+function renderInstalledToolActions(tool) {
+  if (!tool?.id || !tool?.shop) return "";
+  const status = tool.status || "active";
+  const nextPrimary = status === "active" ? { status: "paused", label: "Pausar", icon: "pause" } : { status: "active", label: "Activar", icon: "play" };
+  const archive = status === "archived" ? "" : `<button class="pill link-pill" type="button" data-tool-status-action data-tool-id="${escapeHtml(tool.id)}" data-shop="${escapeHtml(tool.shop)}" data-status="archived"><i data-lucide="archive"></i>Archivar</button>`;
+  return `<span class="pill-row">
+    <button class="pill link-pill" type="button" data-tool-status-action data-tool-id="${escapeHtml(tool.id)}" data-shop="${escapeHtml(tool.shop)}" data-status="${nextPrimary.status}"><i data-lucide="${nextPrimary.icon}"></i>${nextPrimary.label}</button>
+    ${archive}
+  </span>`;
 }
 
 function renderToolSpecCard(toolSpec) {
@@ -2413,6 +2432,50 @@ function mergeInstalledShopifyTools(existingTools, newTool) {
   const tools = Array.isArray(existingTools) ? existingTools : [];
   if (!newTool?.id) return tools;
   return [newTool, ...tools.filter((tool) => tool.id !== newTool.id)];
+}
+
+async function updateShopifyToolStatus(button) {
+  const report = state.latest;
+  const shop = button.dataset.shop || report?.shopify?.shop || "";
+  const id = button.dataset.toolId || "";
+  const status = button.dataset.status || "";
+  if (!report || report.type !== "tool_factory" || !shop || !id || !status) return;
+
+  const previousLabel = button.textContent || "";
+  button.disabled = true;
+  button.innerHTML = '<i data-lucide="loader-circle"></i> Guardando...';
+  lucide.createIcons();
+
+  try {
+    const response = await fetch("./api/shopify/tools", {
+      method: "PATCH",
+      headers: shopifyToolHeaders({ "content-type": "application/json" }),
+      credentials: "include",
+      body: JSON.stringify({ shop, id, status }),
+    });
+    const body = await response.json();
+    if (!response.ok || !body.ok) {
+      throw new Error(body.message || "No se pudo actualizar la herramienta.");
+    }
+    report.installedTools = mergeInstalledShopifyTools(report.installedTools, body.tool);
+    if (report.publication?.id === body.tool.id) report.publication = body.tool;
+    state.latest = report;
+    saveState(report);
+    renderToolFactoryReport(report);
+    activateTab("tools");
+    showToast(`Herramienta ${toolStatusLabel(body.tool.status)}`);
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = previousLabel;
+    showToast(error instanceof Error ? error.message : "No se pudo actualizar la herramienta.");
+  }
+}
+
+function toolStatusLabel(status) {
+  if (status === "active") return "activada";
+  if (status === "paused") return "pausada";
+  if (status === "archived") return "archivada";
+  return "actualizada";
 }
 
 async function createShopifyTool(button) {
