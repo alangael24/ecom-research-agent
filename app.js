@@ -661,6 +661,7 @@ async function bootAuth() {
       : null;
 
     if (!config.authRequired) {
+      state.user = await fetchSession();
       enterMvpApp();
       return;
     }
@@ -947,7 +948,15 @@ function serializeAttachments() {
 async function handleSubmit(event) {
   event.preventDefault();
   const data = readForm();
+  if (!canRunRealAgent()) {
+    queueLogin(data.naturalRequest);
+    return;
+  }
   await runResearch(data);
+}
+
+function canRunRealAgent() {
+  return Boolean(state.session?.access_token || state.user?.email || state.user?.provider);
 }
 
 async function runResearch(data) {
@@ -975,8 +984,6 @@ async function runResearch(data) {
     }
   }
 
-  const report = buildReport(data);
-
   try {
     const backend = await requestBackendReport(data);
     if (backend?.ok && backend.report) {
@@ -988,25 +995,27 @@ async function runResearch(data) {
         showToast(typedReportToast(backend.report));
         return;
       }
+      const report = buildReport(data);
       report.ai = backend.report;
       report.backendMode = "codex-harness";
       report.diagnostics = backend.diagnostics || null;
-    } else if (backend?.message) {
-      report.backendError = backend.message;
+      state.latest = report;
+      document.body.classList.add("report-ready");
+      resultPanel.hidden = false;
+      renderReport(report);
+      activateTab("brief");
+      saveState(report);
+      setLoading(false);
+      await loadHistory();
+      showToast("Research generado con backend real");
+      return;
     }
+    throw new Error(backend?.message || "El backend no devolvio un reporte.");
   } catch (error) {
-    report.backendError = error.message || "No se pudo conectar con el backend.";
+    renderAgentExecutionError(data, error);
+    setLoading(false);
+    return;
   }
-
-  state.latest = report;
-  document.body.classList.add("report-ready");
-  resultPanel.hidden = false;
-  renderReport(report);
-  activateTab("brief");
-  saveState(report);
-  setLoading(false);
-  await loadHistory();
-  showToast(report.ai ? "Sourcing generado con Codex" : "Plan guiado generado");
 }
 
 function renderTypedBackendReport(report) {
@@ -1058,6 +1067,46 @@ function typedReportToast(report) {
   if (report.type === "brand_whitespace") return "Whitespace de marca listo";
   if (report.type === "tool_factory") return "Tool Factory listo";
   return "Reporte listo";
+}
+
+function renderAgentExecutionError(data, error) {
+  const message = error instanceof Error ? error.message : "No se pudo ejecutar el agente.";
+  const report = {
+    type: "agent_error",
+    createdAt: new Date().toLocaleString("es-US", { dateStyle: "medium", timeStyle: "short" }),
+    naturalRequest: data.naturalRequest,
+    backendError: message,
+  };
+  state.latest = report;
+  document.body.classList.add("report-ready");
+  resultPanel.hidden = false;
+  setTabLabels(["Error", "Contexto", "Backend", "Siguiente", "Notas", ""]);
+  document.querySelector("#brief").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span notice-card">
+        <h3>El agente no se ejecuto</h3>
+        <p>${escapeHtml(message)}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="message-square-text"></i>${escapeHtml(data.naturalRequest)}</span>
+          <span class="pill"><i data-lucide="shield-alert"></i>Sin resultado simulado</span>
+        </div>
+      </article>
+      <article class="report-card">
+        <h3>Que significa</h3>
+        <p>La app no genero un reporte local de relleno. Hay que arreglar sesion, backend o harness antes de prometer que el agente trabajo.</p>
+      </article>
+      <article class="report-card">
+        <h3>Siguiente</h3>
+        <p>Inicia sesion de nuevo o revisa que HARNESS_URL/HARNESS_TOKEN esten activos en Cloudflare.</p>
+      </article>
+    </div>`;
+  ["tools", "suppliers", "negotiation", "ddp", "quality"].forEach((id) => {
+    const panel = document.querySelector(`#${id}`);
+    if (panel) panel.innerHTML = "";
+  });
+  activateTab("brief");
+  showToast("El agente no se ejecuto");
+  lucide.createIcons();
 }
 
 async function fetchSession() {
@@ -1593,14 +1642,12 @@ function buildReport(data) {
 }
 
 async function requestBackendReport(data) {
-  if (!state.session?.access_token) {
-    return null;
-  }
-
   const headers = {
     "content-type": "application/json",
-    authorization: `Bearer ${state.session.access_token}`,
   };
+  if (state.session?.access_token) {
+    headers.authorization = `Bearer ${state.session.access_token}`;
+  }
 
   const response = await fetch("./api/research", {
     method: "POST",

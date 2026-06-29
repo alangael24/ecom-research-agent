@@ -157,9 +157,11 @@ The Codex harness can also return `angleWhitespaceValidator` inside the normal b
 
 ## MVP login mode
 
-By default the app runs as an MVP without forcing email/password login. If Supabase is not configured, or if `AUTH_REQUIRED` is not set to `true`, the main page opens directly and uses the local guided agent/report flow.
+By default the app can show the main page without forcing Supabase email/password login. It no longer treats the local guided report as a successful agent run. Submitting a prompt requires either a Supabase session or a signed legacy OAuth cookie from Google/Shopify/Tiendanube; otherwise the browser sends the user to `/login`.
 
 Set `AUTH_REQUIRED=true` when you want production private mode with Supabase users, saved runs, uploads, and history. In that mode the browser sends `Authorization: Bearer <supabase_access_token>` to `/api/research`, `/api/runs`, and `/api/runs/:id`.
+
+When `AUTH_REQUIRED` is not `true`, Google/Shopify/Tiendanube OAuth can still create a signed `agent_genia_session` cookie. `/api/research` accepts that cookie and runs in stateless mode: it can execute internal tools or call the Codex harness, but it does not persist history, attachments, suppliers, or runs to Supabase.
 
 Google/Shopify OAuth endpoints remain in the repo for connector/login experiments, but they are not the primary production auth path for the research agent.
 

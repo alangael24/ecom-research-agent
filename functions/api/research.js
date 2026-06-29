@@ -11,6 +11,7 @@ import {
   onRequestPatch as updateShopifyToolFromRequest,
   onRequestPost as createShopifyToolFromRequest,
 } from "./shopify/tools.js";
+import { readSession } from "../_auth.js";
 
 const DEFAULT_TIMEOUT_MS = 900000;
 const ATTACHMENT_BUCKET = "research-attachments";
@@ -227,120 +228,47 @@ export async function onRequestPost(context) {
       throw httpError(400, "invalid_payload", validationError);
     }
 
-    const auth = await requireActiveUser(request, env);
-    runContext = await createResearchRun(auth.config, auth.accessToken, auth.user, payload);
-    await insertAgentEvent(auth.config, auth.accessToken, auth.user.id, runContext.id, {
-      step: "request_received",
-      tool_name: payload.selectedInternalTool || "agent-genia",
-      status: "running",
-      payload_json: {
-        naturalRequest: payload.naturalRequest,
-        attachments: (payload.attachments || []).map(attachmentMetadata),
-      },
-    });
-
-    const storedAttachments = await persistAttachments(auth.config, auth.accessToken, auth.user.id, runContext.id, payload.attachments || []);
-    const agentPayload = {
+    const auth = await resolveResearchAuth(request, env);
+    let persistence = null;
+    let agentPayload = {
       ...payload,
-      userId: auth.user.id,
-      researchRunId: runContext.id,
-      attachments: (payload.attachments || []).map((attachment, index) => ({
-        ...attachment,
-        storageBucket: storedAttachments[index]?.storage_bucket || ATTACHMENT_BUCKET,
-        storagePath: storedAttachments[index]?.storage_path || "",
-      })),
+      userId: auth.user.id || auth.user.email || "stateless-user",
+      researchRunId: "",
+      attachments: payload.attachments || [],
     };
-    const forceHarnessForAvatarResearch = shouldUseAvatarResearchHarness(agentPayload);
 
-    if (!forceHarnessForAvatarResearch && shouldUseBrandWhitespaceTool(agentPayload)) {
-      const report = runBrandWhitespaceTool(agentPayload);
-      const diagnostics = {
-        tool: "brand_whitespace_tool",
-        mode: "internal_tool",
-        evidenceMode: "declared_context_and_connected_catalog",
+    if (auth.kind === "supabase") {
+      runContext = await createResearchRun(auth.config, auth.accessToken, auth.user, payload);
+      persistence = {
+        config: auth.config,
+        accessToken: auth.accessToken,
+        userId: auth.user.id,
+        runId: runContext.id,
       };
-      await persistReport(auth.config, auth.accessToken, auth.user.id, runContext.id, agentPayload, report);
-      return json({ ok: true, report, diagnostics, runId: runContext.id });
-    }
+      await insertAgentEvent(auth.config, auth.accessToken, auth.user.id, runContext.id, {
+        step: "request_received",
+        tool_name: payload.selectedInternalTool || "agent-genia",
+        status: "running",
+        payload_json: {
+          naturalRequest: payload.naturalRequest,
+          attachments: (payload.attachments || []).map(attachmentMetadata),
+        },
+      });
 
-    if (!forceHarnessForAvatarResearch && shouldUseToolFactory(agentPayload)) {
-      const report = runToolFactory(agentPayload);
-      await maybeExecuteToolFactoryAction({ request, env, payload: agentPayload, report });
-      const diagnostics = {
-        tool: "agentgenia_tool_factory",
-        mode: "internal_tool",
-        buildMode: "blueprint_first",
+      const storedAttachments = await persistAttachments(auth.config, auth.accessToken, auth.user.id, runContext.id, payload.attachments || []);
+      agentPayload = {
+        ...payload,
+        userId: auth.user.id,
+        researchRunId: runContext.id,
+        attachments: (payload.attachments || []).map((attachment, index) => ({
+          ...attachment,
+          storageBucket: storedAttachments[index]?.storage_bucket || ATTACHMENT_BUCKET,
+          storagePath: storedAttachments[index]?.storage_path || "",
+        })),
       };
-      await persistReport(auth.config, auth.accessToken, auth.user.id, runContext.id, agentPayload, report);
-      return json({ ok: true, report, diagnostics, runId: runContext.id });
     }
 
-    if (!forceHarnessForAvatarResearch && shouldUseShopifyPageBuilder(agentPayload)) {
-      const report = runShopifyPageBuilderTool(agentPayload);
-      const diagnostics = {
-        tool: "shopify_page_builder",
-        mode: "internal_tool",
-        publishesDirectly: false,
-      };
-      await persistReport(auth.config, auth.accessToken, auth.user.id, runContext.id, agentPayload, report);
-      return json({ ok: true, report, diagnostics, runId: runContext.id });
-    }
-
-    if (!forceHarnessForAvatarResearch && shouldUseRetailToOnlineTool(agentPayload)) {
-      const report = await runRetailToOnlineTool(agentPayload, env);
-      const diagnostics = {
-        tool: "retail_to_online_agent",
-        mode: "internal_tool",
-      };
-      await persistReport(auth.config, auth.accessToken, auth.user.id, runContext.id, agentPayload, report);
-      return json({ ok: true, report, diagnostics, runId: runContext.id });
-    }
-
-    if (!forceHarnessForAvatarResearch && shouldUseShippingRateTool(agentPayload)) {
-      const report = await runShippingRateTool(agentPayload, env);
-      const diagnostics = {
-        tool: "shipping_rate_quote",
-        mode: "internal_tool",
-        provider: "envia_rate_only",
-      };
-      await persistReport(auth.config, auth.accessToken, auth.user.id, runContext.id, agentPayload, report);
-      return json({ ok: true, report, diagnostics, runId: runContext.id });
-    }
-
-    if (
-      !forceHarnessForAvatarResearch &&
-      agentPayload.businessStage !== "brand" &&
-      shouldUseProfitabilityTool(agentPayload) &&
-      !shouldUseProblemDiscoveryTool(agentPayload) &&
-      !shouldUseProductCustomizationTool(agentPayload)
-    ) {
-      const report = await runProfitabilityTool(agentPayload, env);
-      const diagnostics = {
-        tool: "unit_economics_filter",
-        mode: "internal_tool",
-      };
-      await persistReport(auth.config, auth.accessToken, auth.user.id, runContext.id, agentPayload, report);
-      return json({ ok: true, report, diagnostics, runId: runContext.id });
-    }
-
-    if (!env.HARNESS_URL || !env.HARNESS_TOKEN) {
-      throw httpError(
-        503,
-        "harness_not_configured",
-        "Cloudflare backend is live, but HARNESS_URL/HARNESS_TOKEN are not configured.",
-      );
-    }
-
-    const upstream = await requestHarness(env, agentPayload);
-
-    if (upstream.body?.ok && upstream.body.report) {
-      await persistReport(auth.config, auth.accessToken, auth.user.id, runContext.id, agentPayload, upstream.body.report);
-      return json({ ...upstream.body, runId: runContext.id }, upstream.status);
-    }
-
-    const message = upstream.body?.message || "El harness no devolvio un reporte valido.";
-    await markRunError(auth.config, auth.accessToken, runContext.id, message);
-    return json({ ...upstream.body, runId: runContext.id }, upstream.status);
+    return executeResearchFlow({ request, env, agentPayload, persistence });
   } catch (error) {
     if (runContext?.config && runContext?.id) {
       await markRunError(runContext.config, runContext.accessToken, runContext.id, error.message).catch(() => null);
@@ -355,6 +283,139 @@ export async function onRequestGet() {
 
 export async function onRequestOptions() {
   return optionsResponse();
+}
+
+async function resolveResearchAuth(request, env) {
+  const authorization = request.headers.get("authorization") || "";
+  if (authorization.startsWith("Bearer ")) {
+    return { kind: "supabase", ...(await requireActiveUser(request, env)) };
+  }
+
+  const session = await readSession(request, env).catch(() => null);
+  if (session) {
+    return {
+      kind: "legacy",
+      user: {
+        id: "",
+        provider: session.provider,
+        email: session.email || "",
+        name: session.name || session.email || "",
+      },
+    };
+  }
+
+  if (env.APP_PASSWORD && request.headers.get("x-app-password") === env.APP_PASSWORD) {
+    return {
+      kind: "legacy",
+      user: {
+        id: "",
+        provider: "app_password",
+        email: "app-password@agentgenia.local",
+        name: "APP_PASSWORD",
+      },
+    };
+  }
+
+  throw httpError(401, "missing_session", "Inicia sesion para ejecutar el agente real.");
+}
+
+async function executeResearchFlow({ request, env, agentPayload, persistence }) {
+  const forceHarnessForAvatarResearch = shouldUseAvatarResearchHarness(agentPayload);
+
+  if (!forceHarnessForAvatarResearch && shouldUseBrandWhitespaceTool(agentPayload)) {
+    const report = runBrandWhitespaceTool(agentPayload);
+    const diagnostics = {
+      tool: "brand_whitespace_tool",
+      mode: "internal_tool",
+      evidenceMode: "declared_context_and_connected_catalog",
+    };
+    await persistReportIfNeeded(persistence, agentPayload, report);
+    return json({ ok: true, report, diagnostics, runId: persistence?.runId || "" });
+  }
+
+  if (!forceHarnessForAvatarResearch && shouldUseToolFactory(agentPayload)) {
+    const report = runToolFactory(agentPayload);
+    await maybeExecuteToolFactoryAction({ request, env, payload: agentPayload, report });
+    const diagnostics = {
+      tool: "agentgenia_tool_factory",
+      mode: "internal_tool",
+      buildMode: "blueprint_first",
+    };
+    await persistReportIfNeeded(persistence, agentPayload, report);
+    return json({ ok: true, report, diagnostics, runId: persistence?.runId || "" });
+  }
+
+  if (!forceHarnessForAvatarResearch && shouldUseShopifyPageBuilder(agentPayload)) {
+    const report = runShopifyPageBuilderTool(agentPayload);
+    const diagnostics = {
+      tool: "shopify_page_builder",
+      mode: "internal_tool",
+      publishesDirectly: false,
+    };
+    await persistReportIfNeeded(persistence, agentPayload, report);
+    return json({ ok: true, report, diagnostics, runId: persistence?.runId || "" });
+  }
+
+  if (!forceHarnessForAvatarResearch && shouldUseRetailToOnlineTool(agentPayload)) {
+    const report = await runRetailToOnlineTool(agentPayload, env);
+    const diagnostics = {
+      tool: "retail_to_online_agent",
+      mode: "internal_tool",
+    };
+    await persistReportIfNeeded(persistence, agentPayload, report);
+    return json({ ok: true, report, diagnostics, runId: persistence?.runId || "" });
+  }
+
+  if (!forceHarnessForAvatarResearch && shouldUseShippingRateTool(agentPayload)) {
+    const report = await runShippingRateTool(agentPayload, env);
+    const diagnostics = {
+      tool: "shipping_rate_quote",
+      mode: "internal_tool",
+      provider: "envia_rate_only",
+    };
+    await persistReportIfNeeded(persistence, agentPayload, report);
+    return json({ ok: true, report, diagnostics, runId: persistence?.runId || "" });
+  }
+
+  if (
+    !forceHarnessForAvatarResearch &&
+    agentPayload.businessStage !== "brand" &&
+    shouldUseProfitabilityTool(agentPayload) &&
+    !shouldUseProblemDiscoveryTool(agentPayload) &&
+    !shouldUseProductCustomizationTool(agentPayload)
+  ) {
+    const report = await runProfitabilityTool(agentPayload, env);
+    const diagnostics = {
+      tool: "unit_economics_filter",
+      mode: "internal_tool",
+    };
+    await persistReportIfNeeded(persistence, agentPayload, report);
+    return json({ ok: true, report, diagnostics, runId: persistence?.runId || "" });
+  }
+
+  if (!env.HARNESS_URL || !env.HARNESS_TOKEN) {
+    throw httpError(
+      503,
+      "harness_not_configured",
+      "Cloudflare backend is live, but HARNESS_URL/HARNESS_TOKEN are not configured.",
+    );
+  }
+
+  const upstream = await requestHarness(env, agentPayload);
+
+  if (upstream.body?.ok && upstream.body.report) {
+    await persistReportIfNeeded(persistence, agentPayload, upstream.body.report);
+    return json({ ...upstream.body, runId: persistence?.runId || upstream.body.runId || "" }, upstream.status);
+  }
+
+  const message = upstream.body?.message || "El harness no devolvio un reporte valido.";
+  if (persistence) await markRunError(persistence.config, persistence.accessToken, persistence.runId, message);
+  return json({ ...upstream.body, runId: persistence?.runId || upstream.body?.runId || "" }, upstream.status);
+}
+
+async function persistReportIfNeeded(persistence, payload, report) {
+  if (!persistence) return;
+  await persistReport(persistence.config, persistence.accessToken, persistence.userId, persistence.runId, payload, report);
 }
 
 async function createResearchRun(config, accessToken, user, payload) {
