@@ -957,6 +957,11 @@ function handleDocumentClick(event) {
   const publishButton = target?.closest("[data-publish-shopify-page]");
   if (publishButton) {
     publishShopifyPage(publishButton);
+    return;
+  }
+  const createToolButton = target?.closest("[data-create-shopify-tool]");
+  if (createToolButton) {
+    createShopifyTool(createToolButton);
   }
 }
 
@@ -2129,6 +2134,20 @@ function renderToolFactoryReport(report) {
   const dataModel = Array.isArray(strategy.dataModel) ? strategy.dataModel : [];
   const events = Array.isArray(strategy.events) ? strategy.events : [];
   const adminActions = Array.isArray(strategy.adminActions) ? strategy.adminActions : [];
+  const publication = report.publication || null;
+  const shop = report.shopify?.shop || "";
+  const runtime = toolFactoryRuntimeSupport(requested.category);
+  const canCreateTool = Boolean(shop && (requested.name || requested.category) && runtime.supported && !publication);
+  const publishedCard = publication
+    ? `<article class="report-card full-span success-card">
+        <h3>Herramienta creada</h3>
+        <p>Agent Genia ya publico este MVP en Shopify como una pagina segura.</p>
+        <div class="pill-row">
+          <a class="pill link-pill" href="${escapeHtml(publication.url || "#")}" target="_blank" rel="noreferrer"><i data-lucide="external-link"></i>Ver herramienta</a>
+          <a class="pill link-pill" href="${escapeHtml(publication.adminUrl || "#")}" target="_blank" rel="noreferrer"><i data-lucide="settings"></i>Abrir en Shopify</a>
+        </div>
+      </article>`
+    : "";
 
   resultPanel.hidden = false;
   setTabLabels(tabLabelSets.toolFactory);
@@ -2145,7 +2164,7 @@ function renderToolFactoryReport(report) {
         <p>${escapeHtml(brief.decision || "Construir un MVP nativo antes de pagar otra app.")}</p>
         <div class="pill-row">
           <span class="pill"><i data-lucide="wrench"></i>${escapeHtml(toolLabel(report.toolUsed))}</span>
-          <span class="pill"><i data-lucide="shopping-bag"></i>${escapeHtml(report.shopify?.shop || "Shopify opcional")}</span>
+          <span class="pill"><i data-lucide="shopping-bag"></i>${escapeHtml(shop || "Shopify opcional")}</span>
           <span class="pill"><i data-lucide="target"></i>${escapeHtml(requested.desiredOutcome || "ahorrar subscription")}</span>
         </div>
       </article>
@@ -2157,6 +2176,7 @@ function renderToolFactoryReport(report) {
         <h3>Guardrail</h3>
         <p>${escapeHtml(brief.guardrail || "No prometemos paridad enterprise; construimos el 20% que resuelve el 80% de la necesidad.")}</p>
       </article>
+      ${publishedCard}
     </div>`;
 
   document.querySelector("#tools").innerHTML = `
@@ -2230,9 +2250,125 @@ function renderToolFactoryReport(report) {
         <h3>Siguientes pasos</h3>
         <ol>${nextSteps.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
       </article>
+      <article class="report-card full-span ${runtime.supported ? "" : "notice-card"}">
+        <h3>Crear herramienta en Shopify</h3>
+        <p>${escapeHtml(toolFactoryPublishMessage({ shop, runtime, publication, canCreateTool }))}</p>
+        <button class="primary-button" type="button" data-create-shopify-tool ${canCreateTool ? "" : "disabled"}>
+          <i data-lucide="${publication ? "check-circle" : runtime.supported ? "upload-cloud" : "shield-alert"}"></i>
+          ${publication ? "Herramienta creada" : runtime.supported ? "Crear herramienta en Shopify" : "Requiere runtime avanzado"}
+        </button>
+        <p class="publish-status" id="shopifyToolCreateStatus">${
+          publication
+            ? `Publicada: ${escapeHtml(publication.url || publication.handle || "")}`
+            : canCreateTool
+              ? "Lista para publicar como MVP seguro."
+              : escapeHtml(runtime.supported ? "Conecta Shopify para crearla." : runtime.message)
+        }</p>
+      </article>
     </div>`;
 
   lucide.createIcons();
+}
+
+function toolFactoryRuntimeSupport(category) {
+  const normalized = String(category || "herramienta ecommerce personalizada").toLowerCase();
+  if (["retencion y mensajes", "tracking y analytics", "ofertas, bundles y carrito"].includes(normalized)) {
+    return {
+      supported: false,
+      message:
+        "Esta categoria toca mensajes, pixels, checkout o descuentos. Agent Genia debe construirla como extension/runtime avanzado antes de publicarla.",
+    };
+  }
+  return {
+    supported: true,
+    message: "Se puede publicar como una primera herramienta MVP usando una pagina segura de Shopify.",
+  };
+}
+
+function toolFactoryPublishMessage({ shop, runtime, publication }) {
+  if (publication) return "La herramienta ya existe en Shopify. Puedes abrirla, revisarla y decidir si iterarla.";
+  if (!shop) return "Conecta una tienda Shopify para que Agent Genia pueda crear esta herramienta.";
+  if (!runtime.supported) return runtime.message;
+  return "Esto crea una Page real en Shopify con la version minima de la herramienta: segura, reversible y medible.";
+}
+
+async function createShopifyTool(button) {
+  const report = state.latest;
+  if (!report || report.type !== "tool_factory") return;
+  if (report.publication) {
+    showToast("Esta herramienta ya fue creada");
+    return;
+  }
+
+  const status = document.querySelector("#shopifyToolCreateStatus");
+  const shop = report.shopify?.shop || "";
+  const runtime = toolFactoryRuntimeSupport(report.requestedTool?.category);
+  if (!shop) {
+    showToast("Conecta Shopify antes de crear la herramienta");
+    return;
+  }
+  if (!runtime.supported) {
+    showToast(runtime.message);
+    return;
+  }
+
+  button.disabled = true;
+  button.innerHTML = '<i data-lucide="loader-circle"></i> Creando...';
+  if (status) status.textContent = "Creando herramienta en Shopify...";
+  lucide.createIcons();
+
+  try {
+    const response = await fetch("./api/shopify/tools", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        shop,
+        report: pickToolFactoryPayload(report),
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok || !body.ok) {
+      throw new Error(body.message || "No se pudo crear la herramienta en Shopify.");
+    }
+
+    report.publication = body.tool;
+    state.latest = report;
+    saveState(report);
+    renderToolFactoryReport(report);
+    activateTab("quality");
+    showToast("Herramienta creada en Shopify");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo crear la herramienta en Shopify.";
+    if (status) status.textContent = message;
+    button.disabled = false;
+    button.innerHTML = '<i data-lucide="upload-cloud"></i> Crear herramienta en Shopify';
+    lucide.createIcons();
+    showToast(message);
+  }
+}
+
+function pickToolFactoryPayload(report) {
+  return {
+    type: "tool_factory",
+    toolUsed: report.toolUsed,
+    selectedInternalTool: report.selectedInternalTool,
+    naturalRequest: report.naturalRequest,
+    market: report.market,
+    createdAt: report.createdAt,
+    shopify: {
+      shop: report.shopify?.shop || "",
+      focus: report.shopify?.focus || "",
+    },
+    requestedTool: report.requestedTool || {},
+    executiveBrief: report.executiveBrief || {},
+    buildStrategy: report.buildStrategy || {},
+    mvp: report.mvp || {},
+    savings: report.savings || {},
+    risks: Array.isArray(report.risks) ? report.risks : [],
+    validationPlan: Array.isArray(report.validationPlan) ? report.validationPlan : [],
+    nextSteps: Array.isArray(report.nextSteps) ? report.nextSteps : [],
+  };
 }
 
 function renderShopifyPageDraftReport(report) {
@@ -4076,6 +4212,7 @@ Fecha: ${report.createdAt || ""}
 Solicitud: ${report.naturalRequest || ""}
 Herramienta interna: ${toolLabel(report.toolUsed)}
 Tienda Shopify: ${report.shopify?.shop || "no conectada"}
+Publicacion: ${report.publication?.url || "no publicada"}
 
 ## Decision
 
@@ -4140,6 +4277,13 @@ ${(report.risks || []).map((item) => `- ${item}`).join("\n")}
 ## Validacion
 
 ${(report.validationPlan || []).map((item) => `- ${item}`).join("\n")}
+
+${report.publication ? `## Herramienta creada
+
+- URL: ${report.publication.url || ""}
+- Admin: ${report.publication.adminUrl || ""}
+- Runtime: ${report.publication.mode || ""}
+` : ""}
 `;
 }
 

@@ -122,13 +122,15 @@ The Envia integration is rate-only. The Cloudflare Function only calls the quote
 
 Internal tools currently handled directly by `/api/research`:
 
-- `agentgenia_tool_factory`: blueprint-first native Shopify mini-app/tool planner for replacing unnecessary paid app subscriptions.
+- `agentgenia_tool_factory`: native Shopify mini-tool planner that can also publish safe Page-based MVP tools for selected categories.
 - `brand_whitespace_tool`: existing-brand whitespace hypotheses from declared brand context, attachments, and connected Shopify catalog data.
 - `shopify_page_builder`: creates an approved Shopify Page draft and lets the user publish it through `/api/shopify/pages`.
 - `shipping_rate_quote`: rate-only Envia shipping quotes when a shipping-only intent is detected.
 - `unit_economics_filter`: beginner-friendly profitability filter for non-brand-stage ideas.
 
-`agentgenia_tool_factory` is intentionally scoped as blueprint-first. It identifies the smallest native Shopify MVP that can replace the merchant's actual job-to-be-done, plus the cases where a third-party app is still safer because of deliverability, compliance, fraud, payments, carrier labels, or enterprise support.
+`agentgenia_tool_factory` identifies the smallest native Shopify MVP that can replace the merchant's actual job-to-be-done, plus the cases where a third-party app is still safer because of deliverability, compliance, fraud, payments, carrier labels, or enterprise support.
+
+For supported low-risk categories, it can publish a real Shopify Page MVP through `POST /api/shopify/tools`. Current Page runtime categories include simple quiz/recommendation tools, support/trust hubs, landing/section-builder outputs, lightweight social-proof pages, and generic ecommerce helper pages. Deep categories such as email/SMS retention, pixels/analytics, checkout, discounts, and bundles remain blueprint-only until Agent Genia has a Shopify extension/function/runtime layer for them.
 
 `brand_whitespace_tool` labels output as hypotheses. It does not perform live Meta Ads, Amazon review, or TikTok collection by itself; use the deeper competitive research harness/skills to confirm demand, saturation, and customer language.
 
@@ -152,6 +154,7 @@ Login endpoints:
 - `GET /api/shopify/login`: sends the user to Shopify's own login/store selection flow.
 - `GET /api/shopify/callback`: connects the Shopify store and creates the Agent Genia session.
 - `POST /api/shopify/pages`: creates a real Shopify Online Store page after the user approves the preview.
+- `POST /api/shopify/tools`: creates a real Shopify Online Store Page MVP for supported Tool Factory reports.
 - `GET /api/auth/shopify/start?shop=store.myshopify.com`: optional direct-shop Shopify login.
 - `GET /api/auth/shopify/callback`: validates direct-shop Shopify OAuth and creates the session.
 
@@ -178,6 +181,7 @@ Cloudflare endpoints:
 - `GET /api/shopify/callback`: validates Shopify HMAC/state, exchanges code for an access token, encrypts it, stores the shop in KV, and signs in the user.
 - `POST /api/shopify`: returns a sanitized catalog snapshot for a connected store.
 - `POST /api/shopify/pages`: publishes an approved Agent Genia page draft to Shopify Pages.
+- `POST /api/shopify/tools`: publishes an approved Tool Factory MVP as a safe Shopify Page when the category supports the Page runtime.
 - `DELETE /api/shopify`: disconnects a store by deleting its KV record.
 
 If `write_content` is added after a store was already connected, the merchant must reconnect/reinstall the Shopify app so Shopify grants a token with the new scope.
