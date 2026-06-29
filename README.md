@@ -131,6 +131,7 @@ Internal tools currently handled directly by `/api/research`:
 - `agentgenia_tool_factory`: platform-aware mini-tool planner. Shopify supports selected theme template block installs on existing landing pages; Tiendanube/WooCommerce are catalog-aware planning adapters until native publishing runtime is added.
 - `brand_whitespace_tool`: existing-brand whitespace hypotheses from declared brand context, attachments, and connected catalog data, including the internal Angle/Whitespace Validator.
 - `shopify_page_builder`: creates an approved Shopify Page draft and lets the user publish it through `/api/shopify/pages`.
+- `retail-to-online-agent`: converts a physical/local retail prompt into product understanding, unit economics, channel choice, first content sprint, first web plan, and database/inventory signals.
 - `shipping_rate_quote`: rate-only Envia shipping quotes when a shipping-only intent is detected.
 - `unit_economics_filter`: beginner-friendly profitability filter for non-brand-stage ideas.
 
@@ -154,6 +155,14 @@ When Shopify is connected, the browser includes the store's registered Agent Gen
 `brand_whitespace_tool` labels output as hypotheses. Its Angle/Whitespace Validator classifies each angle as `explotado`, `debil`, `libre_necesita_test`, or `no_recomendado`, then recommends the next landing/PDP/creative test and the decision rule. It does not perform live Meta Ads, Amazon review, or TikTok collection by itself; use the deeper competitive research harness/skills to confirm demand, saturation, and customer language.
 
 The Codex harness can also return `angleWhitespaceValidator` inside the normal brand audit schema when the user asks for angles, saturation, positioning, whitespace, or competitor comparison. This stays as an internal agent tool; the frontend renders it inside the existing natural-language report instead of sending the user to a separate page.
+
+Internal tool smoke test:
+
+```bash
+node test/internal-tools.mjs
+```
+
+The test calls `/api/research` module handlers directly with `x-app-password`, verifies direct tools (`unit_economics_filter`, `shipping_rate_quote`, `retail-to-online-agent`, `brand_whitespace_tool`, `agentgenia_tool_factory`, `shopify_page_builder`), and starts a fake harness to verify harness-routed tools (`problem-discovery-agent`, `product-customization-agent`, `alibaba-sourcing-agent`, `brand-audit-agent`, `shopify-store-audit`).
 
 ## MVP login mode
 

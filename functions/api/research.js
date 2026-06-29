@@ -761,6 +761,14 @@ function connectedPlatform(payload) {
   return payload.commerce?.platform || (payload.shopify?.shop ? "shopify" : "");
 }
 
+function selectedTool(payload) {
+  return String(payload.selectedInternalTool || "").trim();
+}
+
+function hasExplicitTool(payload) {
+  return Boolean(selectedTool(payload));
+}
+
 function shouldUseAvatarResearchHarness(payload) {
   const text = payloadText(payload).toLowerCase();
   return /avatar research|investigaci[oó]n del avatar|research del avatar|voice of customer|\bvoc\b|frases reales|lenguaje real|objeciones?|deseos?|momentos de uso|creencias?|why now|jobs? to be done|\bjtbd\b|pain points?|pains?|puntos de dolor|dolores?|miedos?|detonadores?|triggers?|urgencia de compra|avatar profundo/.test(
@@ -769,19 +777,22 @@ function shouldUseAvatarResearchHarness(payload) {
 }
 
 function shouldUseProductCustomizationTool(payload) {
-  if (payload.selectedInternalTool === "product-customization-agent") return true;
+  if (selectedTool(payload) === "product-customization-agent") return true;
+  if (hasExplicitTool(payload)) return false;
   const text = payloadText(payload).toLowerCase();
   return /personaliz|custom|private label|marca propia|producto propio|empaque|packaging|envase|caja|box|bolsa|pouch|sleeve|etiqueta|label|insert|unboxing|variante|variantes|acabado|finish|material|colorway|formula|f[oó]rmula|fragancia|scent|logo|dieline|troquel|muestra|sample/.test(text);
 }
 
 function shouldUseProblemDiscoveryTool(payload) {
-  if (payload.selectedInternalTool === "problem-discovery-agent") return true;
+  if (selectedTool(payload) === "problem-discovery-agent") return true;
+  if (hasExplicitTool(payload)) return false;
   const text = payloadText(payload).toLowerCase();
   return /buscar problema|encontrar problema|problema real|validar oportunidad|validar idea|oportunidad|nicho|avatar|pain point|pain points|punto(s)? de dolor|angulo|ángulo|no explotado|white ?space|research profundo|investigaci[oó]n profunda|audiencia|voz del cliente|voice of customer|meta ads|amazon reviews|reseñas amazon|tiktok|comentarios|lanzar marca|empezar marca|producto que resuelva|soluci[oó]n de producto|posicion(?:ar|arme|amiento)|diferenciaci[oó]n|diferenciar|marca como|brand like|como esta|como este|similar a|parecid[ao] a|competidor(?:es)?|competencia/.test(text);
 }
 
 function shouldUseRetailToOnlineTool(payload) {
-  if (payload.selectedInternalTool === "retail-to-online-agent") return true;
+  if (selectedTool(payload) === "retail-to-online-agent") return true;
+  if (hasExplicitTool(payload)) return false;
   const text = payloadText(payload).toLowerCase();
   const physicalStoreIntent =
     /tienda f[ií]sica|negocio f[ií]sico|negocio local|local comercial|mostrador|sucursal|boutique|tienda de barrio|retail/.test(text);
@@ -792,6 +803,8 @@ function shouldUseRetailToOnlineTool(payload) {
 }
 
 function shouldUseProfitabilityTool(payload) {
+  if (selectedTool(payload) === "unit_economics_filter") return true;
+  if (hasExplicitTool(payload)) return false;
   const text = payloadText(payload).toLowerCase();
   const intentPattern =
     /rentab|margen|ganancia|utilidad|dejar dinero|deja dinero|unit economics|economics|break ?even|roas|cac|costo|costos|precio|env[ií]o|shipping|devoluciones|returns|recompra|pagar por cliente|conseguir cliente/;
@@ -799,6 +812,8 @@ function shouldUseProfitabilityTool(payload) {
 }
 
 function shouldUseShippingRateTool(payload) {
+  if (selectedTool(payload) === "shipping_rate_quote") return true;
+  if (hasExplicitTool(payload)) return false;
   const text = payloadText(payload).toLowerCase();
   const shippingIntent =
     /cotiz|tarifa|paqueter[ií]a|env[ií]o|enviar|paquete|ship|shipping|cp origen|cp destino|c[oó]digo postal|codigo postal/.test(text);
@@ -808,12 +823,16 @@ function shouldUseShippingRateTool(payload) {
 }
 
 function shouldUseShopifyPageBuilder(payload) {
+  if (selectedTool(payload) === "shopify_page_builder") return true;
+  if (hasExplicitTool(payload)) return false;
   if (shouldUseProblemDiscoveryTool(payload)) return false;
   const text = payloadText(payload).toLowerCase();
   return /shopify/.test(text) && /crear|hacer|generar|construir|publicar|subir|lanzar|landing|pagina|página|page|web|sitio/.test(text);
 }
 
 function shouldUseBrandWhitespaceTool(payload) {
+  if (selectedTool(payload) === "brand_whitespace_tool") return true;
+  if (hasExplicitTool(payload)) return false;
   if (shouldUseProblemDiscoveryTool(payload)) return false;
   if (payload.businessStage !== "brand") return false;
   const text = payloadText(payload).toLowerCase();
@@ -823,6 +842,8 @@ function shouldUseBrandWhitespaceTool(payload) {
 }
 
 function shouldUseToolFactory(payload) {
+  if (selectedTool(payload) === "agentgenia_tool_factory") return true;
+  if (hasExplicitTool(payload)) return false;
   const text = payloadText(payload).toLowerCase();
   const knownPaidAppNeed =
     /klaviyo|omnisend|postscript|attentive|loox|judgeme|judge\.me|yotpo|pagefly|gempages|shogun|privy|wisepops|rebuy|zipify|bold|recharge|skio|smile|loyaltylion|aftership|algolia|doofinder/.test(
@@ -2299,6 +2320,271 @@ function buildShopifyPageHtml({ brandName, product, audience, offer, goal, cta, 
   <p style="font-size:18px;line-height:1.45;color:#60706a;margin:0 0 24px;">Empieza con la colección principal y ajusta esta página con datos reales de tráfico, conversiones y preguntas de clientes.</p>
   <a href="/collections/all" style="display:inline-block;background:#0f7b68;color:#fff;padding:16px 24px;border-radius:10px;text-decoration:none;font-weight:800;">${escapeHtml(cta)}</a>
 </section>`.trim();
+}
+
+async function runRetailToOnlineTool(payload, env) {
+  const text = payloadText(payload);
+  const product = retailProductUnderstanding(payload, text);
+  const profitabilityReport = await runProfitabilityTool(
+    {
+      ...payload,
+      naturalRequest: `${payload.naturalRequest || ""} ${product.product} ticket promedio costos envio ecommerce`,
+    },
+    env,
+  );
+  const profitability = profitabilityReport.profitability || {};
+  const economics = retailEconomicsFromProfitability(profitability);
+  const channelRecommendation = buildRetailChannelRecommendation(text, economics, product);
+  const databaseContext = buildRetailDatabaseContext(payload.attachments || []);
+  const competitorResearchPlan = buildRetailCompetitorPlan(product, text);
+  const contentPlan = buildRetailContentPlan(product, channelRecommendation, text);
+  const websitePlan = buildRetailWebsitePlan(product, channelRecommendation, economics);
+  const decision = retailDecision(economics, channelRecommendation, product);
+
+  return {
+    type: "retail_to_online",
+    toolUsed: "retail-to-online-agent",
+    naturalRequest: payload.naturalRequest || "",
+    product: product.product,
+    market: payload.market || "US",
+    createdAt: new Date().toLocaleString("es-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }),
+    executiveBrief: {
+      decision,
+      recommendedPath: channelRecommendation.path,
+      topRisks: [
+        "Subir todo el inventario en vez de elegir una oferta inicial.",
+        "Pagar anuncios antes de confirmar margen, entrega y conversion.",
+        "Copiar la web de competidores sin validar objeciones reales de clientes.",
+      ],
+    },
+    productUnderstanding: product,
+    economics,
+    channelRecommendation,
+    databaseContext,
+    competitorResearchPlan,
+    contentPlan,
+    websitePlan,
+    agentWorkLog: [
+      {
+        key: "product",
+        title: "Entender producto/oferta",
+        status: "done",
+        result: product.summary,
+        nextAction: "Elegir un producto estrella o bundle inicial antes de subir todo el catalogo.",
+      },
+      {
+        key: "economics",
+        title: "Pasar por unit economics",
+        status: "done",
+        result: `Margen estimado ${Math.round((economics.margin || 0) * 100)}%; CAC sano ${economics.currency} ${Math.round(economics.cacTarget || 0)}.`,
+        nextAction: "No activar paid ads si el CAC objetivo no deja margen neto suficiente.",
+      },
+      {
+        key: "channel",
+        title: "Elegir canal inicial",
+        status: "done",
+        result: channelRecommendation.summary,
+        nextAction: channelRecommendation.firstTest,
+      },
+      {
+        key: "web",
+        title: "Definir primera web",
+        status: "ready",
+        result: websitePlan.firstBuild,
+        nextAction: "Construir la primera version con una sola oferta, prueba social y medicion basica.",
+      },
+    ],
+    nextSteps: [
+      "Escoger 1 producto estrella o bundle inicial.",
+      "Confirmar ticket promedio, costo producto, envio, fees y devoluciones con datos reales.",
+      channelRecommendation.firstTest,
+      "Publicar una landing/PDP simple con oferta, fotos reales, FAQ, envio/devoluciones y CTA claro.",
+      "Medir visitas, conversion, add-to-cart, mensajes recibidos, CAC estimado y margen por 7-14 dias.",
+    ],
+  };
+}
+
+function retailProductUnderstanding(payload, text) {
+  const lower = text.toLowerCase();
+  const product =
+    cleanSentence(payload.product) ||
+    cleanSentence(payload.reference) ||
+    (lower.includes("boutique") ? "ropa/accesorios de boutique" : lower.includes("comida") ? "producto local de alimentos" : "producto principal de la tienda");
+  const storeType = /boutique|ropa|moda|fashion/.test(lower)
+    ? "boutique / tienda de moda"
+    : /comida|alimento|restaurante|cafe|café/.test(lower)
+      ? "negocio local de alimentos"
+      : /belleza|sal[oó]n|skincare|cosmet/.test(lower)
+        ? "tienda/servicio de belleza"
+        : "tienda fisica/local";
+
+  return {
+    product,
+    storeType,
+    summary: `La primera version online debe vender ${product} como oferta clara de ${storeType}, no intentar digitalizar todo el negocio de golpe.`,
+    firstOffer: /bundle|paquete/.test(lower) ? "bundle inicial con descuento controlado" : "producto estrella con oferta de entrada y prueba social",
+    offlineAssets: [
+      "Clientes actuales para pedir reviews y objeciones reales.",
+      "Inventario/fotos reales del local para contenido y confianza.",
+      "Preguntas frecuentes de mostrador como base de FAQ y creativos.",
+    ],
+  };
+}
+
+function retailEconomicsFromProfitability(profitability) {
+  const economics = {
+    currency: profitability.currency || "USD",
+    aov: profitability.aov || 0,
+    cogs: profitability.cogs || 0,
+    shipping: profitability.shipping || 0,
+    fees: profitability.fees || 0,
+    returnsReserve: profitability.returnsReserve || 0,
+    contribution: profitability.contribution || 0,
+    margin: profitability.margin || 0,
+    cacMax: profitability.cacMax || 0,
+    cacTarget: profitability.cacTarget || 0,
+    breakEvenRoas: profitability.breakEvenRoas,
+    targetRoas: profitability.targetRoas,
+    assumptions: profitability.assumptions || [],
+    missingNumbers: [],
+  };
+  if (!profitability.aov) economics.missingNumbers.push("ticket promedio real");
+  if (!profitability.cogs) economics.missingNumbers.push("costo producto real");
+  if (!profitability.shippingQuote || String(profitability.shippingQuote.mode || "").startsWith("estimated")) economics.missingNumbers.push("envio real por zona/paqueteria");
+  if (!profitability.returnRate) economics.missingNumbers.push("porcentaje de devoluciones/cambios");
+  return economics;
+}
+
+function buildRetailChannelRecommendation(text, economics, product) {
+  const lower = text.toLowerCase();
+  const healthyPaid = economics.cacTarget > 0 && economics.margin >= 0.25 && Number.isFinite(economics.targetRoas) && economics.targetRoas <= 4;
+  const wantsTikTok = /tiktok|video|contenido|organico|orgánico/.test(lower);
+  const primaryChannel = healthyPaid && !wantsTikTok ? "Meta Ads controlado" : "TikTok/Instagram organico";
+  const paidAdsReadiness = healthyPaid ? "paid ads posible con limite diario" : "organic-first hasta confirmar margen/conversion";
+  return {
+    primaryChannel,
+    paidAdsReadiness,
+    path: healthyPaid
+      ? "Lanzar web simple, contenido organico y un test pagado pequeño solo con CAC objetivo definido."
+      : "Empezar organic-first: contenido, WhatsApp/DM y landing simple antes de meter presupuesto fuerte en ads.",
+    summary: `${primaryChannel} es el canal inicial recomendado para ${product.product}; ${paidAdsReadiness}.`,
+    firstTest: healthyPaid
+      ? "Test de 7 dias con 2 angulos, presupuesto bajo y corte si CAC supera el objetivo."
+      : "Publicar 10 piezas cortas mostrando producto, objeciones, prueba social y proceso de compra; medir mensajes y clicks.",
+  };
+}
+
+function buildRetailDatabaseContext(attachments) {
+  const databaseFiles = attachments.filter((attachment) =>
+    /csv|excel|spreadsheet|json|sql|sqlite|database|db|inventario|ventas|clientes|products?/i.test(
+      `${attachment.name || ""} ${attachment.type || ""} ${attachment.kind || ""}`,
+    ),
+  );
+  if (!databaseFiles.length) {
+    return {
+      hasDatabase: false,
+      files: [],
+      detectedColumns: [],
+      usefulSignals: [],
+      recommendedUses: [],
+    };
+  }
+  const detectedColumns = uniqueStrings(
+    databaseFiles
+      .flatMap((attachment) => String(attachment.content || "").split(/\r?\n/).slice(0, 1).join(",").split(/[,;\t]/))
+      .map((item) => cleanSentence(item).toLowerCase())
+      .filter((item) => item.length > 1)
+      .slice(0, 30),
+  );
+  return {
+    hasDatabase: true,
+    files: databaseFiles.map((file) => ({ name: file.name || "database", sizeLabel: file.sizeLabel || "" })),
+    detectedColumns,
+    usefulSignals: [
+      "productos con mayor venta o rotacion",
+      "inventario disponible para no vender stock inexistente",
+      "clientes/recompras para activar audiencia inicial",
+    ],
+    recommendedUses: [
+      "Elegir 3-5 SKUs para la primera web.",
+      "Definir bundle inicial con inventario suficiente.",
+      "Identificar clientes actuales para pedir reviews o primer trafico.",
+    ],
+    summary: `${databaseFiles.length} archivo(s) de datos detectado(s) para priorizar oferta e inventario.`,
+  };
+}
+
+function buildRetailCompetitorPlan(product, text) {
+  const category = cleanSentence(product.product || "producto local");
+  const localModifier = /mexico|méxico|mx|guadalajara|monterrey|cdmx|jalisco/.test(text.toLowerCase()) ? " Mexico" : "";
+  return {
+    goal: "Comparar oferta, confianza, precio, contenido y friccion de compra antes de construir la web.",
+    sources: [
+      { source: "Google/Search", query: `${category}${localModifier} comprar online`, useFor: "ver oferta, SEO, precios y objeciones visibles" },
+      { source: "TikTok/Reels", query: `${category} review rutina como usar`, useFor: "detectar formatos organicos y lenguaje del cliente" },
+      { source: "Meta Ads Library", query: category, useFor: "ver claims, hooks, promociones y prueba social en ads" },
+    ],
+  };
+}
+
+function buildRetailContentPlan(product, channelRecommendation, text) {
+  const lower = text.toLowerCase();
+  const productName = product.product || "producto";
+  return {
+    firstContentSprint: [
+      `Video 1: mostrar ${productName} en uso real dentro del local.`,
+      "Video 2: responder la objecion mas comun que preguntan en mostrador.",
+      "Video 3: antes/despues, comparacion o resultado esperado sin exagerar claims.",
+      "Video 4: testimonio/review de cliente actual.",
+      `Video 5: oferta de entrada y como comprar online ${/whatsapp/i.test(lower) ? "por WhatsApp" : "en la web"}.`,
+    ],
+    measurement: [
+      "mensajes o clicks con intencion",
+      "add-to-cart o solicitudes de compra",
+      "conversion por landing/PDP",
+      "CAC estimado contra margen",
+    ],
+    doNotDoYet: [
+      "Subir todo el catalogo sin priorizar SKUs.",
+      "Invertir fuerte en ads sin CAC objetivo.",
+      "Comprar una suite de apps antes de validar el flujo simple.",
+    ],
+    channelSummary: channelRecommendation.summary,
+  };
+}
+
+function buildRetailWebsitePlan(product, channelRecommendation, economics) {
+  return {
+    recommendation: "Primera web enfocada en una sola oferta medible, no una tienda completa perfecta.",
+    firstBuild: `Landing/PDP para ${product.product} con CTA de compra, WhatsApp o checkout simple.`,
+    stackSuggestion: economics.currency === "MXN"
+      ? "Shopify, Tiendanube o WooCommerce si ya hay catalogo; landing + WhatsApp si solo se validara la oferta."
+      : "Shopify/WooCommerce si necesita checkout; landing + payment link si la oferta todavia esta en validacion.",
+    requiredSections: [
+      "Hero con producto, para quien es y promesa concreta.",
+      "Fotos reales del producto/local.",
+      "Beneficios y casos de uso.",
+      "Reviews o prueba social de clientes actuales.",
+      "Envio, cambios/devoluciones y tiempos claros.",
+      "FAQ con preguntas reales del local.",
+      "CTA visible para comprar o pedir por WhatsApp.",
+    ],
+    launchGuardrails: [
+      "No lanzar ads sin pixel/eventos basicos.",
+      "No prometer tiempos de envio sin paqueteria confirmada.",
+      "No vender productos con inventario bajo sin aviso.",
+    ],
+  };
+}
+
+function retailDecision(economics, channelRecommendation, product) {
+  if ((economics.margin || 0) < 0.2) {
+    return `No empezaria paid ads para ${product.product} todavia: primero sube margen, precio o bundle antes de vender online con trafico pagado.`;
+  }
+  return `Si empezaria online con ${product.product}, pero con una oferta inicial y ${channelRecommendation.primaryChannel}; la decision fuerte depende de validar CAC, conversion y entrega.`;
 }
 
 function inferPageAudience(text) {
