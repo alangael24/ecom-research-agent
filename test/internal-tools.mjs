@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { onRequestPost } from "../functions/api/research.js";
+import { onRequestGet, onRequestPost } from "../functions/api/research.js";
 
 const APP_PASSWORD = "test-app-password";
 const HARNESS_TOKEN = "test-harness-token";
@@ -199,6 +199,12 @@ const harnessCases = [
 
 const harnessRequests = [];
 const harness = createServer(async (request, response) => {
+  if (request.url === "/healthz" && request.method === "GET") {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
   if (request.url !== "/research" || request.method !== "POST") {
     response.writeHead(404, { "content-type": "application/json" });
     response.end(JSON.stringify({ ok: false, code: "not_found" }));
@@ -264,6 +270,17 @@ try {
   );
   assert.equal(unauthenticated.ok, false);
   assert.equal(unauthenticated.code, "missing_session");
+
+  const health = await onRequestGet({
+    env: {
+      HARNESS_URL: `http://127.0.0.1:${port}`,
+      HARNESS_TOKEN,
+    },
+  }).then((response) => response.json());
+  assert.equal(health.ok, true);
+  assert.equal(health.harness.configured, true);
+  assert.equal(health.harness.reachable, true);
+  assert.equal(health.harness.status, "ok");
 
   await assertFrontendDoesNotSimulateHarnessReports();
 

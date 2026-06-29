@@ -277,8 +277,12 @@ export async function onRequestPost(context) {
   }
 }
 
-export async function onRequestGet() {
-  return json({ ok: true, service: "agent-genia-supabase-research" });
+export async function onRequestGet({ env } = {}) {
+  return json({
+    ok: true,
+    service: "agent-genia-supabase-research",
+    harness: await checkHarnessHealth(env || {}),
+  });
 }
 
 export async function onRequestOptions() {
@@ -548,6 +552,39 @@ async function requestHarness(env, payload) {
       timedOut ? "harness_timeout" : "harness_unreachable",
       timedOut ? "The research harness took too long." : "Could not reach the private research harness.",
     );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function checkHarnessHealth(env) {
+  if (!env.HARNESS_URL || !env.HARNESS_TOKEN) {
+    return {
+      configured: false,
+      reachable: false,
+      status: "not_configured",
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(env.HARNESS_HEALTH_TIMEOUT_MS) || 5000);
+  try {
+    const response = await fetch(new URL("/healthz", env.HARNESS_URL).toString(), {
+      method: "GET",
+      signal: controller.signal,
+    });
+    return {
+      configured: true,
+      reachable: response.ok,
+      status: response.ok ? "ok" : "unhealthy",
+      statusCode: response.status,
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      reachable: false,
+      status: error?.name === "AbortError" ? "timeout" : "unreachable",
+    };
   } finally {
     clearTimeout(timeout);
   }
