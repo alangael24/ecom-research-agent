@@ -2126,6 +2126,7 @@ function renderToolFactoryReport(report) {
   const brief = report.executiveBrief || {};
   const strategy = report.buildStrategy || {};
   const replacement = report.appReplacement || {};
+  const toolSpec = report.toolSpec || {};
   const mvp = report.mvp || {};
   const savings = report.savings || {};
   const risks = Array.isArray(report.risks) ? report.risks : [];
@@ -2237,6 +2238,10 @@ function renderToolFactoryReport(report) {
         <h3>Criterios de aceptacion</h3>
         <ul>${(mvp.acceptanceCriteria || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       </article>
+      <article class="report-card full-span">
+        <h3>Spec ejecutable</h3>
+        ${renderToolSpecCard(toolSpec)}
+      </article>
     </div>`;
 
   document.querySelector("#negotiation").innerHTML = `
@@ -2310,6 +2315,24 @@ function renderInstalledShopifyTools({ tools, loaded, loading, error }) {
       )
       .join("")}
   </dl>`;
+}
+
+function renderToolSpecCard(toolSpec) {
+  if (!toolSpec?.version) return "<p>La spec se generara cuando el agente detecte la herramienta a construir.</p>";
+  const fields = Array.isArray(toolSpec.fields) ? toolSpec.fields : [];
+  const blocks = Array.isArray(toolSpec.blocks) ? toolSpec.blocks : [];
+  const rules = Array.isArray(toolSpec.automationRules) ? toolSpec.automationRules : [];
+  return `
+    <dl class="calculation-list">
+      <div><dt>Runtime</dt><dd>${escapeHtml(toolSpec.runtime || toolSpec.surface || "por definir")}</dd></div>
+      <div><dt>Accion principal</dt><dd>${escapeHtml(toolSpec.primaryAction?.label || "Enviar solicitud")}</dd></div>
+      <div><dt>Metrica de exito</dt><dd>${escapeHtml(toolSpec.successMetric || "uso repetido")}</dd></div>
+      <div><dt>Destino de datos</dt><dd>${escapeHtml(toolSpec.dataDestination || "por definir")}</dd></div>
+    </dl>
+    ${fields.length ? `<h4>Campos</h4><ul>${fields.map((field) => `<li>${escapeHtml(field.label || field.id)}${field.required ? " · requerido" : ""}</li>`).join("")}</ul>` : ""}
+    ${blocks.length ? `<h4>Bloques</h4><ul>${blocks.map((block) => `<li>${escapeHtml(`${block.type || block.id}: ${block.purpose || ""}`)}</li>`).join("")}</ul>` : ""}
+    ${rules.length ? `<h4>Reglas</h4><ul>${rules.map((rule) => `<li>${escapeHtml(rule)}</li>`).join("")}</ul>` : ""}
+  `;
 }
 
 async function refreshInstalledShopifyTools(report) {
@@ -2474,6 +2497,7 @@ function pickToolFactoryPayload(report) {
     executiveBrief: report.executiveBrief || {},
     buildStrategy: report.buildStrategy || {},
     appReplacement: report.appReplacement || {},
+    toolSpec: report.toolSpec || {},
     mvp: report.mvp || {},
     savings: report.savings || {},
     risks: Array.isArray(report.risks) ? report.risks : [],
@@ -4315,6 +4339,7 @@ function buildToolFactoryMarkdown(report) {
   const brief = report.executiveBrief || {};
   const strategy = report.buildStrategy || {};
   const replacement = report.appReplacement || {};
+  const toolSpec = report.toolSpec || {};
   const mvp = report.mvp || {};
   const savings = report.savings || {};
 
@@ -4351,6 +4376,24 @@ ${replacement.buildOrBuyDecision || ""}
 Primera version: ${replacement.firstVersion || ""}
 
 Ruta si funciona: ${replacement.upgradePath || ""}
+
+## Spec ejecutable
+
+Version: ${toolSpec.version || ""}
+Surface: ${toolSpec.surface || ""}
+Runtime: ${toolSpec.runtime || ""}
+Accion principal: ${toolSpec.primaryAction?.label || ""}
+Metrica de exito: ${toolSpec.successMetric || ""}
+Destino de datos: ${toolSpec.dataDestination || ""}
+
+Campos:
+${(toolSpec.fields || []).map((field) => `- ${field.label || field.id}${field.required ? " (requerido)" : ""} | ${field.type || "text"}`).join("\n")}
+
+Bloques:
+${(toolSpec.blocks || []).map((block) => `- ${block.type || block.id}: ${block.purpose || ""}`).join("\n")}
+
+Reglas:
+${(toolSpec.automationRules || []).map((rule) => `- ${rule}`).join("\n")}
 
 ## Arquitectura
 

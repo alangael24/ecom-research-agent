@@ -733,6 +733,7 @@ function runToolFactory(payload) {
   const limitations = buildToolFactoryLimitations(profile);
   const risks = buildToolFactoryRisks(profile);
   const appReplacement = buildAppReplacementPlan(profile, limitations);
+  const toolSpec = buildToolFactorySpec(profile, appReplacement);
 
   return {
     type: "tool_factory",
@@ -763,6 +764,7 @@ function runToolFactory(payload) {
       adminActions: buildToolFactoryAdminActions(profile),
     },
     appReplacement,
+    toolSpec,
     mvp,
     savings: {
       replacementCategory: profile.category,
@@ -990,6 +992,137 @@ function buildAppReplacementPlan(profile, limitations) {
     ],
     keepThirdPartyWhen: limitations.thirdPartyStillBetter,
   };
+}
+
+function buildToolFactorySpec(profile, appReplacement) {
+  const capability = toolCapabilityByCategory(profile.category);
+  return {
+    version: "tool-spec-v1",
+    name: profile.name,
+    category: profile.category,
+    surface: capability.publishMode === "shopify_page_mvp" ? "shopify_page" : capability.publishMode,
+    runtime: capability.publishMode,
+    canRenderAsPage: capability.publishMode === "shopify_page_mvp",
+    primaryAction: buildToolSpecPrimaryAction(profile, capability),
+    successMetric: buildToolSpecSuccessMetric(profile),
+    dataDestination: buildToolSpecDestination(profile, capability),
+    fields: buildToolSpecFields(profile),
+    blocks: buildToolSpecBlocks(profile, capability),
+    automationRules: buildToolSpecAutomationRules(profile, capability),
+    safetyChecks: [
+      "No publicar si requiere permisos o infraestructura que el runtime actual no tiene.",
+      "Debe poder apagarse sin romper theme, checkout, pagos, emails, pixels ni datos criticos.",
+      "Debe tener una metrica simple para decidir si ahorra dinero o mejora conversion.",
+    ],
+    upgradePath: appReplacement.upgradePath,
+  };
+}
+
+function buildToolSpecPrimaryAction(profile, capability) {
+  if (capability.publishMode !== "shopify_page_mvp") {
+    return {
+      label: `Preparar ${capability.runtimeLabel}`,
+      type: "runtime_required",
+      target: capability.publishMode,
+    };
+  }
+  if (profile.category === "constructor de paginas y secciones") return { label: "Ver productos", type: "link", target: "/collections/all" };
+  if (profile.category === "soporte y confianza") return { label: "Contactar a la tienda", type: "link", target: "/pages/contact" };
+  return { label: "Enviar solicitud", type: "shopify_contact_form", target: "/contact#contact_form" };
+}
+
+function buildToolSpecDestination(profile, capability) {
+  if (capability.publishMode === "shopify_page_mvp") return "Shopify contact form / Page MVP";
+  if (capability.publishMode === "provider_integration") return "Proveedor autorizado + Agent Genia QA";
+  if (capability.publishMode === "provider_required") return "Waitlist/validacion antes de proveedor";
+  return capability.runtimeLabel;
+}
+
+function buildToolSpecFields(profile) {
+  const baseEmail = field("email", "Email", "email", true, "tu@email.com");
+  if (profile.category === "quiz y recomendacion") {
+    return [
+      field("main_problem", "Que problema quieres resolver?", "text", true, "Ej. piel seca, elegir talla, encontrar rutina"),
+      field("desired_result", "Que resultado esperas?", "text", true, "Rapido, profundo o simple"),
+      field("purchase_blocker", "Que te detiene antes de comprar?", "text", false, "Precio, confianza, talla, ingredientes"),
+      baseEmail,
+    ];
+  }
+  if (profile.category === "captura de leads y popups") {
+    return [
+      baseEmail,
+      field("name", "Nombre", "text", false, "Tu nombre"),
+      field("intent", "Que estas buscando?", "textarea", false, "Cuéntanos qué necesitas"),
+      field("consent", "Acepto que la tienda me contacte sobre esta solicitud", "checkbox", true, ""),
+    ];
+  }
+  if (profile.category === "devoluciones y postcompra") {
+    return [
+      baseEmail,
+      field("order_number", "Numero de orden", "text", true, "#1001"),
+      field("request_type", "Tipo de solicitud", "select", true, "Cambio, devolucion o duda"),
+      field("request_detail", "Describe la solicitud", "textarea", true, "Explica qué pasó"),
+    ];
+  }
+  if (profile.category === "prueba social y reviews") {
+    return [
+      baseEmail,
+      field("rating", "Calificacion", "select", true, "1-5"),
+      field("review_body", "Review", "textarea", true, "Cuenta tu experiencia"),
+      field("display_name", "Nombre visible", "text", false, "Como quieres aparecer"),
+    ];
+  }
+  if (profile.category === "soporte y confianza") {
+    return [baseEmail, field("question", "Pregunta", "textarea", true, "Que duda tienes?")];
+  }
+  if (profile.category === "constructor de paginas y secciones") {
+    return [
+      field("headline", "Headline", "text", true, "Promesa principal"),
+      field("cta", "CTA", "text", true, "Ver productos"),
+      field("objection", "Objecion principal", "textarea", false, "Que duda hay que resolver?"),
+    ];
+  }
+  return [baseEmail, field("request", "Solicitud", "textarea", true, "Describe qué necesitas")];
+}
+
+function buildToolSpecBlocks(profile, capability) {
+  const blocks = [
+    { id: "hero", type: "hero", purpose: "Explicar el job-to-be-done y la promesa de la herramienta." },
+    { id: "how_it_works", type: "steps", purpose: "Mostrar como usar la herramienta sin entrenamiento tecnico." },
+  ];
+  if (capability.publishMode === "shopify_page_mvp") {
+    blocks.push({ id: "form_or_cta", type: "form", purpose: "Capturar la señal del cliente o llevarlo al siguiente paso." });
+  } else {
+    blocks.push({ id: "runtime_plan", type: "spec", purpose: `Preparar runtime requerido: ${capability.runtimeLabel}.` });
+  }
+  blocks.push({ id: "validation", type: "metric", purpose: `Medir ${buildToolSpecSuccessMetric(profile)}.` });
+  return blocks;
+}
+
+function buildToolSpecAutomationRules(profile, capability) {
+  if (capability.publishMode !== "shopify_page_mvp") {
+    return [`No ejecutar automatizacion real hasta tener ${capability.runtimeLabel}.`];
+  }
+  if (profile.category === "devoluciones y postcompra") return ["Enviar solicitud al equipo y clasificar por tipo de caso."];
+  if (profile.category === "prueba social y reviews") return ["Guardar review como pendiente de moderacion antes de mostrarla."];
+  if (profile.category === "quiz y recomendacion") return ["Usar respuestas para recomendar manualmente o etiquetar señal de interes."];
+  if (profile.category === "captura de leads y popups") return ["Guardar lead y medir origen de captura."];
+  return ["Registrar envio y revisar si la herramienta se uso mas de una vez."];
+}
+
+function buildToolSpecSuccessMetric(profile) {
+  if (profile.category === "devoluciones y postcompra") return "solicitudes completas con menos ida y vuelta";
+  if (profile.category === "prueba social y reviews") return "reviews utiles capturadas y aprobadas";
+  if (profile.category === "quiz y recomendacion") return "recomendaciones solicitadas y clicks a producto";
+  if (profile.category === "captura de leads y popups") return "leads capturados con consentimiento";
+  if (profile.category === "constructor de paginas y secciones") return "clicks al CTA y conversion de la pagina";
+  if (profile.category === "tracking y analytics") return "eventos correctos sin duplicacion";
+  if (profile.category === "ofertas, bundles y carrito") return "AOV incremental sin destruir margen";
+  return "uso repetido y ahorro de subscription";
+}
+
+function field(id, label, type, required, placeholder) {
+  return { id, label, type, required, placeholder };
 }
 
 function replacementLevelForMode(mode) {

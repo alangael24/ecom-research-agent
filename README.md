@@ -139,6 +139,8 @@ Each Tool Factory report now includes an `appReplacement` decision with:
 - `buildOrBuyDecision`: when Agent Genia should build, integrate, validate first, or keep a third-party app.
 - `firstVersion` and `upgradePath`: the smallest useful version and the runtime path if it proves valuable.
 
+Tool Factory reports also include a `toolSpec` contract. This is the executable shape of the mini-tool: target surface/runtime, primary action, success metric, data destination, fields, blocks, automation rules, safety checks, and upgrade path. The Shopify Page runtime renders this spec when it can safely publish a Page MVP, and the registry stores it with the installed mini-tool.
+
 `brand_whitespace_tool` labels output as hypotheses. It does not perform live Meta Ads, Amazon review, or TikTok collection by itself; use the deeper competitive research harness/skills to confirm demand, saturation, and customer language.
 
 ## Browser login

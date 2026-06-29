@@ -251,6 +251,7 @@ function buildToolRecord({ shop, report, page, pageDraft, runtime, publicUrl, ad
       firstVersion: replacement.firstVersion || "",
       upgradePath: replacement.upgradePath || "",
     },
+    toolSpec: normalizeToolSpec(report.toolSpec),
     shopifyPageId: page.id,
     url: publicUrl,
     adminUrl,
@@ -276,6 +277,7 @@ function publicToolRecord(record) {
     limitations: record.limitations || [],
     requestedTool: record.requestedTool || null,
     appReplacement: record.appReplacement || null,
+    toolSpec: record.toolSpec || null,
     shopifyPageId: record.shopifyPageId || "",
     url: record.url || "",
     adminUrl: record.adminUrl || "",
@@ -363,6 +365,7 @@ function buildToolPageDraft(report) {
   const brief = report.executiveBrief || {};
   const strategy = report.buildStrategy || {};
   const mvp = report.mvp || {};
+  const toolSpec = normalizeToolSpec(report.toolSpec);
   const category = cleanText(requested.category, "herramienta ecommerce personalizada", 120).toLowerCase();
   const toolName = cleanText(requested.name || mvp.name, "Herramienta Agent Genia", 90);
   const title = `${toolName} - Agent Genia`;
@@ -381,7 +384,8 @@ function buildToolPageDraft(report) {
     `<div class="agent-genia-tool" style="max-width:1100px;margin:0 auto;padding:32px 18px;font-family:inherit;color:#14201b;">`,
     renderHero({ toolName, requested, brief }),
     renderIncluded({ included, steps }),
-    renderCategoryTool({ category, toolName, requested, mvp, strategy }),
+    renderCategoryTool({ category, toolName, requested, mvp, strategy, toolSpec }),
+    renderToolSpecSummary(toolSpec),
     renderValidationBlock(report),
     `<p style="margin-top:30px;color:#5d6f68;font-size:13px;">Creado con Agent Genia Tool Factory. MVP reversible: si no aporta valor, se puede apagar sin romper la tienda.</p>`,
     `</div>`,
@@ -427,14 +431,14 @@ function renderIncluded({ included, steps }) {
   </section>`;
 }
 
-function renderCategoryTool({ category, toolName, requested, mvp, strategy }) {
+function renderCategoryTool({ category, toolName, requested, mvp, strategy, toolSpec }) {
   if (category === "quiz y recomendacion") return renderQuizTool(toolName, requested);
   if (category === "soporte y confianza") return renderTrustTool(requested);
   if (category === "constructor de paginas y secciones") return renderPageBuilderTool(requested, mvp);
   if (category === "prueba social y reviews") return renderReviewTool(requested);
   if (category === "captura de leads y popups") return renderLeadCaptureTool(toolName, requested);
   if (category === "devoluciones y postcompra") return renderPostPurchaseTool(toolName, requested);
-  return renderGenericTool(requested, mvp, strategy);
+  return renderGenericTool(requested, mvp, strategy, toolName, toolSpec);
 }
 
 function renderQuizTool(toolName, requested) {
@@ -571,14 +575,112 @@ function renderPostPurchaseTool(toolName, requested) {
   </section>`;
 }
 
-function renderGenericTool(requested, mvp, strategy) {
+function renderGenericTool(requested, mvp, strategy, toolName, toolSpec) {
   const actions = cleanList(strategy.adminActions, cleanList(mvp.acceptanceCriteria, ["Probar herramienta", "Medir resultado", "Decidir si mantener"]));
+  const fields = cleanToolSpecFields(toolSpec);
+  if (fields.length && toolSpec?.canRenderAsPage !== false) {
+    return `<section style="margin-top:18px;border:1px solid #dbe5df;padding:22px;">
+      <h2 style="font-size:28px;margin:0 0 8px;">Herramienta operativa</h2>
+      <p style="color:#5d6f68;line-height:1.55;margin:0 0 16px;">${escapeHtml(cleanText(requested.jobToBeDone, "Resolver una necesidad repetida de la tienda.", 220))}</p>
+      ${renderToolSpecForm(toolName, fields)}
+    </section>`;
+  }
   return `<section style="margin-top:18px;border:1px solid #dbe5df;padding:22px;">
     <h2 style="font-size:28px;margin:0 0 8px;">Herramienta operativa</h2>
     <p style="color:#5d6f68;line-height:1.55;margin:0 0 16px;">${escapeHtml(cleanText(requested.jobToBeDone, "Resolver una necesidad repetida de la tienda.", 220))}</p>
     ${renderOrderedList(actions)}
     <a href="/pages/contact" style="display:inline-flex;margin-top:16px;background:#14201b;color:white;text-decoration:none;font-weight:900;padding:14px 18px;">Solicitar ayuda</a>
   </section>`;
+}
+
+function renderToolSpecSummary(toolSpec) {
+  if (!toolSpec?.version) return "";
+  const fields = cleanToolSpecFields(toolSpec);
+  const blocks = Array.isArray(toolSpec.blocks) ? toolSpec.blocks.slice(0, 6) : [];
+  return `<section style="margin-top:18px;border:1px solid #dbe5df;padding:18px;background:#f8fbf9;">
+    <h2 style="font-size:22px;margin:0 0 12px;">Spec ejecutable Agent Genia</h2>
+    <dl style="display:grid;gap:10px;margin:0;">
+      <div><dt style="font-weight:900;">Runtime</dt><dd style="margin:0;color:#5d6f68;">${escapeHtml(toolSpec.runtime || toolSpec.surface || "shopify_page")}</dd></div>
+      <div><dt style="font-weight:900;">Accion principal</dt><dd style="margin:0;color:#5d6f68;">${escapeHtml(toolSpec.primaryAction?.label || "Enviar solicitud")}</dd></div>
+      <div><dt style="font-weight:900;">Metrica de exito</dt><dd style="margin:0;color:#5d6f68;">${escapeHtml(toolSpec.successMetric || "uso repetido")}</dd></div>
+    </dl>
+    ${fields.length ? `<h3 style="font-size:16px;margin:16px 0 8px;">Campos</h3>${renderList(fields.map((field) => `${field.label}${field.required ? " (requerido)" : ""}`))}` : ""}
+    ${blocks.length ? `<h3 style="font-size:16px;margin:16px 0 8px;">Bloques</h3>${renderList(blocks.map((block) => `${block.type}: ${block.purpose}`))}` : ""}
+  </section>`;
+}
+
+function renderToolSpecForm(toolName, fields) {
+  return `<form method="post" action="/contact#contact_form" style="display:grid;gap:12px;">
+    <input type="hidden" name="form_type" value="contact">
+    <input type="hidden" name="utf8" value="&#10003;">
+    <input type="hidden" name="contact[subject]" value="${escapeHtml(toolName)}">
+    ${fields.map(renderToolSpecInput).join("")}
+    <button type="submit" style="min-height:48px;background:#14201b;color:white;border:0;font-weight:900;padding:0 18px;">Enviar solicitud</button>
+  </form>`;
+}
+
+function renderToolSpecInput(field) {
+  if (field.type === "checkbox") {
+    return `<label style="display:flex;gap:8px;align-items:flex-start;font-weight:800;">
+      <input name="contact[${escapeHtml(field.id)}]" type="checkbox" ${field.required ? "required" : ""}>
+      ${escapeHtml(field.label)}
+    </label>`;
+  }
+  if (field.type === "textarea") {
+    return `<label style="display:grid;gap:8px;font-weight:800;">
+      ${escapeHtml(field.label)}
+      <textarea name="contact[${escapeHtml(field.id)}]" rows="4" ${field.required ? "required" : ""} style="border:1px solid #cbd8d1;padding:10px;" placeholder="${escapeHtml(field.placeholder || "")}"></textarea>
+    </label>`;
+  }
+  const inputType = field.type === "email" ? "email" : "text";
+  return `<label style="display:grid;gap:8px;font-weight:800;">
+    ${escapeHtml(field.label)}
+    <input name="contact[${escapeHtml(field.id)}]" type="${inputType}" ${field.required ? "required" : ""} style="min-height:44px;border:1px solid #cbd8d1;padding:10px;" placeholder="${escapeHtml(field.placeholder || "")}">
+  </label>`;
+}
+
+function cleanToolSpecFields(toolSpec) {
+  return Array.isArray(toolSpec?.fields)
+    ? toolSpec.fields
+        .map((field) => ({
+          id: cleanText(field?.id, "", 60).replace(/[^a-z0-9_]/gi, "_") || "field",
+          label: cleanText(field?.label, "Campo", 120),
+          type: cleanText(field?.type, "text", 30).toLowerCase(),
+          required: Boolean(field?.required),
+          placeholder: cleanText(field?.placeholder, "", 160),
+        }))
+        .slice(0, 12)
+    : [];
+}
+
+function normalizeToolSpec(toolSpec) {
+  if (!toolSpec || typeof toolSpec !== "object") return null;
+  return {
+    version: cleanText(toolSpec.version, "tool-spec-v1", 40),
+    name: cleanText(toolSpec.name, "", 120),
+    category: cleanText(toolSpec.category, "", 120),
+    surface: cleanText(toolSpec.surface, "", 80),
+    runtime: cleanText(toolSpec.runtime, "", 80),
+    canRenderAsPage: toolSpec.canRenderAsPage !== false,
+    primaryAction: toolSpec.primaryAction && typeof toolSpec.primaryAction === "object" ? {
+      label: cleanText(toolSpec.primaryAction.label, "", 120),
+      type: cleanText(toolSpec.primaryAction.type, "", 80),
+      target: cleanText(toolSpec.primaryAction.target, "", 160),
+    } : null,
+    successMetric: cleanText(toolSpec.successMetric, "", 180),
+    dataDestination: cleanText(toolSpec.dataDestination, "", 160),
+    fields: cleanToolSpecFields(toolSpec),
+    blocks: Array.isArray(toolSpec.blocks)
+      ? toolSpec.blocks.map((block) => ({
+          id: cleanText(block?.id, "", 80),
+          type: cleanText(block?.type, "", 80),
+          purpose: cleanText(block?.purpose, "", 220),
+        })).slice(0, 12)
+      : [],
+    automationRules: cleanList(toolSpec.automationRules, []),
+    safetyChecks: cleanList(toolSpec.safetyChecks, []),
+    upgradePath: cleanText(toolSpec.upgradePath, "", 220),
+  };
 }
 
 function renderValidationBlock(report) {
