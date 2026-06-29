@@ -15,7 +15,7 @@ export async function onRequestGet(context) {
     return wantsJson(request) ? json({ ok: true, redirectUrl: startUrl.toString() }) : redirect(startUrl.toString());
   }
 
-  const installUrl = env.SHOPIFY_INSTALL_URL || "";
+  const installUrl = normalizeInstallUrl(env.SHOPIFY_INSTALL_URL || "");
   if (!installUrl) {
     return json(
       {
@@ -43,4 +43,25 @@ export async function onRequestOptions() {
 
 function wantsJson(request) {
   return String(request.headers.get("accept") || "").includes("application/json");
+}
+
+function normalizeInstallUrl(value) {
+  const configured = String(value || "").trim();
+  if (!configured) return "";
+
+  try {
+    const url = new URL(configured);
+    const redirect = url.searchParams.get("redirect") || "";
+    if (
+      url.hostname === "admin.shopify.com" &&
+      url.pathname === "/" &&
+      redirect.startsWith("/oauth/redirect_from_developer_dashboard")
+    ) {
+      return new URL(redirect, "https://admin.shopify.com").toString();
+    }
+  } catch {
+    return configured;
+  }
+
+  return configured;
 }
