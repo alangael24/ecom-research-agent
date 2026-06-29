@@ -3570,10 +3570,6 @@ function formatRoas(value) {
   return `${value.toFixed(value >= 10 ? 0 : 1)}x`;
 }
 
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
 function round(value, digits = 2) {
   const multiplier = 10 ** digits;
   return Math.round(value * multiplier) / multiplier;
