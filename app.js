@@ -371,13 +371,16 @@ async function startShopifyLogin() {
   if (button) button.disabled = true;
 
   try {
-    const response = await fetch(shopifyApiUrl("/api/shopify/login"), {
+    const shop = promptForShopifyDomain();
+    if (!shop) return;
+
+    const response = await fetch(shopifyApiUrl(`/api/shopify/login?shop=${encodeURIComponent(shop)}`), {
       headers: { accept: "application/json" },
     });
     const body = await response.json();
     if (!response.ok || !body.ok || !body.redirectUrl) {
       openManualShopifyFallback();
-      showToast(body.message || "Falta activar el install link de Shopify");
+      showToast(body.message || "No se pudo iniciar OAuth de Shopify");
       return;
     }
     window.location.href = body.redirectUrl;
@@ -387,6 +390,21 @@ async function startShopifyLogin() {
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+function promptForShopifyDomain() {
+  const current = shopifyDomainInput?.value || shopifyStoreSelect?.value || "";
+  const value = window.prompt("Pega tu tienda Shopify (.myshopify.com)", current || "tu-tienda.myshopify.com");
+  if (value === null) return "";
+
+  const shop = normalizeShopifyDomain(value);
+  if (!isValidShopifyDomain(shop)) {
+    showToast("Usa el dominio .myshopify.com de la tienda");
+    return "";
+  }
+
+  if (shopifyDomainInput) shopifyDomainInput.value = shop;
+  return shop;
 }
 
 function openManualShopifyFallback() {
