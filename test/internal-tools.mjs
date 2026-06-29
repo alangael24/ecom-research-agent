@@ -301,6 +301,17 @@ try {
   assert.equal(unauthenticated.ok, false);
   assert.equal(unauthenticated.code, "missing_session");
 
+  const guestBody = await callResearch(
+    directCases[0].payload,
+    {
+      AUTH_REQUIRED: "false",
+      ALLOW_GUEST_RESEARCH: "true",
+    },
+    { includeAuth: false },
+  );
+  assert.equal(guestBody.ok, true);
+  assert.equal(guestBody.report?.type, directCases[0].expectedType, "guest research direct tool");
+
   const health = await onRequestGet({
     env: {
       HARNESS_URL: `http://127.0.0.1:${port}`,

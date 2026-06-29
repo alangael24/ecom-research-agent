@@ -657,6 +657,7 @@ async function bootAuth() {
           supabaseUrl: config.supabaseUrl,
           supabaseAnonKey: config.supabaseAnonKey,
           authRequired: Boolean(config.authRequired),
+          allowGuestResearch: Boolean(config.allowGuestResearch),
         }
       : null;
 
@@ -956,7 +957,12 @@ async function handleSubmit(event) {
 }
 
 function canRunRealAgent() {
-  return Boolean(state.session?.access_token || state.user?.email || state.user?.provider);
+  return Boolean(
+    state.session?.access_token ||
+      state.user?.email ||
+      state.user?.provider ||
+      (state.mvpMode && state.config?.allowGuestResearch),
+  );
 }
 
 async function runResearch(data) {

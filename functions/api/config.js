@@ -3,6 +3,7 @@ import { json, optionsResponse, publicSupabaseConfig } from "../_shared/supabase
 export async function onRequestGet(context) {
   const { supabaseUrl, supabaseAnonKey } = publicSupabaseConfig(context.env);
   const authRequired = String(context.env.AUTH_REQUIRED || "").toLowerCase() === "true";
+  const allowGuestResearch = !authRequired && String(context.env.ALLOW_GUEST_RESEARCH || "").toLowerCase() === "true";
 
   if (authRequired && (!supabaseUrl || !supabaseAnonKey)) {
     return json(
@@ -20,6 +21,7 @@ export async function onRequestGet(context) {
     supabaseUrl,
     supabaseAnonKey,
     authRequired,
+    allowGuestResearch,
     mvpMode: !authRequired,
   });
 }

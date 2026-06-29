@@ -314,6 +314,18 @@ async function resolveResearchAuth(request, env) {
     };
   }
 
+  if (guestResearchEnabled(env)) {
+    return {
+      kind: "guest",
+      user: {
+        id: "",
+        provider: "guest",
+        email: "guest@agentgenia.local",
+        name: "Invitado",
+      },
+    };
+  }
+
   if (env.APP_PASSWORD && request.headers.get("x-app-password") === env.APP_PASSWORD) {
     return {
       kind: "legacy",
@@ -327,6 +339,13 @@ async function resolveResearchAuth(request, env) {
   }
 
   throw httpError(401, "missing_session", "Inicia sesion para ejecutar el agente real.");
+}
+
+function guestResearchEnabled(env) {
+  return (
+    String(env.AUTH_REQUIRED || "").toLowerCase() !== "true" &&
+    String(env.ALLOW_GUEST_RESEARCH || "").toLowerCase() === "true"
+  );
 }
 
 async function executeResearchFlow({ request, env, agentPayload, persistence }) {

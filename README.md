@@ -178,6 +178,8 @@ Set `AUTH_REQUIRED=true` when you want production private mode with Supabase use
 
 When `AUTH_REQUIRED` is not `true`, Google/Shopify/Tiendanube OAuth can still create a signed `agent_genia_session` cookie. `/api/research` accepts that cookie and runs in stateless mode: it can execute internal tools or call the Codex harness, but it does not persist history, attachments, suppliers, or runs to Supabase.
 
+For live testing without forcing a login wall, set `AUTH_REQUIRED=false` and `ALLOW_GUEST_RESEARCH=true`. This keeps runs stateless and does not save history, but lets the main prompt execute the real backend/harness as a guest. Do not use guest mode for a public launch without rate limits.
+
 Google/Shopify OAuth endpoints remain in the repo for connector/login experiments, but they are not the primary production auth path for the research agent.
 
 Configure Google OAuth with:
