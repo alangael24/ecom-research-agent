@@ -96,6 +96,11 @@ const goalConfig = {
     icon: "search",
     className: "alibaba",
   },
+  problem: {
+    label: "Descubrir problema",
+    icon: "scan-search",
+    className: "interpret",
+  },
   negotiate: {
     label: "Negociar precio/MOQ",
     icon: "message-square",
@@ -1222,6 +1227,40 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     "muestra",
     "sample",
   ]);
+  const problemDiscoveryIntent = hasAny(text, [
+    "buscar problema",
+    "encontrar problema",
+    "problema real",
+    "validar oportunidad",
+    "validar idea",
+    "oportunidad",
+    "nicho",
+    "avatar",
+    "pain point",
+    "pain points",
+    "punto de dolor",
+    "puntos de dolor",
+    "angulo",
+    "ángulo",
+    "no explotado",
+    "whitespace",
+    "white space",
+    "research profundo",
+    "investigacion profunda",
+    "investigación profunda",
+    "audiencia",
+    "voz del cliente",
+    "voice of customer",
+    "meta ads",
+    "amazon reviews",
+    "reseñas amazon",
+    "tiktok",
+    "lanzar marca",
+    "empezar marca",
+    "producto que resuelva",
+    "solucion de producto",
+    "solución de producto",
+  ]);
   const creativePerformanceIntent = isCreativePerformanceText(text);
   const inspirationIntent = creativePerformanceIntent || hasAny(text, [
     "inspiracion",
@@ -1331,6 +1370,8 @@ function inferRequest(naturalRequest, businessStage = "starter") {
         ? ["interpret", "retail", "costs", "content", "web"]
       : customizationIntent
         ? ["interpret", "customize", "brand", "quality"]
+      : problemDiscoveryIntent
+        ? ["interpret", "problem", "brand", "content", "costs"]
       : brandIntent
         ? ["interpret", "brand", "shopify", "quality"]
       : shopifyIntent
@@ -1344,6 +1385,8 @@ function inferRequest(naturalRequest, businessStage = "starter") {
         ? "retail-to-online-agent"
       : customizationIntent
         ? "product-customization-agent"
+      : problemDiscoveryIntent
+        ? "problem-discovery-agent"
       : brandIntent && whitespaceIntent && !inspirationIntent
         ? "brand_whitespace_tool"
       : brandIntent
@@ -1377,6 +1420,10 @@ function buildReport(data) {
     data.selectedInternalTool === "product-customization-agent" || data.goals?.includes("customize")
       ? buildGuidedCustomizationPlan(data, category)
       : null;
+  const problemDiscovery =
+    data.selectedInternalTool === "problem-discovery-agent" || data.goals?.includes("problem")
+      ? buildGuidedProblemDiscovery(data, category)
+      : null;
 
   return {
     ...data,
@@ -1387,6 +1434,7 @@ function buildReport(data) {
     evidenceLinks,
     supplierProfiles,
     ...(customizationPlan ? { customizationPlan } : {}),
+    ...(problemDiscovery ? { problemDiscovery } : {}),
     createdAt: new Date().toLocaleString("es-US", {
       dateStyle: "medium",
       timeStyle: "short",
@@ -1629,6 +1677,31 @@ function buildAgentTasks(query, data, category) {
         },
       ]);
     }
+    if (data.selectedInternalTool === "problem-discovery-agent") {
+      return firstStep.concat([
+        {
+          key: "problem",
+          title: "Descubrir problema real",
+          status: "listo para research",
+          result: "El agente preparara un mapa de problema/avatar usando Meta Ads, Amazon reviews y TikTok como fuentes separadas.",
+          nextAction: "Separar evidencia recolectada de hipotesis antes de escoger producto o angulo.",
+        },
+        {
+          key: "content",
+          title: "Traducir a hooks",
+          status: "listo para creatividad",
+          result: "El resultado conectara dolor, avatar, lenguaje real, angulos y primeros scripts/formatos a probar.",
+          nextAction: "No grabar ads hasta elegir 2-3 hooks con evidencia o una hipotesis clara.",
+        },
+        {
+          key: "costs",
+          title: "Conectar con economics",
+          status: "siguiente filtro",
+          result: "Despues del problema/producto, el agente debe validar si COGS y margen permiten paid ads.",
+          nextAction: "Si el CAC objetivo no da, cambiar a organic-first o buscar otra oferta/producto.",
+        },
+      ]);
+    }
     if (data.selectedInternalTool === "shopify-store-audit") {
       return firstStep.concat([
         {
@@ -1858,6 +1931,183 @@ function buildGuidedCustomizationPlan(data, category) {
       "Guardar golden sample para comparar produccion.",
     ],
   };
+}
+
+function buildGuidedProblemDiscovery(data, category) {
+  const product = data.product || category.category || "producto ecommerce";
+  const market = data.market || "US";
+  const problem = inferProblemSeed(data.naturalRequest, product);
+  const categoryLabel = category.category || product;
+  const avatar = inferProblemAvatar(data.naturalRequest, categoryLabel);
+
+  return {
+    researchQuestion: `Que problema suficientemente urgente en ${categoryLabel} puede resolver ${product}, para que avatar y con que angulo inicial?`,
+    decision: "No lanzar todavia: usar esto como mapa inicial y correr research live de Meta Ads, Amazon reviews y TikTok antes de comprar inventario o grabar ads.",
+    opportunityScore: 54,
+    confidence: "baja-media; fallback guiado sin recoleccion live completa",
+    sourceCoverage: [
+      {
+        source: "Meta Ads",
+        status: "pendiente/no ejecutado",
+        coverage: "Preparado para revisar promesas, hooks, ofertas, landing URLs y claims de competidores.",
+        whatItCanProve: "Que angulos y ofertas estan siendo testeados activamente por el mercado.",
+        limitations: "Sin captura live no sabemos gasto, rendimiento ni saturacion real.",
+      },
+      {
+        source: "Amazon reviews",
+        status: "pendiente/no ejecutado",
+        coverage: "Preparado para minar 1-3 estrellas y 4-5 estrellas de productos comparables.",
+        whatItCanProve: "Frustraciones, requisitos de producto, objeciones y lenguaje de compra.",
+        limitations: "Sin ASINs/reviews extraidas, los pains siguen como hipotesis.",
+      },
+      {
+        source: "TikTok organic",
+        status: "pendiente/no ejecutado",
+        coverage: "Preparado para descubrir videos y comentarios organicos con filtro de ruido.",
+        whatItCanProve: "Lenguaje emocional, momentos de uso, preguntas repetidas e intencion.",
+        limitations: "Viralidad no prueba ventas; requiere clicks/conversion o comentarios con intencion.",
+      },
+    ],
+    evidenceMatrix: [
+      {
+        source: "Prompt del usuario",
+        evidenceType: "contexto declarado",
+        signal: "El usuario busca validar problema/producto/angulo antes de lanzar.",
+        avatar,
+        pain: problem,
+        quoteOrObservation: data.naturalRequest || "",
+        confidence: "media",
+      },
+      {
+        source: "Categoria inferida",
+        evidenceType: "hipotesis",
+        signal: `La categoria ${categoryLabel} requiere comparar dolor, solucion, margen y claims antes de ads.`,
+        avatar,
+        pain: problem,
+        quoteOrObservation: "Pendiente confirmar con Meta, Amazon y TikTok.",
+        confidence: "baja-media",
+      },
+    ],
+    avatars: [
+      {
+        name: avatar,
+        problem,
+        trigger: "Busca solucion cuando el problema ya afecta compra, rutina, tiempo, confianza o autoestima.",
+        language: [
+          "No se que producto escoger.",
+          "No quiero comprar algo que no funcione.",
+          "Quiero una solucion simple sin perder tiempo investigando.",
+        ],
+        objections: ["precio", "confianza", "si realmente funciona", "calidad", "envio/devoluciones"],
+        whereToFind: ["TikTok organic comments", "Amazon 1-3 star reviews", "Meta Ads comments/landing objections"],
+        confidence: "hipotesis inicial",
+      },
+    ],
+    painPoints: [
+      {
+        pain: problem,
+        urgency: "media hasta confirmar repeticion y lenguaje literal en fuentes externas",
+        currentAlternatives: ["comprar la opcion mas barata", "seguir comparando reviews", "postergar la compra"],
+        desiredOutcome: "resolver el problema con una compra clara, confiable y facil de justificar",
+        evidenceSources: ["prompt", "categoria inferida"],
+        confidence: "baja-media",
+      },
+    ],
+    angleCandidates: [
+      {
+        angle: "Compra sin duda",
+        avatar,
+        pain: "miedo a elegir mal entre productos que parecen iguales",
+        whyItMayBeUnderused: "Muchas marcas venden features, pero pocas reducen incertidumbre con prueba, comparacion y limites claros.",
+        creativeHook: `Antes de comprar ${product}, revisa estas 3 cosas.`,
+        proofNeeded: "Reviews/reclamos repetidos + comentarios TikTok con preguntas de decision.",
+        risk: "Puede sonar generico si no se amarra a un pain especifico.",
+        score: 62,
+      },
+      {
+        angle: "Solucion simple para un momento especifico",
+        avatar,
+        pain: problem,
+        whyItMayBeUnderused: "El mercado suele hablar de producto; el angulo debe hablar del momento exacto donde aparece el dolor.",
+        creativeHook: `Si te pasa esto, no necesitas mas opciones: necesitas ${product} con estas specs.`,
+        proofNeeded: "Comentarios organicos que mencionen el momento de uso y objecion.",
+        risk: "Si el momento no es urgente, paid ads puede salir caro.",
+        score: 58,
+      },
+    ],
+    productHypotheses: [
+      {
+        product,
+        whyItSolves: `Debe resolver ${problem} mejor que alternativas genericas, con specs y empaque que comuniquen confianza.`,
+        requiredFeatures: category.mustHave || ["muestra verificable", "calidad consistente", "explicacion clara de uso"],
+        sourcingNotes: [
+          "Validar MOQ bajo antes de bulk order.",
+          "Pedir sample y pruebas de calidad.",
+          "Comparar costo aterrizado contra CAC posible.",
+        ],
+        claimRisks: buildProblemClaimRisks(categoryLabel, data.naturalRequest),
+        validationStep: "Correr research live y luego probar 3 hooks antes de comprar inventario grande.",
+      },
+    ],
+    creativeBrief: {
+      corePromise: `Ayudar a ${avatar.toLowerCase()} a resolver ${problem} con menos duda y mas claridad.`,
+      hooks: [
+        `El error que mucha gente comete antes de comprar ${product}.`,
+        `Como saber si ${product} realmente te sirve.`,
+        `3 senales de que estas comprando la opcion equivocada.`,
+      ],
+      contentFormats: ["UGC problema-solucion", "comparacion lado a lado", "checklist antes de comprar", "review-style demo"],
+      doNotSay: buildProblemClaimRisks(categoryLabel, data.naturalRequest),
+      firstTests: [
+        "Test 1: hook de dolor vs hook de comparacion.",
+        "Test 2: demo de producto vs checklist educativa.",
+        "Test 3: landing con una oferta simple y FAQ de objeciones.",
+      ],
+    },
+    nextSteps: [
+      "Recolectar Meta Ads de 3-5 competidores directos o indirectos.",
+      "Extraer Amazon reviews de productos comparables y separar 1-3 estrellas de 4-5 estrellas.",
+      "Descubrir TikToks organicos y filtrar ruido antes de bajar comentarios.",
+      "Actualizar opportunityScore con evidencia real.",
+      "Pasar el producto ganador por unit economics antes de paid ads.",
+    ],
+  };
+}
+
+function inferProblemSeed(request, product) {
+  const text = String(request || "").toLowerCase();
+  const explicit = text.match(/(?:problema|dolor|pain)\s+(?:de|que|es)?\s*([^.;\n]{8,120})/i)?.[1];
+  if (explicit) return explicit.trim();
+  if (/piel|skincare|acne|acné|beauty/.test(text)) return "confusion, desconfianza o frustracion con resultados de skincare";
+  if (/cabello|hair|pelo/.test(text)) return "miedo a dano, caida, frizz o resultados inconsistentes";
+  if (/suplement|vitamin|prote[ií]na|wellness/.test(text)) return "querer mejorar rutina sin promesas exageradas ni ingredientes confusos";
+  if (/mascota|pet|perro|gato/.test(text)) return "comprar algo seguro y util para la mascota sin equivocarse";
+  return `necesidad concreta alrededor de ${product || "la categoria"}`;
+}
+
+function inferProblemAvatar(request, category) {
+  const text = String(request || "").toLowerCase();
+  if (/mama|mamá|madre|padre|familia/.test(text)) return "Padre/madre ocupado que necesita una solucion confiable";
+  if (/premium|calidad|lujo/.test(text)) return "Comprador que quiere calidad y prueba antes de pagar mas";
+  if (/tiktok|gen z|joven/.test(text)) return "Comprador social que descubre problemas por contenido corto";
+  if (/piel|skincare|beauty|belleza/.test(text)) return "Persona que quiere resolver su rutina sin arriesgar su piel";
+  return `Comprador de ${category} que necesita una razon clara para elegir`;
+}
+
+function buildProblemClaimRisks(category, request) {
+  const text = `${category || ""} ${request || ""}`.toLowerCase();
+  if (/skin|skincare|piel|acne|acné|salud|suplement|vitamin|cabello|hair|pelo|baby|beb[eé]|food|comida/.test(text)) {
+    return [
+      "No prometer curas, resultados garantizados ni claims medicos.",
+      "Separar experiencia de cliente de evidencia clinica.",
+      "Validar etiquetas, ingredientes, advertencias y claims permitidos.",
+    ];
+  }
+  return [
+    "No prometer resultados absolutos sin prueba.",
+    "No copiar claims de competidores sin verificar.",
+    "No usar antes/despues engañosos o imposibles de demostrar.",
+  ];
 }
 
 function renderEmptyState() {
@@ -2871,6 +3121,10 @@ function extractCustomizationPlan(report) {
   return report?.ai?.customizationPlan || report?.customizationPlan || null;
 }
 
+function extractProblemDiscovery(report) {
+  return report?.ai?.problemDiscovery || report?.problemDiscovery || null;
+}
+
 function isBrandStrategyReport(report) {
   return (
     report?.businessStage === "brand" ||
@@ -3047,6 +3301,72 @@ function renderWebsitePlanCard(websitePlan, brandPlan, brandNameFallback = "Marc
   </article>`;
 }
 
+function renderProblemDiscoveryCard(problemDiscovery) {
+  if (!problemDiscovery) return "";
+  const coverage = Array.isArray(problemDiscovery.sourceCoverage) ? problemDiscovery.sourceCoverage : [];
+  const avatars = Array.isArray(problemDiscovery.avatars) ? problemDiscovery.avatars : [];
+  const pains = Array.isArray(problemDiscovery.painPoints) ? problemDiscovery.painPoints : [];
+  const angles = Array.isArray(problemDiscovery.angleCandidates) ? problemDiscovery.angleCandidates : [];
+  const products = Array.isArray(problemDiscovery.productHypotheses) ? problemDiscovery.productHypotheses : [];
+  const evidence = Array.isArray(problemDiscovery.evidenceMatrix) ? problemDiscovery.evidenceMatrix : [];
+  const creative = problemDiscovery.creativeBrief || {};
+  const score = Number.isFinite(Number(problemDiscovery.opportunityScore))
+    ? Math.max(0, Math.min(100, Number(problemDiscovery.opportunityScore)))
+    : 0;
+
+  return `<article class="report-card full-span problem-discovery-card">
+    <h3>Problem discovery</h3>
+    <p>${escapeHtml(problemDiscovery.decision || "El agente preparo el mapa de problema, avatar, angulo y producto para validar.")}</p>
+    <div class="problem-score-row">
+      <div class="problem-score">
+        <strong>${score}/100</strong>
+        <span>${escapeHtml(problemDiscovery.confidence || "confianza pendiente")}</span>
+        <div class="score-track"><span style="width: ${score}%"></span></div>
+      </div>
+      <div>
+        <span class="eyebrow">Pregunta de research</span>
+        <p>${escapeHtml(problemDiscovery.researchQuestion || "Que problema vale la pena resolver, para quien y con que producto?")}</p>
+      </div>
+    </div>
+    ${coverage.length ? `<h4>Fuentes</h4><div class="source-coverage-grid">
+      ${coverage.slice(0, 3).map((source) => `<article>
+        <strong>${escapeHtml(source.source || "Fuente")}</strong>
+        <span>${escapeHtml(source.status || "pendiente")}</span>
+        <p>${escapeHtml(source.coverage || source.whatItCanProve || "")}</p>
+      </article>`).join("")}
+    </div>` : ""}
+    ${avatars.length || pains.length ? `<div class="problem-map-grid">
+      ${avatars.length ? `<div>
+        <h4>Avatar</h4>
+        ${avatars.slice(0, 2).map((avatar) => `<article class="problem-mini-card">
+          <strong>${escapeHtml(avatar.name || "Avatar")}</strong>
+          <p>${escapeHtml(avatar.problem || "")}</p>
+          <small>${escapeHtml(avatar.trigger || "")}</small>
+          ${Array.isArray(avatar.language) && avatar.language.length ? `<ul>${avatar.language.slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+        </article>`).join("")}
+      </div>` : ""}
+      ${pains.length ? `<div>
+        <h4>Pains</h4>
+        ${pains.slice(0, 2).map((pain) => `<article class="problem-mini-card">
+          <strong>${escapeHtml(pain.pain || "Pain")}</strong>
+          <p>${escapeHtml(pain.desiredOutcome || "")}</p>
+          <small>${escapeHtml(`Urgencia: ${pain.urgency || "pendiente"}`)}</small>
+        </article>`).join("")}
+      </div>` : ""}
+    </div>` : ""}
+    ${angles.length ? `<h4>Angulos candidatos</h4><div class="angle-grid">
+      ${angles.slice(0, 3).map((angle) => `<article>
+        <div><strong>${escapeHtml(angle.angle || "Angulo")}</strong><span>${escapeHtml(`${Number(angle.score || 0)}/100`)}</span></div>
+        <p>${escapeHtml(angle.creativeHook || angle.whyItMayBeUnderused || "")}</p>
+        <small>${escapeHtml(angle.proofNeeded || angle.risk || "")}</small>
+      </article>`).join("")}
+    </div>` : ""}
+    ${products.length ? `<h4>Producto hipotesis</h4><ul>${products.slice(0, 2).map((item) => `<li><strong>${escapeHtml(item.product || "Producto")}</strong>: ${escapeHtml(item.whyItSolves || item.validationStep || "")}</li>`).join("")}</ul>` : ""}
+    ${evidence.length ? `<h4>Evidencia / hipotesis</h4><ul>${evidence.slice(0, 4).map((item) => `<li>${escapeHtml(`${item.source || "Fuente"}: ${item.signal || item.quoteOrObservation || ""} (${item.confidence || "confianza pendiente"})`)}</li>`).join("")}</ul>` : ""}
+    ${creative.hooks?.length ? `<h4>Hooks iniciales</h4><ul>${creative.hooks.slice(0, 5).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+  </article>`;
+}
+
 function renderCustomizationPlanCard(customizationPlan, brandPlan) {
   if (!customizationPlan) return "";
   const variants = Array.isArray(customizationPlan.variantOptions) ? customizationPlan.variantOptions : [];
@@ -3128,6 +3448,7 @@ function renderReport(report) {
   setTabLabels(isShopify ? tabLabelSets.shopify : tabLabelSets.sourcing);
   const ai = report.ai || null;
   const brandPlan = extractBrandPlan(report);
+  const problemDiscovery = extractProblemDiscovery(report);
   const customizationPlan = extractCustomizationPlan(report);
   const supplierShortlist = ai?.supplierShortlist?.length ? ai.supplierShortlist : report.supplierProfiles;
   const agentWorkLog = ai?.agentWorkLog?.length ? ai.agentWorkLog : report.agentTasks;
@@ -3178,6 +3499,7 @@ function renderReport(report) {
         <h3>Herramientas activas</h3>
         <p>${escapeHtml(goals)}</p>
       </article>
+      ${renderProblemDiscoveryCard(problemDiscovery)}
       ${renderBrandPlanCard(brandPlan)}
       <article class="report-card full-span">
         <h3>Trabajo del agente</h3>
@@ -3190,6 +3512,7 @@ function renderReport(report) {
   document.querySelector("#tools").innerHTML = `
     <div class="report-grid">
       ${isShopify ? renderShopifyOverview(report) : ""}
+      ${renderProblemDiscoveryCard(problemDiscovery)}
       <article class="report-card full-span">
         <h3>Tool routing</h3>
         <p>${escapeHtml(ai?.executiveBrief?.recommendedPath || `Solicitud recibida en lenguaje natural. Tool seleccionada: ${toolLabel(report.selectedInternalTool)}.`)}</p>
@@ -3330,6 +3653,7 @@ function renderBrandReport(report) {
   const audit = buildBrandAudit(report, brand);
   const brandPlan = extractBrandPlan(report);
   const websitePlan = extractWebsitePlan(report) || (brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
+  const problemDiscovery = extractProblemDiscovery(report);
   const customizationPlan = extractCustomizationPlan(report);
   const competitorInspiration = buildCompetitorInspiration(report, brand);
   const creativePerformance = buildCreativePerformanceLab(report, brand, competitorInspiration);
@@ -3371,12 +3695,14 @@ function renderBrandReport(report) {
         ${renderAgentWorkLog(report.agentTasks)}
       </article>
       ${renderBrandPlanCard(brandPlan)}
+      ${renderProblemDiscoveryCard(problemDiscovery)}
       ${shopifyOverview}
       ${backendNotice}
     </div>`;
 
   document.querySelector("#tools").innerHTML = `
     <div class="report-grid">
+      ${renderProblemDiscoveryCard(problemDiscovery)}
       ${renderCompetitorInspiration(competitorInspiration)}
       ${renderCreativePerformanceLab(creativePerformance)}
       <article class="report-card full-span">
@@ -4603,9 +4929,9 @@ function buildPrompt(report) {
   }
   if (report.businessStage === "brand") {
     const brand = normalizeBrandContext(report);
-    return `Actua como Agent Genia. El usuario tiene o quiere crear una marca: ${brand.name}. Solicitud: "${report.naturalRequest}". Adjuntos: ${attachments}. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si pide competencia o inspiracion, desglosa hooks, headlines, formato, avatar y pain points; separa evidencia observada de hipotesis y no copies claims. Si pide rendimiento de ads, creativos ganadores/perdedores, videos organicos virales, TikTok/Reels/UGC o performance creativa, compara paid vs organico y separa ganadores, bajo rendimiento y sin datos suficientes; analiza first frame, hook, guion, formato, avatar, pain point, prueba visual, CTA, oferta y metricas necesarias como CTR, CPA, ROAS, watch time, completion, shares, saves y conversion. No trates viralidad como prueba de ventas sin datos de intencion y conversion. Si pide naming, colores o identidad visual, crea brandPlan con nombre recomendado, opciones de nombre, paleta hex y checks de disponibilidad. Si pide producto personalizado, private label, empaque, packaging, logo, variantes, acabados o materiales, crea customizationPlan con variantes de producto/empaque, impacto en MOQ/costo, preguntas para proveedor y brief en ingles. Si pide pagina web/landing o creas brandPlan para marca nueva, crea websitePlan con hero, secciones, copy, aplicacion de colores y pasos de build. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
+    return `Actua como Agent Genia. El usuario tiene o quiere crear una marca: ${brand.name}. Solicitud: "${report.naturalRequest}". Adjuntos: ${attachments}. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si pide buscar problema, validar oportunidad, encontrar avatar, descubrir angulo no explotado o hacer research profundo, crea problemDiscovery con Meta Ads, Amazon reviews y TikTok pain points separados por fuente; si no hay browsing real, marca las fuentes como pendientes y no inventes evidencia. Si pide competencia o inspiracion, desglosa hooks, headlines, formato, avatar y pain points; separa evidencia observada de hipotesis y no copies claims. Si pide rendimiento de ads, creativos ganadores/perdedores, videos organicos virales, TikTok/Reels/UGC o performance creativa, compara paid vs organico y separa ganadores, bajo rendimiento y sin datos suficientes; analiza first frame, hook, guion, formato, avatar, pain point, prueba visual, CTA, oferta y metricas necesarias como CTR, CPA, ROAS, watch time, completion, shares, saves y conversion. No trates viralidad como prueba de ventas sin datos de intencion y conversion. Si pide naming, colores o identidad visual, crea brandPlan con nombre recomendado, opciones de nombre, paleta hex y checks de disponibilidad. Si pide producto personalizado, private label, empaque, packaging, logo, variantes, acabados o materiales, crea customizationPlan con variantes de producto/empaque, impacto en MOQ/costo, preguntas para proveedor y brief en ingles. Si pide pagina web/landing o creas brandPlan para marca nueva, crea websitePlan con hero, secciones, copy, aplicacion de colores y pasos de build. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
   }
-  return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Adjuntos: ${attachments}. Decide que herramienta interna usar. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Si hay intencion de producto personalizado, private label, empaque, packaging, logo, variantes, acabados o materiales, usa product customization helper y devuelve customizationPlan. Si hay intencion de crear marca, naming, colores o identidad visual, usa brand strategy helper y devuelve brandPlan. Si hay intencion de pagina web/landing, o brandPlan necesita convertirse en web, devuelve websitePlan. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
+  return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Adjuntos: ${attachments}. Decide que herramienta interna usar. Si hay intencion de buscar problema, validar oportunidad, encontrar avatar, descubrir angulo no explotado, elegir producto desde dolor o hacer research profundo, usa problem discovery agent y devuelve problemDiscovery con Meta Ads, Amazon reviews y TikTok pain points separados por fuente; si no hay browsing real, marca fuentes pendientes y no inventes evidencia. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Si hay intencion de producto personalizado, private label, empaque, packaging, logo, variantes, acabados o materiales, usa product customization helper y devuelve customizationPlan. Si hay intencion de crear marca, naming, colores o identidad visual, usa brand strategy helper y devuelve brandPlan. Si hay intencion de pagina web/landing, o brandPlan necesita convertirse en web, devuelve websitePlan. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
 }
 
 function buildMarkdown(report) {
@@ -4635,6 +4961,7 @@ function buildMarkdown(report) {
     return buildAiMarkdown(report);
   }
   const shopifySection = report.businessStage === "shopify" ? buildShopifyMarkdown(report) : "";
+  const problemDiscoverySection = buildProblemDiscoveryMarkdown(extractProblemDiscovery(report));
   const negotiation = buildNegotiationPlan(report);
   const ddp = buildDdpPlan(report);
   const quality = buildQualityPlan(report);
@@ -4653,6 +4980,7 @@ Cantidad: ${report.orderQuantity || "no definida"}
 Costo objetivo: ${report.targetUnitCost ? formatMoney(report.targetUnitCost) : "no definido"}
 Adjuntos: ${attachmentSummary(report.attachments)}
 ${shopifySection}
+${problemDiscoverySection}
 
 ## Decision
 
@@ -4694,9 +5022,11 @@ function buildBrandMarkdown(report) {
   const shopifySection = report.shopify?.shop ? buildShopifyMarkdown(report) : "";
   const brandPlan = extractBrandPlan(report);
   const websitePlan = extractWebsitePlan(report) || (brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
+  const problemDiscovery = extractProblemDiscovery(report);
   const customizationPlan = extractCustomizationPlan(report);
   const brandPlanSection = buildBrandPlanMarkdown(brandPlan);
   const websitePlanSection = buildWebsitePlanMarkdown(websitePlan);
+  const problemDiscoverySection = buildProblemDiscoveryMarkdown(problemDiscovery);
   const customizationPlanSection = buildCustomizationPlanMarkdown(customizationPlan);
 
   return `# Auditoria de marca
@@ -4711,6 +5041,7 @@ Herramienta interna: ${toolLabel(report.selectedInternalTool)}
 ${shopifySection}
 ${brandPlanSection}
 ${websitePlanSection}
+${problemDiscoverySection}
 ${customizationPlanSection}
 
 ## Decision
@@ -4883,6 +5214,55 @@ ${samplePlan.map((item) => `- ${item}`).join("\n")}
 
 Calidad:
 ${qualityChecks.map((item) => `- ${item}`).join("\n")}
+
+Siguiente:
+${nextSteps.map((item) => `- ${item}`).join("\n")}
+`;
+}
+
+function buildProblemDiscoveryMarkdown(problemDiscovery) {
+  if (!problemDiscovery) return "";
+  const coverage = Array.isArray(problemDiscovery.sourceCoverage) ? problemDiscovery.sourceCoverage : [];
+  const evidence = Array.isArray(problemDiscovery.evidenceMatrix) ? problemDiscovery.evidenceMatrix : [];
+  const avatars = Array.isArray(problemDiscovery.avatars) ? problemDiscovery.avatars : [];
+  const pains = Array.isArray(problemDiscovery.painPoints) ? problemDiscovery.painPoints : [];
+  const angles = Array.isArray(problemDiscovery.angleCandidates) ? problemDiscovery.angleCandidates : [];
+  const products = Array.isArray(problemDiscovery.productHypotheses) ? problemDiscovery.productHypotheses : [];
+  const creative = problemDiscovery.creativeBrief || {};
+  const nextSteps = Array.isArray(problemDiscovery.nextSteps) ? problemDiscovery.nextSteps : [];
+
+  return `
+## Problem discovery
+
+Pregunta: ${problemDiscovery.researchQuestion || ""}
+
+Decision: ${problemDiscovery.decision || ""}
+
+Score oportunidad: ${problemDiscovery.opportunityScore ?? "pendiente"}/100
+Confianza: ${problemDiscovery.confidence || ""}
+
+Fuentes:
+${coverage.map((source) => `- ${source.source || "Fuente"}: ${source.status || "pendiente"} | ${source.coverage || source.whatItCanProve || ""} | Limite: ${source.limitations || ""}`).join("\n")}
+
+Evidencia / hipotesis:
+${evidence.map((item) => `- ${item.source || "Fuente"} (${item.confidence || "pendiente"}): ${item.signal || item.quoteOrObservation || ""}`).join("\n")}
+
+Avatares:
+${avatars.map((avatar) => `- ${avatar.name || "Avatar"}: ${avatar.problem || ""} | Trigger: ${avatar.trigger || ""} | Lenguaje: ${(avatar.language || []).join("; ")}`).join("\n")}
+
+Pains:
+${pains.map((pain) => `- ${pain.pain || ""}: ${pain.desiredOutcome || ""} | Urgencia: ${pain.urgency || ""}`).join("\n")}
+
+Angulos:
+${angles.map((angle) => `- ${angle.angle || ""} (${angle.score ?? "pendiente"}/100): ${angle.creativeHook || angle.whyItMayBeUnderused || ""} | Prueba necesaria: ${angle.proofNeeded || ""}`).join("\n")}
+
+Productos hipotesis:
+${products.map((item) => `- ${item.product || ""}: ${item.whyItSolves || ""} | Validacion: ${item.validationStep || ""}`).join("\n")}
+
+Creative brief:
+- Promesa: ${creative.corePromise || ""}
+${(creative.hooks || []).map((item) => `- Hook: ${item}`).join("\n")}
+${(creative.contentFormats || []).map((item) => `- Formato: ${item}`).join("\n")}
 
 Siguiente:
 ${nextSteps.map((item) => `- ${item}`).join("\n")}
@@ -5307,6 +5687,7 @@ function buildAiMarkdown(report) {
   const ai = report.ai;
   const brandPlanSection = buildBrandPlanMarkdown(ai.brandPlan);
   const websitePlanSection = buildWebsitePlanMarkdown(ai.websitePlan);
+  const problemDiscoverySection = buildProblemDiscoveryMarkdown(ai.problemDiscovery);
   const customizationPlanSection = buildCustomizationPlanMarkdown(ai.customizationPlan);
   const shopifySection = ai.shopifyPlan
     ? `
@@ -5331,6 +5712,7 @@ Adjuntos: ${attachmentSummary(report.attachments)}
 ${shopifySection}
 ${brandPlanSection}
 ${websitePlanSection}
+${problemDiscoverySection}
 ${customizationPlanSection}
 
 ## Decision
@@ -5574,6 +5956,7 @@ function toolLabel(value) {
   if (value === "agentgenia_tool_factory") return "Tool Factory";
   if (value === "shopify_page_builder") return "Shopify page builder";
   if (value === "product-customization-agent") return "Producto personalizado";
+  if (value === "problem-discovery-agent") return "Problem discovery";
   return "Ecom research";
 }
 

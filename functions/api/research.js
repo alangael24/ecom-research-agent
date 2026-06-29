@@ -311,6 +311,7 @@ export async function onRequestPost(context) {
       !forceHarnessForAvatarResearch &&
       agentPayload.businessStage !== "brand" &&
       shouldUseProfitabilityTool(agentPayload) &&
+      !shouldUseProblemDiscoveryTool(agentPayload) &&
       !shouldUseProductCustomizationTool(agentPayload)
     ) {
       const report = await runProfitabilityTool(agentPayload, env);
@@ -689,6 +690,12 @@ function shouldUseProductCustomizationTool(payload) {
   return /personaliz|custom|private label|marca propia|producto propio|empaque|packaging|envase|caja|box|bolsa|pouch|sleeve|etiqueta|label|insert|unboxing|variante|variantes|acabado|finish|material|colorway|formula|f[oó]rmula|fragancia|scent|logo|dieline|troquel|muestra|sample/.test(text);
 }
 
+function shouldUseProblemDiscoveryTool(payload) {
+  if (payload.selectedInternalTool === "problem-discovery-agent") return true;
+  const text = payloadText(payload).toLowerCase();
+  return /buscar problema|encontrar problema|problema real|validar oportunidad|validar idea|oportunidad|nicho|avatar|pain point|pain points|punto(s)? de dolor|angulo|ángulo|no explotado|white ?space|research profundo|investigaci[oó]n profunda|audiencia|voz del cliente|voice of customer|meta ads|amazon reviews|reseñas amazon|tiktok|comentarios|lanzar marca|empezar marca|producto que resuelva|soluci[oó]n de producto/.test(text);
+}
+
 function shouldUseRetailToOnlineTool(payload) {
   if (payload.selectedInternalTool === "retail-to-online-agent") return true;
   const text = payloadText(payload).toLowerCase();
@@ -717,11 +724,13 @@ function shouldUseShippingRateTool(payload) {
 }
 
 function shouldUseShopifyPageBuilder(payload) {
+  if (shouldUseProblemDiscoveryTool(payload)) return false;
   const text = payloadText(payload).toLowerCase();
   return /shopify/.test(text) && /crear|hacer|generar|construir|publicar|subir|lanzar|landing|pagina|página|page|web|sitio/.test(text);
 }
 
 function shouldUseBrandWhitespaceTool(payload) {
+  if (shouldUseProblemDiscoveryTool(payload)) return false;
   if (payload.businessStage !== "brand") return false;
   const text = payloadText(payload).toLowerCase();
   const intentPattern =
