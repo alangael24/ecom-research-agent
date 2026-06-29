@@ -37,6 +37,13 @@ const shopifyDomainInput = document.querySelector("#shopifyDomain");
 const shopifyStoreSelect = document.querySelector("#shopifyStore");
 const shopifyFocusInput = document.querySelector("#shopifyFocus");
 const shopifyConnectionStatus = document.querySelector("#shopifyConnectionStatus");
+const shopifyPicker = document.querySelector("#shopifyPicker");
+const shopifyPickerForm = document.querySelector("#shopifyPickerForm");
+const shopifyPickerInput = document.querySelector("#shopifyPickerInput");
+const shopifyPickerStores = document.querySelector("#shopifyPickerStores");
+const shopifyPickerStatus = document.querySelector("#shopifyPickerStatus");
+const shopifyPickerSubmit = document.querySelector("#shopifyPickerSubmit");
+const closeShopifyPickerButton = document.querySelector("#closeShopifyPicker");
 const toolMenuToggle = document.querySelector("#toolMenuToggle");
 const toolMenu = document.querySelector("#toolMenu");
 const toolOptionButtons = [...document.querySelectorAll("[data-tool-option]")];
@@ -45,6 +52,7 @@ const activeContextChip = document.querySelector("#activeContextChip");
 const hero = document.querySelector(".hero");
 const authPage = document.querySelector("#authPage");
 const authError = document.querySelector("#authError");
+const shopifyAuthLogin = document.querySelector("#shopifyAuthLogin");
 const userPill = document.querySelector("#userPill");
 const pendingRequestKey = "agentGeniaPendingRequest";
 const SHOPIFY_PRODUCTION_ORIGIN = "https://agentgenia.com";
@@ -266,6 +274,7 @@ async function init() {
   renderRoute();
   if (handleShopifyEntryParams()) return;
   handleShopifyCallbackParams();
+  const openShopifyPickerOnBoot = consumeShopifyPickerParam();
   loadShopifyStores();
   form.addEventListener("submit", handleSubmit);
   attachmentInput?.addEventListener("change", (event) => void handleAttachmentInput(event));
@@ -278,9 +287,11 @@ async function init() {
   document.querySelector("#downloadBrief").addEventListener("click", downloadBrief);
   document.querySelector("#copySummary").addEventListener("click", copySummary);
   document.addEventListener("click", handleDocumentClick);
+  document.addEventListener("keydown", handleKeydown);
   tabs.forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
   lucide.createIcons();
   resumePendingRequest();
+  if (openShopifyPickerOnBoot) startShopifyLogin();
 }
 
 function setupStageControls() {
@@ -301,6 +312,17 @@ function setupStageControls() {
   });
   toolOptionButtons.forEach((button) => {
     button.addEventListener("click", () => selectToolOption(button.dataset.toolOption));
+  });
+  shopifyAuthLogin?.addEventListener("click", (event) => {
+    event.preventDefault();
+    selectBusinessStage("shopify");
+    startShopifyLogin();
+  });
+  shopifyPickerForm?.addEventListener("submit", (event) => void handleShopifyPickerSubmit(event));
+  shopifyPickerStores?.addEventListener("click", handleShopifyStorePick);
+  closeShopifyPickerButton?.addEventListener("click", closeShopifyPicker);
+  shopifyPicker?.addEventListener("click", (event) => {
+    if (event.target === shopifyPicker) closeShopifyPicker();
   });
   document.querySelector("#connectShopify")?.addEventListener("click", connectShopifyStore);
   document.querySelector("#refreshShopifyStores")?.addEventListener("click", loadShopifyStores);
@@ -366,48 +388,150 @@ function handleShopifyCallbackParams() {
   window.history.replaceState({}, "", cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
 }
 
-async function startShopifyLogin() {
-  const button = document.querySelector("#loginShopify") || document.querySelector("[data-tool-option='shopify']");
-  if (button) button.disabled = true;
+function consumeShopifyPickerParam() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("connect_shopify")) return false;
+  url.searchParams.delete("connect_shopify");
+  window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  return true;
+}
+
+function startShopifyLogin() {
+  openShopifyStorePicker();
+}
+
+function openShopifyStorePicker() {
+  if (!shopifyPicker) {
+    openManualShopifyFallback("Escribe tu dominio .myshopify.com para conectar Shopify.");
+    return;
+  }
+
+  const current = shopifyDomainInput?.value || shopifyStoreSelect?.value || "";
+  if (shopifyPickerInput && current) shopifyPickerInput.value = current;
+  renderShopifyStorePicker();
+  setShopifyPickerStatus(
+    state.shopifyStores.length
+      ? "Elige una tienda conectada o agrega otra."
+      : "Escribe el dominio .myshopify.com de la tienda.",
+  );
+  shopifyPicker.hidden = false;
+  document.body.classList.add("modal-open");
+  window.setTimeout(() => {
+    shopifyPickerInput?.focus();
+    shopifyPickerInput?.select();
+  }, 0);
+  void loadShopifyStores();
+  lucide.createIcons();
+}
+
+function closeShopifyPicker() {
+  if (!shopifyPicker) return;
+  shopifyPicker.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+function renderShopifyStorePicker() {
+  if (!shopifyPickerStores) return;
+
+  if (!state.shopifyStores.length) {
+    shopifyPickerStores.hidden = true;
+    shopifyPickerStores.innerHTML = "";
+    return;
+  }
+
+  shopifyPickerStores.hidden = false;
+  shopifyPickerStores.innerHTML = `
+    <p>Tiendas conectadas</p>
+    <div class="shopify-store-list">
+      ${state.shopifyStores
+        .map((store) => {
+          const label = store.shopInfo?.name || store.shop;
+          const domain = store.shop || "";
+          const selected = domain && domain === shopifyStoreSelect?.value;
+          return `<button class="shopify-store-choice${selected ? " active" : ""}" type="button" data-shopify-picker-store="${escapeHtml(domain)}">
+            <span><i data-lucide="store"></i></span>
+            <strong>${escapeHtml(label)}</strong>
+            <small>${escapeHtml(domain)}</small>
+          </button>`;
+        })
+        .join("")}
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+function handleShopifyStorePick(event) {
+  const button = event.target instanceof Element ? event.target.closest("[data-shopify-picker-store]") : null;
+  if (!button) return;
+  selectConnectedShopifyStore(button.dataset.shopifyPickerStore || "");
+}
+
+function selectConnectedShopifyStore(shop) {
+  const normalizedShop = normalizeShopifyDomain(shop);
+  if (!isValidShopifyDomain(normalizedShop)) return;
+  if (shopifyDomainInput) shopifyDomainInput.value = normalizedShop;
+  if (shopifyStoreSelect) {
+    if (![...shopifyStoreSelect.options].some((option) => option.value === normalizedShop)) {
+      state.pendingShopifyShop = normalizedShop;
+      renderShopifyStoreOptions();
+    }
+    shopifyStoreSelect.value = normalizedShop;
+  }
+  selectBusinessStage("shopify");
+  closeShopifyPicker();
+  showToast(`Tienda seleccionada: ${normalizedShop}`);
+  form.naturalRequest.focus();
+}
+
+async function handleShopifyPickerSubmit(event) {
+  event.preventDefault();
+  await beginShopifyOAuth(shopifyPickerInput?.value);
+}
+
+async function beginShopifyOAuth(value) {
+  const shop = normalizeShopifyDomain(value);
+  if (!isValidShopifyDomain(shop)) {
+    setShopifyPickerStatus("Usa el dominio .myshopify.com o el slug de la tienda.");
+    showToast("Usa el dominio .myshopify.com de la tienda");
+    return;
+  }
+
+  if (shopifyDomainInput) shopifyDomainInput.value = shop;
+  if (shopifyPickerSubmit) shopifyPickerSubmit.disabled = true;
+  setShopifyPickerStatus("Abriendo Shopify...");
 
   try {
-    const shop = promptForShopifyDomain();
-    if (!shop) return;
-
     const response = await fetch(shopifyApiUrl(`/api/shopify/login?shop=${encodeURIComponent(shop)}`), {
       headers: { accept: "application/json" },
     });
     const body = await response.json();
     if (!response.ok || !body.ok || !body.redirectUrl) {
-      openManualShopifyFallback();
-      showToast(body.message || "No se pudo iniciar OAuth de Shopify");
+      const message = body.message || "No se pudo iniciar OAuth de Shopify.";
+      openManualShopifyFallback(message);
+      showToast(message);
       return;
     }
     window.location.href = body.redirectUrl;
   } catch {
-    openManualShopifyFallback();
+    openManualShopifyFallback("No se pudo iniciar sesion con Shopify.");
     showToast("No se pudo iniciar sesion con Shopify");
   } finally {
-    if (button) button.disabled = false;
+    if (shopifyPickerSubmit) shopifyPickerSubmit.disabled = false;
   }
 }
 
-function promptForShopifyDomain() {
-  const current = shopifyDomainInput?.value || shopifyStoreSelect?.value || "";
-  const value = window.prompt("Pega tu tienda Shopify (.myshopify.com)", current || "tu-tienda.myshopify.com");
-  if (value === null) return "";
-
-  const shop = normalizeShopifyDomain(value);
-  if (!isValidShopifyDomain(shop)) {
-    showToast("Usa el dominio .myshopify.com de la tienda");
-    return "";
-  }
-
-  if (shopifyDomainInput) shopifyDomainInput.value = shop;
-  return shop;
+function setShopifyPickerStatus(message) {
+  if (!shopifyPickerStatus) return;
+  shopifyPickerStatus.textContent = message || "";
 }
 
-function openManualShopifyFallback() {
+function openManualShopifyFallback(message = "") {
+  if (shopifyPicker) {
+    if (shopifyPicker.hidden) openShopifyStorePicker();
+    if (message) setShopifyPickerStatus(message);
+    shopifyPickerInput?.focus();
+    return;
+  }
   form.naturalRequest.focus();
 }
 
@@ -463,16 +587,28 @@ async function loadShopifyStores() {
     if (!body.ok) throw new Error(body.message || "No se pudieron leer las tiendas Shopify.");
     state.shopifyStores = body.stores || [];
     renderShopifyStoreOptions();
+    renderShopifyStorePicker();
     if (shopifyConnectionStatus) {
       shopifyConnectionStatus.textContent = state.shopifyStores.length
         ? `${state.shopifyStores.length} tienda(s) conectada(s).`
         : "Conecta cada tienda una vez con OAuth de Shopify.";
     }
+    if (shopifyPicker && !shopifyPicker.hidden) {
+      setShopifyPickerStatus(
+        state.shopifyStores.length
+          ? "Elige una tienda conectada o agrega otra."
+          : "Escribe el dominio .myshopify.com de la tienda.",
+      );
+    }
   } catch (error) {
     state.shopifyStores = [];
     renderShopifyStoreOptions();
+    renderShopifyStorePicker();
     if (shopifyConnectionStatus) {
       shopifyConnectionStatus.textContent = "La conexion Shopify funciona desde la URL publicada en Cloudflare.";
+    }
+    if (shopifyPicker && !shopifyPicker.hidden) {
+      setShopifyPickerStatus("Escribe el dominio .myshopify.com de la tienda.");
     }
   }
 }
@@ -500,10 +636,10 @@ function renderShopifyStoreOptions() {
 function connectShopifyStore() {
   const shop = normalizeShopifyDomain(shopifyDomainInput?.value);
   if (!isValidShopifyDomain(shop)) {
-    showToast("Usa tu dominio .myshopify.com o el nombre de tu tienda");
+    openShopifyStorePicker();
     return;
   }
-  window.location.href = shopifyApiUrl(`/api/shopify/connect?shop=${encodeURIComponent(shop)}`);
+  void beginShopifyOAuth(shop);
 }
 
 async function disconnectSelectedShopifyStore() {
@@ -1005,6 +1141,12 @@ function handleDocumentClick(event) {
   if (publishButton) {
     publishShopifyPage(publishButton);
     return;
+  }
+}
+
+function handleKeydown(event) {
+  if (event.key === "Escape" && shopifyPicker && !shopifyPicker.hidden) {
+    closeShopifyPicker();
   }
 }
 

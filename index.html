@@ -9,7 +9,7 @@
     />
     <title>Agent Genia Research</title>
     <link rel="preconnect" href="https://unpkg.com" />
-    <link rel="stylesheet" href="./styles.css?v=20260628-shopify-direct" />
+    <link rel="stylesheet" href="./styles.css?v=20260628-shopify-picker" />
   </head>
   <body>
     <div class="app-shell">
@@ -173,7 +173,7 @@
                 <span>Continuar con Google</span>
               </a>
 
-              <a class="auth-provider shopify-provider" id="shopifyAuthLogin" href="/api/shopify/login">
+              <a class="auth-provider shopify-provider" id="shopifyAuthLogin" href="/?connect_shopify=1">
                 <span class="provider-mark shopify-mark"><i data-lucide="shopping-bag"></i></span>
                 <span>Continuar con Shopify</span>
               </a>
@@ -218,6 +218,41 @@
         </div>
         <div class="history-list" id="historyList"></div>
       </aside>
+
+      <div class="shopify-picker" id="shopifyPicker" role="dialog" aria-modal="true" aria-labelledby="shopifyPickerTitle" hidden>
+        <div class="shopify-picker-panel">
+          <div class="shopify-picker-head">
+            <div>
+              <p>Shopify</p>
+              <h2 id="shopifyPickerTitle">Selecciona tu tienda</h2>
+            </div>
+            <button class="icon-button" id="closeShopifyPicker" type="button" title="Cerrar">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+
+          <div class="shopify-picker-stores" id="shopifyPickerStores" hidden></div>
+
+          <form class="shopify-picker-form" id="shopifyPickerForm">
+            <label for="shopifyPickerInput">Conectar otra tienda</label>
+            <div class="shopify-picker-row">
+              <input
+                id="shopifyPickerInput"
+                name="shopifyPickerInput"
+                type="text"
+                inputmode="url"
+                autocomplete="off"
+                placeholder="mi-tienda.myshopify.com"
+              />
+              <button class="primary-button" id="shopifyPickerSubmit" type="submit">
+                <i data-lucide="arrow-right"></i>
+                Continuar
+              </button>
+            </div>
+            <p class="field-note" id="shopifyPickerStatus" aria-live="polite"></p>
+          </form>
+        </div>
+      </div>
     </div>
 
     <template id="emptyState">
@@ -236,6 +271,6 @@
     </template>
 
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-    <script src="./app.js?v=20260628-shopify-direct"></script>
+    <script src="./app.js?v=20260628-shopify-picker"></script>
   </body>
 </html>
