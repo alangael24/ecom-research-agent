@@ -3657,6 +3657,7 @@ function renderBrandReport(report) {
   const customizationPlan = extractCustomizationPlan(report);
   const competitorInspiration = buildCompetitorInspiration(report, brand);
   const creativePerformance = buildCreativePerformanceLab(report, brand, competitorInspiration);
+  const angleValidator = normalizeAngleWhitespaceValidator(report.angleValidation || report.angleWhitespaceValidator || report.ai?.angleWhitespaceValidator);
   const shopifyOverview = report.shopify?.shop ? renderShopifyOverview(report) : "";
   const backendNotice = report.backendError
     ? `<article class="report-card full-span notice-card">
@@ -3704,6 +3705,7 @@ function renderBrandReport(report) {
     <div class="report-grid">
       ${renderProblemDiscoveryCard(problemDiscovery)}
       ${renderCompetitorInspiration(competitorInspiration)}
+      ${renderAngleWhitespaceValidator(angleValidator)}
       ${renderCreativePerformanceLab(creativePerformance)}
       <article class="report-card full-span">
         <h3>Mapa de marca</h3>
@@ -3789,13 +3791,20 @@ function renderBrandWhitespaceReport(report) {
   const risks = Array.isArray(report.risks) ? report.risks : [];
   const validationPlan = Array.isArray(report.validationPlan) ? report.validationPlan : [];
   const nextSteps = Array.isArray(report.nextSteps) ? report.nextSteps : [];
+  const angleValidator = normalizeAngleWhitespaceValidator(report.angleValidation || report.angleWhitespaceValidator || report.ai?.angleWhitespaceValidator);
+  const primaryAngle =
+    angleValidator?.angles.find((angle) => angle.verdict === "libre_necesita_test") ||
+    angleValidator?.angles.find((angle) => angle.verdict === "debil") ||
+    angleValidator?.angles[0] ||
+    null;
   const primary = candidates[0] || {};
 
   document.querySelector("#brief").innerHTML = `
-    <div class="metric-row">
+    <div class="metric-row compact-metrics">
       <article class="metric-card"><strong>${escapeHtml(brand.name || "Marca")}</strong><p>marca</p></article>
-      <article class="metric-card"><strong>${escapeHtml(brief.confidence || primary.confidence || "baja")}</strong><p>confianza</p></article>
+      <article class="metric-card"><strong>${escapeHtml(brief.confidence || primaryAngle?.confidence || primary.confidence || "baja")}</strong><p>confianza</p></article>
       <article class="metric-card"><strong>${candidates.length}</strong><p>hipotesis</p></article>
+      <article class="metric-card"><strong>${angleValidator?.angles.length || 0}</strong><p>angulos</p></article>
     </div>
     <div class="report-grid">
       <article class="report-card full-span">
@@ -3819,6 +3828,7 @@ function renderBrandWhitespaceReport(report) {
 
   document.querySelector("#tools").innerHTML = `
     <div class="report-grid">
+      ${renderAngleWhitespaceValidator(angleValidator)}
       ${candidates.map(renderWhitespaceCandidate).join("") || emptyReportCard("Sin hipotesis", "Agrega competidores, catalogo o contexto de clientes para generar espacios posibles.")}
     </div>`;
 
@@ -3847,9 +3857,10 @@ function renderBrandWhitespaceReport(report) {
       <article class="report-card full-span">
         <h3>Primer test recomendado</h3>
         <dl class="calculation-list">
-          <div><dt>Oferta</dt><dd>${escapeHtml(primary.firstOffer || "oferta de entrada pendiente")}</dd></div>
+          <div><dt>Angulo</dt><dd>${escapeHtml(primaryAngle?.angle || primary.title || "angulo pendiente")}</dd></div>
+          <div><dt>Veredicto</dt><dd>${escapeHtml(primaryAngle?.verdictLabel || "necesita test")}</dd></div>
           <div><dt>Canal</dt><dd>${escapeHtml(primary.channel || "canal principal pendiente")}</dd></div>
-          <div><dt>Metrica</dt><dd>conversion, add-to-cart, CAC o respuesta cualitativa</dd></div>
+          <div><dt>Test</dt><dd>${escapeHtml(primaryAngle?.nextTest || primary.validationTest || "landing/PDP + creativos pequenos")}</dd></div>
         </dl>
       </article>
     </div>`;
@@ -3874,7 +3885,7 @@ function renderBrandWhitespaceReport(report) {
       </article>
       <article class="report-card full-span">
         <h3>Prompt profundo</h3>
-        <p>${escapeHtml(`Actua como Agent Genia. Toma la marca ${brand.name || "marca"} y valida el whitespace "${brief.primaryWhitespace || primary.title || ""}" contra competidores, reviews, ads y comentarios reales. Separa evidencia fuerte, hipotesis y ruido.`)}</p>
+        <p>${escapeHtml(`Actua como Agent Genia. Toma la marca ${brand.name || "marca"} y valida el whitespace "${brief.primaryWhitespace || primary.title || ""}" contra competidores, reviews, ads y comentarios reales. Clasifica cada angulo como explotado, debil, libre_necesita_test o no_recomendado. Separa evidencia fuerte, hipotesis y ruido.`)}</p>
       </article>
     </div>`;
 
@@ -3899,6 +3910,142 @@ function renderWhitespaceCandidate(candidate) {
       <h4>Senales usadas</h4>
       <ul>${(candidate.supportingSignals || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
     </div>
+  </article>`;
+}
+
+function normalizeAngleWhitespaceValidator(value) {
+  const source = value || {};
+  const rawAngles = Array.isArray(source.angles) ? source.angles : [];
+  const angles = rawAngles
+    .map((angle) => {
+      const verdict = angle.verdict || normalizeAngleVerdict(angle.verdictLabel);
+      const meta = angleVerdictDisplay(verdict);
+      return {
+        angle: angle.angle || angle.title || "Angulo pendiente",
+        verdict,
+        verdictLabel: angle.verdictLabel || meta.label,
+        saturationLevel: angle.saturationLevel || "pendiente",
+        demandSignal: angle.demandSignal || "pendiente",
+        competitorPressure: angle.competitorPressure || "pendiente",
+        confidence: angle.confidence || "baja",
+        evidence: Array.isArray(angle.evidence) ? angle.evidence : [],
+        why: angle.why || "",
+        risk: angle.risk || "",
+        nextTest: angle.nextTest || "",
+        decisionRule: angle.decisionRule || "",
+        recommendedAction: angle.recommendedAction || meta.action,
+      };
+    })
+    .filter((angle) => angle.angle);
+  if (!angles.length) return null;
+  const verdictCounts = source.verdictCounts || angles.reduce(
+    (counts, angle) => {
+      counts[angle.verdict] = (counts[angle.verdict] || 0) + 1;
+      return counts;
+    },
+    { explotado: 0, debil: 0, libre_necesita_test: 0, no_recomendado: 0 },
+  );
+  const competitors = Array.isArray(source.competitors) ? source.competitors : [];
+  return {
+    summary: source.summary || `Se evaluaron ${angles.length} angulos contra el contexto disponible.`,
+    primaryRecommendation: source.primaryRecommendation || angles[0]?.recommendedAction || "",
+    verdictCounts,
+    competitors,
+    angles,
+    guardrails: Array.isArray(source.guardrails) ? source.guardrails : [],
+  };
+}
+
+function normalizeAngleVerdict(value) {
+  const text = String(value || "").toLowerCase();
+  if (text.includes("explot")) return "explotado";
+  if (text.includes("debil")) return "debil";
+  if (text.includes("no recomendado")) return "no_recomendado";
+  return "libre_necesita_test";
+}
+
+function angleVerdictDisplay(verdict) {
+  if (verdict === "explotado") {
+    return {
+      label: "Explotado",
+      tone: "notice-card",
+      action: "No competir igual; estrechar avatar, mecanismo o prueba.",
+    };
+  }
+  if (verdict === "debil") {
+    return {
+      label: "Debil / mal defendido",
+      tone: "notice-card",
+      action: "Hacerlo mas especifico antes de convertirlo en posicionamiento.",
+    };
+  }
+  if (verdict === "no_recomendado") {
+    return {
+      label: "No recomendado",
+      tone: "notice-card",
+      action: "No usar hasta resolver evidencia, claims y margen.",
+    };
+  }
+  return {
+    label: "Libre, necesita test",
+    tone: "success-card",
+    action: "Probar pequeno con landing/PDP o 3-5 creativos antes de invertir fuerte.",
+  };
+}
+
+function renderAngleWhitespaceValidator(validator) {
+  if (!validator) return "";
+  const counts = validator.verdictCounts || {};
+  const primary =
+    validator.angles.find((angle) => angle.verdict === "libre_necesita_test") ||
+    validator.angles.find((angle) => angle.verdict === "debil") ||
+    validator.angles[0];
+  return `<article class="report-card full-span angle-validator-card">
+    <h3>Angle / Whitespace Validator</h3>
+    <p>${escapeHtml(validator.summary)}</p>
+    <div class="pill-row">
+      <span class="pill"><i data-lucide="search-check"></i>${escapeHtml(primary?.verdictLabel || "veredicto pendiente")}</span>
+      <span class="pill"><i data-lucide="target"></i>${escapeHtml(primary?.angle || "angulo pendiente")}</span>
+      <span class="pill"><i data-lucide="users-round"></i>${validator.competitors.length || 0} competidor(es)</span>
+    </div>
+    <div class="metric-row compact-metrics">
+      <article class="metric-card"><strong>${counts.explotado || 0}</strong><p>explotados</p></article>
+      <article class="metric-card"><strong>${counts.debil || 0}</strong><p>debiles</p></article>
+      <article class="metric-card"><strong>${counts.libre_necesita_test || 0}</strong><p>libres con test</p></article>
+      <article class="metric-card"><strong>${counts.no_recomendado || 0}</strong><p>no usar</p></article>
+    </div>
+    <div class="table-wrap">
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Angulo</th>
+            <th>Veredicto</th>
+            <th>Saturacion</th>
+            <th>Senal</th>
+            <th>Presion</th>
+            <th>Siguiente test</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${validator.angles.map((angle) => `<tr>
+            <td><strong>${escapeHtml(angle.angle)}</strong><small>${escapeHtml(angle.why || "")}</small></td>
+            <td><strong>${escapeHtml(angle.verdictLabel)}</strong><small>${escapeHtml(angle.recommendedAction || "")}</small></td>
+            <td>${escapeHtml(angle.saturationLevel)}</td>
+            <td>${escapeHtml(angle.demandSignal)}</td>
+            <td>${escapeHtml(angle.competitorPressure)}</td>
+            <td>${escapeHtml(angle.nextTest || angle.decisionRule || "")}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    ${validator.competitors.length ? `<div class="compact-section">
+      <h4>Competidores usados como referencia</h4>
+      <ul>${validator.competitors.map((competitor) => `<li><strong>${escapeHtml(competitor.name || "Competidor")}</strong>: ${escapeHtml((competitor.observedAngles || []).join(", ") || competitor.evidence || "sin patron confirmado")}</li>`).join("")}</ul>
+    </div>` : ""}
+    ${validator.guardrails.length ? `<div class="compact-section">
+      <h4>Guardrails</h4>
+      <ul>${validator.guardrails.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+    </div>` : ""}
   </article>`;
 }
 
@@ -5019,6 +5166,7 @@ function buildBrandMarkdown(report) {
   const audit = buildBrandAudit(report, brand);
   const competitorInspiration = buildCompetitorInspiration(report, brand);
   const creativePerformance = buildCreativePerformanceLab(report, brand, competitorInspiration);
+  const angleValidator = normalizeAngleWhitespaceValidator(report.angleValidation || report.angleWhitespaceValidator || report.ai?.angleWhitespaceValidator);
   const shopifySection = report.shopify?.shop ? buildShopifyMarkdown(report) : "";
   const brandPlan = extractBrandPlan(report);
   const websitePlan = extractWebsitePlan(report) || (brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
@@ -5057,6 +5205,8 @@ ${audit.risks.map((item) => `- ${item}`).join("\n")}
 | Formato | Avatar | Pain point | Hook | Headline |
 | --- | --- | --- | --- | --- |
 ${competitorInspiration.rows.map((row) => `| ${row.format} | ${row.avatar} | ${row.painPoint} | ${row.hook} | ${row.headline} |`).join("\n")}
+
+${buildAngleWhitespaceMarkdown(angleValidator)}
 
 ${buildCreativePerformanceMarkdown(creativePerformance)}
 
@@ -5101,6 +5251,33 @@ ${(lab.loserPatterns || []).map((item) => `- ${item}`).join("\n")}
 ### Metricas necesarias
 
 ${(lab.metricChecklist || []).map((item) => `- ${item}`).join("\n")}`;
+}
+
+function buildAngleWhitespaceMarkdown(validator) {
+  if (!validator) return "";
+  const counts = validator.verdictCounts || {};
+  return `## Angle / Whitespace Validator
+
+${validator.summary || ""}
+
+Recomendacion: ${validator.primaryRecommendation || ""}
+
+Conteo:
+- Explotados: ${counts.explotado || 0}
+- Debiles: ${counts.debil || 0}
+- Libres que necesitan test: ${counts.libre_necesita_test || 0}
+- No recomendados: ${counts.no_recomendado || 0}
+
+| Angulo | Veredicto | Saturacion | Senal | Presion | Siguiente test |
+| --- | --- | --- | --- | --- | --- |
+${validator.angles.map((angle) => `| ${angle.angle} | ${angle.verdictLabel} | ${angle.saturationLevel} | ${angle.demandSignal} | ${angle.competitorPressure} | ${angle.nextTest || angle.decisionRule || ""} |`).join("\n")}
+
+Competidores:
+${validator.competitors.map((competitor) => `- ${competitor.name || "Competidor"}: ${(competitor.observedAngles || []).join(", ") || competitor.evidence || ""}`).join("\n")}
+
+Guardrails:
+${validator.guardrails.map((item) => `- ${item}`).join("\n")}
+`;
 }
 
 function buildBrandPlanMarkdown(brandPlan) {
@@ -5274,6 +5451,7 @@ function buildBrandWhitespaceMarkdown(report) {
   const brief = report.executiveBrief || {};
   const candidates = Array.isArray(report.candidates) ? report.candidates : [];
   const evidence = report.evidence || {};
+  const angleValidator = normalizeAngleWhitespaceValidator(report.angleValidation || report.angleWhitespaceValidator || report.ai?.angleWhitespaceValidator);
 
   return `# Whitespace de marca
 
@@ -5291,6 +5469,8 @@ ${brief.decision || ""}
 
 Confianza: ${brief.confidence || ""}
 Guardrail: ${brief.guardrail || ""}
+
+${buildAngleWhitespaceMarkdown(angleValidator)}
 
 ## Hipotesis de whitespace
 

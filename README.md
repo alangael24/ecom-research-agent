@@ -18,7 +18,7 @@ The main page has two ecommerce paths without changing the cockpit structure:
 
 - `Empezar desde cero`: for beginners who only know they want to sell online.
 - `Tienda Shopify`: connects one or more Shopify stores with OAuth, stores encrypted offline tokens in Cloudflare KV, and lets Agent Genia audit the real catalog without asking merchants to paste tokens.
-- `Analizar marca`: uses existing brand context and optional Shopify catalog data. When the prompt asks for positioning, differentiation, competitors, or an "espacio libre", the backend returns a `brand_whitespace` report with whitespace hypotheses, evidence coverage, risks, and a validation plan.
+- `Analizar marca`: uses existing brand context and optional Shopify catalog data. When the prompt asks for positioning, differentiation, competitors, or an "espacio libre", the backend returns a `brand_whitespace` report with whitespace hypotheses, evidence coverage, angle/whitespace verdicts, risks, and a validation plan.
 
 ## Supabase
 
@@ -126,7 +126,7 @@ The Envia integration is rate-only. The Cloudflare Function only calls the quote
 Internal tools currently handled directly by `/api/research`:
 
 - `agentgenia_tool_factory`: native Shopify mini-tool planner that can install selected mini-tools as theme template blocks on existing Shopify landing pages.
-- `brand_whitespace_tool`: existing-brand whitespace hypotheses from declared brand context, attachments, and connected Shopify catalog data.
+- `brand_whitespace_tool`: existing-brand whitespace hypotheses from declared brand context, attachments, and connected Shopify catalog data, including the internal Angle/Whitespace Validator.
 - `shopify_page_builder`: creates an approved Shopify Page draft and lets the user publish it through `/api/shopify/pages`.
 - `shipping_rate_quote`: rate-only Envia shipping quotes when a shipping-only intent is detected.
 - `unit_economics_filter`: beginner-friendly profitability filter for non-brand-stage ideas.
@@ -148,7 +148,9 @@ Tool Factory reports also include a `toolSpec` contract. This is the executable 
 
 When Shopify is connected, the browser includes the store's registered Agent Genia mini-tools in the `/api/research` payload. Tool Factory uses that registry context to avoid duplicating work: if a matching active/paused mini-tool already exists, the agent recommends iterating, reactivating, pausing, or archiving the existing tool before creating another one. The user can stay in natural language: prompts such as "actualiza esta herramienta existente", "pausa esta herramienta", "archivala", "publicala en mi Shopify", or "agrega una seccion de reviews a /pages/mi-landing" let `/api/research` call the internal Shopify tool endpoint. `PATCH /api/shopify/tools` can update lifecycle status only, or accept a fresh Tool Factory report for registered tools. `POST /api/shopify/tools` installs the section into the target Page template when a `targetPage` id, handle, or `/pages/...` URL is provided; it stores the previous theme/template state in KV before calling `themeFilesUpsert` and `pageUpdate`.
 
-`brand_whitespace_tool` labels output as hypotheses. It does not perform live Meta Ads, Amazon review, or TikTok collection by itself; use the deeper competitive research harness/skills to confirm demand, saturation, and customer language.
+`brand_whitespace_tool` labels output as hypotheses. Its Angle/Whitespace Validator classifies each angle as `explotado`, `debil`, `libre_necesita_test`, or `no_recomendado`, then recommends the next landing/PDP/creative test and the decision rule. It does not perform live Meta Ads, Amazon review, or TikTok collection by itself; use the deeper competitive research harness/skills to confirm demand, saturation, and customer language.
+
+The Codex harness can also return `angleWhitespaceValidator` inside the normal brand audit schema when the user asks for angles, saturation, positioning, whitespace, or competitor comparison. This stays as an internal agent tool; the frontend renders it inside the existing natural-language report instead of sending the user to a separate page.
 
 ## MVP login mode
 

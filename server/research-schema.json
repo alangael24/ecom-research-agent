@@ -391,6 +391,77 @@
       ],
       "additionalProperties": false
     },
+    "angleWhitespaceValidator": {
+      "type": "object",
+      "properties": {
+        "summary": { "type": "string" },
+        "primaryRecommendation": { "type": "string" },
+        "verdictCounts": {
+          "type": "object",
+          "properties": {
+            "explotado": { "type": "number" },
+            "debil": { "type": "number" },
+            "libre_necesita_test": { "type": "number" },
+            "no_recomendado": { "type": "number" }
+          },
+          "required": ["explotado", "debil", "libre_necesita_test", "no_recomendado"],
+          "additionalProperties": false
+        },
+        "competitors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "observedAngles": { "type": "array", "items": { "type": "string" } },
+              "evidence": { "type": "string" }
+            },
+            "required": ["name", "observedAngles", "evidence"],
+            "additionalProperties": false
+          }
+        },
+        "angles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "angle": { "type": "string" },
+              "verdict": { "type": "string" },
+              "verdictLabel": { "type": "string" },
+              "saturationLevel": { "type": "string" },
+              "demandSignal": { "type": "string" },
+              "competitorPressure": { "type": "string" },
+              "confidence": { "type": "string" },
+              "evidence": { "type": "array", "items": { "type": "string" } },
+              "why": { "type": "string" },
+              "risk": { "type": "string" },
+              "nextTest": { "type": "string" },
+              "decisionRule": { "type": "string" },
+              "recommendedAction": { "type": "string" }
+            },
+            "required": [
+              "angle",
+              "verdict",
+              "verdictLabel",
+              "saturationLevel",
+              "demandSignal",
+              "competitorPressure",
+              "confidence",
+              "evidence",
+              "why",
+              "risk",
+              "nextTest",
+              "decisionRule",
+              "recommendedAction"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "guardrails": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["summary", "primaryRecommendation", "verdictCounts", "competitors", "angles", "guardrails"],
+      "additionalProperties": false
+    },
     "creativePerformance": {
       "type": "object",
       "properties": {
