@@ -21,13 +21,13 @@ const TOOL_FACTORY_CAPABILITIES = [
     matcher: /page|landing|constructor|p[aá]gina|secci[oó]n|bloque|pagefly|gempages|shogun|web|sitio/,
     defaultName: "constructor de paginas nativo",
     job: "crear paginas y bloques de conversion sin instalar un page builder pesado",
-    publishMode: "shopify_page_mvp",
-    runtimeLabel: "Page MVP publicable hoy",
-    feasibility: "alta: publicable hoy como Shopify Page MVP",
-    primitives: ["Shopify Pages", "Admin API", "Agent Genia backend", "configuracion JSON por seccion"],
-    dataModel: ["page_handle", "section_order", "section_copy", "cta", "published_url"],
-    events: ["page_published", "cta_clicked", "section_viewed"],
-    firstVersion: "Page de conversion con hero, beneficios, objeciones, CTA y medicion basica.",
+    publishMode: "theme_template_block",
+    runtimeLabel: "Theme template block",
+    feasibility: "alta: instalable en una LP existente via template del theme",
+    primitives: ["Theme JSON template", "section Liquid", "themeFilesUpsert", "configuracion JSON por seccion"],
+    dataModel: ["page_handle", "template_suffix", "section_order", "section_copy", "cta", "published_url"],
+    events: ["theme_block_installed", "cta_clicked", "section_viewed"],
+    firstVersion: "Bloque de conversion con hero, beneficios, objeciones, CTA y medicion basica dentro de la LP.",
     upgradePath: "Theme App Extension con bloques editables si el merchant la usa repetidamente.",
     savings: "$20-$100/mes si evita page builders ligeros",
     notIncluded: ["edicion visual drag-and-drop completa", "plantillas enterprise", "A/B testing avanzado"],
@@ -37,10 +37,10 @@ const TOOL_FACTORY_CAPABILITIES = [
     matcher: /quiz|recomendador|rutina|diagn[oó]stico|selector|finder|product finder|routine finder/,
     defaultName: "quiz recomendador",
     job: "guiar al comprador hacia producto/rutina correcta y guardar la senal para seguimiento",
-    publishMode: "shopify_page_mvp",
-    runtimeLabel: "Page MVP publicable hoy",
-    feasibility: "alta: publicable hoy como Shopify Page MVP",
-    primitives: ["Shopify Pages", "contact form", "Admin API", "customer tags si aplica"],
+    publishMode: "theme_template_block",
+    runtimeLabel: "Theme template block",
+    feasibility: "alta: instalable en una LP existente via template del theme",
+    primitives: ["Theme JSON template", "section Liquid", "contact form", "customer tags si aplica"],
     dataModel: ["question", "answer", "result_rule", "recommended_product", "customer_signal"],
     events: ["quiz_started", "answer_submitted", "recommendation_requested"],
     firstVersion: "Quiz guiado con formulario de contacto y CTA de recomendacion.",
@@ -53,10 +53,10 @@ const TOOL_FACTORY_CAPABILITIES = [
     matcher: /faq|preguntas|soporte|chat|help|garant[ií]a|confianza|trust|dudas|contact/,
     defaultName: "centro de confianza",
     job: "resolver dudas repetidas antes de compra y reducir friccion",
-    publishMode: "shopify_page_mvp",
-    runtimeLabel: "Page MVP publicable hoy",
-    feasibility: "alta: publicable hoy como Shopify Page MVP",
-    primitives: ["Shopify Pages", "contact form", "Admin API", "copy guiado por agente"],
+    publishMode: "theme_template_block",
+    runtimeLabel: "Theme template block",
+    feasibility: "alta: instalable en una LP existente via template del theme",
+    primitives: ["Theme JSON template", "section Liquid", "contact form", "copy guiado por agente"],
     dataModel: ["faq_question", "faq_answer", "policy_link", "support_cta"],
     events: ["faq_viewed", "support_clicked", "contact_submitted"],
     firstVersion: "FAQ/garantia/politicas con preguntas desplegables y CTA de contacto.",
@@ -69,13 +69,13 @@ const TOOL_FACTORY_CAPABILITIES = [
     matcher: /review|reviews|reseñ|testimonio|estrellas|rating|ugc|social proof|loox|judgeme|judge\.me|yotpo/,
     defaultName: "reviews ligeras nativas",
     job: "capturar, mostrar y reutilizar prueba social sin pagar una app separada desde el dia uno",
-    publishMode: "shopify_page_mvp",
-    runtimeLabel: "Page MVP publicable hoy",
+    publishMode: "theme_template_block",
+    runtimeLabel: "Theme template block",
     feasibility: "media-alta: publicable hoy para prueba social basica",
-    primitives: ["Shopify Pages", "contact form", "Admin API", "moderacion en Agent Genia"],
+    primitives: ["Theme JSON template", "section Liquid", "contact form", "moderacion en Agent Genia"],
     dataModel: ["review_author", "rating", "review_body", "product_id", "moderation_status"],
     events: ["review_submitted", "review_viewed", "trust_cta_clicked"],
-    firstVersion: "Pagina de prueba social con quotes moderadas y formulario para nuevas reviews.",
+    firstVersion: "Bloque de prueba social con quotes moderadas y formulario para nuevas reviews dentro de la LP.",
     upgradePath: "Metaobjects + Theme App Extension para reviews por producto y schema markup.",
     savings: "$15-$80/mes si cubre reviews basicas",
     notIncluded: ["syndication externa", "fraud detection avanzada", "imports complejos de todas las plataformas"],
@@ -85,13 +85,13 @@ const TOOL_FACTORY_CAPABILITIES = [
     matcher: /popup|pop-up|lead|newsletter|email capture|spin|ruleta|descuento de bienvenida|bienvenida|privy|wisepops/,
     defaultName: "captura de leads ligera",
     job: "capturar emails o solicitudes sin pagar una app de popups antes de validar el incentivo",
-    publishMode: "shopify_page_mvp",
-    runtimeLabel: "Page MVP publicable hoy",
-    feasibility: "media-alta: page MVP hoy; popup real requiere theme extension",
-    primitives: ["Shopify Pages", "contact form", "customer tags", "Admin API"],
+    publishMode: "theme_template_block",
+    runtimeLabel: "Theme template block",
+    feasibility: "media-alta: bloque embebido hoy; popup real requiere theme extension",
+    primitives: ["Theme JSON template", "section Liquid", "contact form", "customer tags"],
     dataModel: ["lead_email", "lead_source", "incentive", "consent_text", "followup_status"],
     events: ["lead_page_viewed", "lead_submitted", "incentive_requested"],
-    firstVersion: "Pagina de captura con incentivo, consentimiento y CTA.",
+    firstVersion: "Bloque de captura con incentivo, consentimiento y CTA dentro de la LP.",
     upgradePath: "Theme App Extension para popup/embedded block con reglas de frecuencia.",
     savings: "$10-$70/mes si evita popups simples",
     notIncluded: ["trigger por comportamiento", "frequency capping avanzado", "ruletas/promos complejas"],
@@ -101,13 +101,13 @@ const TOOL_FACTORY_CAPABILITIES = [
     matcher: /return|returns|devoluci[oó]n|cambio|postcompra|post-compra|aftership|loop returns|seguimiento/,
     defaultName: "portal postcompra ligero",
     job: "recibir solicitudes postcompra claras sin pagar una app antes de tener volumen alto",
-    publishMode: "shopify_page_mvp",
-    runtimeLabel: "Page MVP publicable hoy",
+    publishMode: "theme_template_block",
+    runtimeLabel: "Theme template block",
     feasibility: "media-alta: publicable hoy como formulario/politica",
-    primitives: ["Shopify Pages", "contact form", "order lookup manual", "Admin API"],
+    primitives: ["Theme JSON template", "section Liquid", "contact form", "order lookup manual"],
     dataModel: ["order_number", "customer_email", "request_type", "reason", "status"],
     events: ["return_request_started", "return_request_submitted", "policy_viewed"],
-    firstVersion: "Pagina de cambios/devoluciones con politica clara y formulario de solicitud.",
+    firstVersion: "Bloque de cambios/devoluciones con politica clara y formulario de solicitud.",
     upgradePath: "Workflow con webhooks/order API cuando el volumen haga dolorosa la revision manual.",
     savings: "$20-$100/mes si evita returns apps tempranas",
     notIncluded: ["labels automaticas", "portal con tracking por orden", "reglas logisticas avanzadas"],
@@ -307,7 +307,12 @@ export async function onRequestPost(context) {
       return json({ ok: true, report, diagnostics, runId: runContext.id });
     }
 
-    if (!forceHarnessForAvatarResearch && agentPayload.businessStage !== "brand" && shouldUseProfitabilityTool(agentPayload)) {
+    if (
+      !forceHarnessForAvatarResearch &&
+      agentPayload.businessStage !== "brand" &&
+      shouldUseProfitabilityTool(agentPayload) &&
+      !shouldUseProductCustomizationTool(agentPayload)
+    ) {
       const report = await runProfitabilityTool(agentPayload, env);
       const diagnostics = {
         tool: "unit_economics_filter",
@@ -678,6 +683,12 @@ function shouldUseAvatarResearchHarness(payload) {
   );
 }
 
+function shouldUseProductCustomizationTool(payload) {
+  if (payload.selectedInternalTool === "product-customization-agent") return true;
+  const text = payloadText(payload).toLowerCase();
+  return /personaliz|custom|private label|marca propia|producto propio|empaque|packaging|envase|caja|box|bolsa|pouch|sleeve|etiqueta|label|insert|unboxing|variante|variantes|acabado|finish|material|colorway|formula|f[oó]rmula|fragancia|scent|logo|dieline|troquel|muestra|sample/.test(text);
+}
+
 function shouldUseRetailToOnlineTool(payload) {
   if (payload.selectedInternalTool === "retail-to-online-agent") return true;
   const text = payloadText(payload).toLowerCase();
@@ -813,31 +824,31 @@ async function maybeExecuteToolFactoryAction({ request, env, payload, report }) 
   const text = payloadText(payload).toLowerCase();
   const targetPage = inferTargetPageInjection(payload);
   const statusIntent = existingTool?.id ? inferExistingToolStatusIntent(text) : "";
-  const shouldInjectIntoPage = Boolean(shop && wantsExistingPageInjection(text));
-  const shouldUpdateExisting = Boolean(shop && existingTool?.id && wantsExistingToolUpdate(text) && !shouldInjectIntoPage);
+  const shouldInstallThemeBlock = Boolean(shop && wantsExistingPageInjection(text));
+  const shouldUpdateExisting = Boolean(shop && existingTool?.id && wantsExistingToolUpdate(text) && !shouldInstallThemeBlock);
   const shouldChangeStatus = Boolean(shop && existingTool?.id && statusIntent && !shouldUpdateExisting);
   const shouldPublishNew = Boolean(shop && !existingTool && replacement.canCreateNow && wantsToolPublication(text));
 
-  if (shouldInjectIntoPage && !targetPage) {
+  if ((shouldInstallThemeBlock || shouldPublishNew) && !targetPage) {
     applyToolFactoryActionResult(report, {
-      type: "inject_tool_section",
+      type: "install_theme_block",
       status: "failed",
-      message: "Puedo inyectar la herramienta en una Shopify Page existente, pero necesito la URL o handle de la LP. Ejemplo: /pages/mi-landing.",
+      message: "Puedo instalar la herramienta como bloque del theme, pero necesito la URL o handle de la LP. Ejemplo: /pages/mi-landing.",
     });
     return report.toolAction;
   }
 
-  if (!shouldInjectIntoPage && !shouldUpdateExisting && !shouldChangeStatus && !shouldPublishNew) return null;
+  if (!shouldInstallThemeBlock && !shouldUpdateExisting && !shouldChangeStatus && !shouldPublishNew) return null;
 
-  const actionType = shouldInjectIntoPage
-    ? "inject_tool_section"
+  const actionType = shouldInstallThemeBlock || shouldPublishNew
+    ? "install_theme_block"
     : shouldUpdateExisting
       ? "update_existing_tool"
       : shouldChangeStatus
         ? "change_tool_status"
         : "create_tool";
-  const method = shouldPublishNew || shouldInjectIntoPage ? "POST" : "PATCH";
-  const body = shouldInjectIntoPage
+  const method = shouldPublishNew || shouldInstallThemeBlock ? "POST" : "PATCH";
+  const body = shouldInstallThemeBlock || shouldPublishNew
     ? { shop, report, targetPage }
     : shouldUpdateExisting
       ? { shop, id: existingTool.id, status: "active", report }
@@ -847,7 +858,7 @@ async function maybeExecuteToolFactoryAction({ request, env, payload, report }) 
 
   try {
     const actionRequest = buildInternalShopifyToolRequest(request, method, body);
-    const response = shouldPublishNew || shouldInjectIntoPage
+    const response = shouldPublishNew || shouldInstallThemeBlock
       ? await createShopifyToolFromRequest({ request: actionRequest, env })
       : await updateShopifyToolFromRequest({ request: actionRequest, env });
     const result = await response.json().catch(() => ({}));
@@ -866,8 +877,8 @@ async function maybeExecuteToolFactoryAction({ request, env, payload, report }) 
       status: "completed",
       tool: result.tool,
       message:
-        actionType === "inject_tool_section"
-          ? `Listo: inyecte "${result.tool.title || "la herramienta"}" en la Page existente ${result.tool.injection?.targetPageHandle || ""}.`
+        actionType === "install_theme_block"
+          ? `Listo: instale "${result.tool.title || "la herramienta"}" como bloque del theme en ${result.tool.injection?.targetPageHandle || "la LP"}.`
           : actionType === "update_existing_tool"
           ? `Listo: actualice la herramienta existente "${result.tool.title || existingTool.title || "Agent Genia"}" en Shopify.`
           : actionType === "change_tool_status"
@@ -927,9 +938,9 @@ function applyToolFactoryActionResult(report, action) {
     report.nextSteps = [
       action.type === "change_tool_status"
         ? "Para hacer otro cambio, pidelo en lenguaje natural: actualizar, reactivar, pausar, archivar o publicar."
-        : action.type === "inject_tool_section"
-          ? "Revisar la LP existente en Shopify y confirmar que la seccion insertada se ve bien en mobile y desktop."
-        : "Revisar la pagina publicada en Shopify y validar que el texto, CTA y formulario sean correctos.",
+        : action.type === "install_theme_block"
+          ? "Revisar la LP existente en Shopify y confirmar que el bloque del theme se ve bien en mobile y desktop."
+        : "Revisar la herramienta publicada en Shopify y validar que el texto, CTA y formulario sean correctos.",
       ...(Array.isArray(report.nextSteps) ? report.nextSteps : []),
     ].slice(0, 8);
   } else {
@@ -1009,7 +1020,7 @@ function inferExistingToolStatusIntent(text) {
 
 function toolFactoryActionVerb(type) {
   if (type === "update_existing_tool") return "actualizar";
-  if (type === "inject_tool_section") return "inyectar";
+  if (type === "install_theme_block") return "instalar";
   if (type === "change_tool_status") return "cambiar el estado de";
   return "publicar";
 }
@@ -1025,7 +1036,7 @@ function inferToolFactoryProfile(text, payload) {
     capabilityId: slugify(category),
     publishMode: capability.publishMode,
     runtimeLabel: capability.runtimeLabel,
-    canPublishNow: capability.publishMode === "shopify_page_mvp",
+    canPublishNow: capability.publishMode === "theme_template_block",
     jobToBeDone: inferToolFactoryJob(lower, category, brandName),
     merchantUser: inferToolFactoryUser(lower),
     feasibility: inferToolFactoryFeasibility(category),
@@ -1064,13 +1075,13 @@ function fallbackToolFactoryCapability() {
     category: "herramienta ecommerce personalizada",
     defaultName: "mini-app Agent Genia",
     job: "convertir una necesidad repetida de la tienda en herramienta configurable dentro de Agent Genia",
-    publishMode: "shopify_page_mvp",
-    runtimeLabel: "Page MVP publicable hoy",
+    publishMode: "theme_template_block",
+    runtimeLabel: "Theme template block",
     feasibility: "media: necesita definicion del job-to-be-done",
-    primitives: ["Shopify Pages", "Admin API", "metafields/metaobjects", "Agent Genia backend"],
+    primitives: ["Theme JSON template", "section Liquid", "themeFilesUpsert", "Agent Genia backend"],
     dataModel: ["tool_config", "tool_status", "merchant_visible_copy", "last_updated_by_agent"],
     events: ["tool_viewed", "tool_completed", "conversion_event"],
-    firstVersion: "Pagina/herramienta MVP para validar la necesidad antes de construir app profunda.",
+    firstVersion: "Bloque nativo en una LP existente para validar la necesidad antes de construir app profunda.",
     upgradePath: "Theme App Extension o runtime especializado solo si el merchant la usa repetidamente.",
     savings: "$10-$100/mes segun la herramienta reemplazada",
     notIncluded: ["edge cases enterprise", "soporte de todas las plataformas externas", "automatizacion sin aprobacion del merchant"],
@@ -1129,7 +1140,7 @@ function buildToolFactoryAdminActions(profile) {
   return [
     `Crear/configurar ${profile.name}`,
     "Previsualizar antes de publicar",
-    capability.publishMode === "shopify_page_mvp" ? "Publicar en la tienda conectada" : `Preparar runtime requerido: ${capability.runtimeLabel}`,
+    capability.publishMode === "theme_template_block" ? "Instalar como bloque en la LP objetivo" : `Preparar runtime requerido: ${capability.runtimeLabel}`,
     "Editar copy/reglas desde Agent Genia",
     "Ver resultados y decidir si mantener, iterar o apagar",
   ];
@@ -1137,13 +1148,13 @@ function buildToolFactoryAdminActions(profile) {
 
 function buildToolFactoryMvp(profile, primitives) {
   const capability = toolCapabilityByCategory(profile.category);
-  const publishable = capability.publishMode === "shopify_page_mvp";
+  const publishable = capability.publishMode === "theme_template_block";
   return {
     name: `${profile.name} MVP`,
     included: [
       "Configuracion guiada desde el agente",
       "Preview antes de publicar",
-      publishable ? "Publicacion como Shopify Page segura" : `Especificacion lista para ${capability.runtimeLabel}`,
+      publishable ? "Instalacion como bloque nativo del theme" : `Especificacion lista para ${capability.runtimeLabel}`,
       capability.firstVersion,
       "Datos guardados en metafields/metaobjects o configuracion propia",
       "Metricas minimas para decidir si vale la pena",
@@ -1154,7 +1165,7 @@ function buildToolFactoryMvp(profile, primitives) {
       publishable
         ? `Crear la primera version usando ${primitives.slice(0, 3).join(", ")}.`
         : `Crear primero la especificacion y guardrails usando ${primitives.slice(0, 3).join(", ")}.`,
-      publishable ? "Publicar en una pagina/producto de prueba." : `No publicar hasta tener ${capability.runtimeLabel}.`,
+      publishable ? "Instalarlo en la LP o template que el merchant quiere mejorar." : `No publicar hasta tener ${capability.runtimeLabel}.`,
       "Medir uso y friccion durante 7 dias.",
       "Convertirlo en herramienta reutilizable si se usa mas de una vez.",
     ],
@@ -1191,8 +1202,8 @@ function buildToolFactoryRisks(profile) {
     "Crear demasiadas herramientas custom sin sistema de apagado, versionado y soporte.",
     "Romper confianza si la herramienta toca datos sensibles sin permisos claros.",
   ];
-  if (capability.publishMode !== "shopify_page_mvp") {
-    risks.push(`Publicar esto como Page simple seria falso; requiere ${capability.runtimeLabel}.`);
+  if (capability.publishMode !== "theme_template_block") {
+    risks.push(`Instalar esto sin su runtime real seria falso; requiere ${capability.runtimeLabel}.`);
   }
   if (profile.category === "retencion y mensajes") risks.push("Entregabilidad y consentimiento pueden convertir una herramienta simple en infraestructura seria.");
   if (profile.category === "tracking y analytics") risks.push("Pixels duplicados o eventos mal deduplicados pueden empeorar decisiones de ads.");
@@ -1208,8 +1219,8 @@ function buildToolFactoryValidationPlan(profile, mvp) {
   const capability = toolCapabilityByCategory(profile.category);
   return [
     `Construir solo ${mvp.name}, no una plataforma completa.`,
-    capability.publishMode === "shopify_page_mvp"
-      ? `Instalarlo en una pagina/producto de bajo riesgo para validar ${profile.desiredOutcome}.`
+    capability.publishMode === "theme_template_block"
+      ? `Instalarlo en la LP o template objetivo para validar ${profile.desiredOutcome}.`
       : `Validar el flujo manualmente o con especificacion antes de invertir en ${capability.runtimeLabel}.`,
     "Comparar contra el costo de la app que se queria pagar.",
     "Medir adopcion del merchant: si no lo usa dos veces, no merece convertirse en producto permanente.",
@@ -1228,7 +1239,7 @@ function buildAppReplacementPlan(profile, limitations, existingToolMatch = null)
     replaceabilityLevel: recommendedLevel,
     publishMode: capability.publishMode,
     runtimeLabel: capability.runtimeLabel,
-    canCreateNow: capability.publishMode === "shopify_page_mvp" && !existingToolMatch,
+    canCreateNow: capability.publishMode === "theme_template_block" && !existingToolMatch,
     existingTool: existingToolMatch,
     firstVersion: capability.firstVersion,
     upgradePath: capability.upgradePath,
@@ -1292,9 +1303,9 @@ function buildToolFactorySpec(profile, appReplacement) {
     version: "tool-spec-v1",
     name: profile.name,
     category: profile.category,
-    surface: capability.publishMode === "shopify_page_mvp" ? "shopify_page" : capability.publishMode,
+    surface: capability.publishMode === "theme_template_block" ? "shopify_theme_template" : capability.publishMode,
     runtime: capability.publishMode,
-    canRenderAsPage: capability.publishMode === "shopify_page_mvp",
+    canRenderAsPage: capability.publishMode === "theme_template_block",
     primaryAction: buildToolSpecPrimaryAction(profile, capability),
     successMetric: buildToolSpecSuccessMetric(profile),
     dataDestination: buildToolSpecDestination(profile, capability),
@@ -1311,7 +1322,7 @@ function buildToolFactorySpec(profile, appReplacement) {
 }
 
 function buildToolSpecPrimaryAction(profile, capability) {
-  if (capability.publishMode !== "shopify_page_mvp") {
+  if (capability.publishMode !== "theme_template_block") {
     return {
       label: `Preparar ${capability.runtimeLabel}`,
       type: "runtime_required",
@@ -1324,7 +1335,7 @@ function buildToolSpecPrimaryAction(profile, capability) {
 }
 
 function buildToolSpecDestination(profile, capability) {
-  if (capability.publishMode === "shopify_page_mvp") return "Shopify contact form / Page MVP";
+  if (capability.publishMode === "theme_template_block") return "Shopify contact form / theme section";
   if (capability.publishMode === "provider_integration") return "Proveedor autorizado + Agent Genia QA";
   if (capability.publishMode === "provider_required") return "Waitlist/validacion antes de proveedor";
   return capability.runtimeLabel;
@@ -1382,7 +1393,7 @@ function buildToolSpecBlocks(profile, capability) {
     { id: "hero", type: "hero", purpose: "Explicar el job-to-be-done y la promesa de la herramienta." },
     { id: "how_it_works", type: "steps", purpose: "Mostrar como usar la herramienta sin entrenamiento tecnico." },
   ];
-  if (capability.publishMode === "shopify_page_mvp") {
+  if (capability.publishMode === "theme_template_block") {
     blocks.push({ id: "form_or_cta", type: "form", purpose: "Capturar la señal del cliente o llevarlo al siguiente paso." });
   } else {
     blocks.push({ id: "runtime_plan", type: "spec", purpose: `Preparar runtime requerido: ${capability.runtimeLabel}.` });
@@ -1392,7 +1403,7 @@ function buildToolSpecBlocks(profile, capability) {
 }
 
 function buildToolSpecAutomationRules(profile, capability) {
-  if (capability.publishMode !== "shopify_page_mvp") {
+  if (capability.publishMode !== "theme_template_block") {
     return [`No ejecutar automatizacion real hasta tener ${capability.runtimeLabel}.`];
   }
   if (profile.category === "devoluciones y postcompra") return ["Enviar solicitud al equipo y clasificar por tipo de caso."];
@@ -1418,7 +1429,7 @@ function field(id, label, type, required, placeholder) {
 }
 
 function replacementLevelForMode(mode) {
-  if (mode === "shopify_page_mvp") return "crear ahora";
+  if (mode === "theme_template_block") return "crear ahora";
   if (mode === "theme_app_extension" || mode === "shopify_function" || mode === "web_pixel_extension") return "crear con runtime propio";
   if (mode === "provider_integration") return "integrar proveedor";
   if (mode === "provider_required") return "validar antes de pagar proveedor";
@@ -1426,8 +1437,8 @@ function replacementLevelForMode(mode) {
 }
 
 function buildOrBuyDecision(capability) {
-  if (capability.publishMode === "shopify_page_mvp") {
-    return "Construir con Agent Genia ahora como MVP seguro. Pagar app solo si el merchant necesita automatizacion o profundidad que el MVP no cubre.";
+  if (capability.publishMode === "theme_template_block") {
+    return "Construir con Agent Genia ahora como bloque nativo del theme. Pagar app solo si el merchant necesita automatizacion o profundidad que este bloque no cubre.";
   }
   if (capability.publishMode === "provider_required") {
     return "No intentar reemplazo completo gratis todavia. Validar demanda con Agent Genia y comprar/integrar proveedor solo cuando el caso de uso pague el costo.";

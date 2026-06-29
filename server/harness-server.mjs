@@ -196,6 +196,7 @@ function safeFileName(value) {
 function buildPrompt(payload, attachmentFiles = []) {
   const brandHelper = buildBrandStrategyHelper(payload);
   const websiteHelper = buildWebsiteStrategyHelper(payload, brandHelper);
+  const customizationHelper = buildProductCustomizationHelper(payload, brandHelper);
 
   return `Eres Agent Genia. El usuario escribe una solicitud natural en la main page y tu trabajo es decidir que herramientas internas usar, como Cursor cuando llama tools durante su flujo.
 
@@ -212,6 +213,8 @@ ${buildAttachmentPrompt(payload.attachments || [], attachmentFiles)}
 ${brandHelper.prompt}
 
 ${websiteHelper.prompt}
+
+${customizationHelper.prompt}
 
 Inferencias del frontend, revisalas y corrigelas si hace falta:
 - Producto inferido: ${payload.product || "no especificado"}
@@ -241,10 +244,12 @@ Herramientas internas disponibles:
 - retail to online agent: usar cuando el usuario ya tiene tienda fisica/local/negocio offline y quiere vender en internet, crear pagina web, elegir TikTok organico vs paid ads, entender producto, analizar competencia o crear contenido.
 - brand strategy helper: usar cuando la solicitud pida nombre de marca, colores, identidad visual, branding, nicho/problema o crear una marca desde cero.
 - website page builder: usar cuando la solicitud pida pagina web, landing page, homepage, PDP, tienda online, estructura de pagina, copy de web o cuando brandPlan necesite convertirse en una primera web.
+- product customization helper: usar cuando la solicitud pida producto personalizado, private label, custom product, logo, empaque, packaging, envase, caja, etiqueta, sleeve, insert, unboxing, variantes, acabados, materiales, formula, fragancia o brief para fabricar.
 
 Reglas:
 - Si la solicitud pide nombre, colores, identidad visual, nueva marca, o si brand strategy helper tiene señal alta, llena brandPlan en el JSON. Usa nombres memorables segun problema/nicho y colores en hex segun nombre, tono y categoria. No digas que el nombre esta legalmente disponible; pide revisar marca registrada, dominio y redes.
 - Si la solicitud pide web, pagina, landing, tienda online, homepage, PDP o si llenas brandPlan para una marca nueva, llena websitePlan. websitePlan debe aplicar el nombre recomendado, colores, tono y problema/nicho en hero, secciones, copy y guardrails. No afirmes que ya creaste/deployaste una web si solo estas entregando el plan.
+- Si la solicitud pide producto personalizado, private label, empaque, packaging, logo, variantes, materiales o unboxing, llena customizationPlan. Debe incluir 3 rutas accionables de producto/empaque, impacto cualitativo en MOQ/costo/flete, preguntas para proveedor y un supplierBrief en ingles listo para copiar en Alibaba. Si brandPlan existe, aplica su nombre, paleta y tono; si no existe, usa una direccion temporal y marca que debe validarse.
 - Si el usuario tiene tienda fisica y quiere vender online, primero entiende producto/oferta/margen/capacidad; recomienda web simple, canal inicial, research de competencia y contenido. No asumas que Shopify audit aplica si no hay tienda Shopify conectada.
 - Si businessStage es brand, responde como auditoria de marca existente. No trates al usuario como principiante sin tienda; separa lo que ya existe, lo que falta medir y las decisiones de crecimiento.
 - Si la solicitud pide competencia, competidores, inspiracion, hooks, headlines, formato, avatar o pain points, entrega un bloque de inspiracion competitiva. Separa evidencia observada de hipotesis; no inventes que viste anuncios si no los pudiste verificar. El desglose minimo debe cubrir: hook, headline, formato, avatar y pain point.
@@ -266,6 +271,7 @@ Reglas:
 - No afirmes que contactaste o negociaste con un proveedor a menos que realmente hayas enviado un mensaje autorizado.
 - Para DDP, confirma freight, customs clearance, import duties, taxes, importer of record, final door delivery, tracking y exclusiones. No recomiendes evasion de duties/taxes.
 - Para categorias reguladas o sensibles, agrega certificaciones, documentos y limites de claim.
+- Para customizationPlan, no prometas que un proveedor puede fabricarlo hasta confirmar MOQ, tooling/mold fees, printing method, dielines, pantone/hex match, sample cost, lead time, carton size y prueba de empaque.
 - Entrega mensajes listos para enviar al proveedor en ingles, con terminos claros y profesionales.
 - Responde solo en JSON conforme al schema de salida.
 	`;
@@ -363,6 +369,94 @@ Reglas para websitePlan:
 - El copy debe usar lenguaje de principiante y vender una promesa clara, sin claims ilegales o exagerados.
 - nextBuildSteps debe decir que construir primero, que assets faltan y que medir antes de paid ads.`,
   };
+}
+
+function buildProductCustomizationHelper(payload, brandHelper) {
+  const text = [
+    payload.naturalRequest,
+    payload.product,
+    payload.productDetails,
+    payload.problem,
+    payload.reference,
+    payload.brand?.name,
+    payload.brand?.goal,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const wantsCustomization =
+    /personaliz|custom|private label|marca propia|producto propio|empaque|packaging|envase|caja|box|bolsa|pouch|sleeve|etiqueta|label|insert|unboxing|variante|variantes|acabado|finish|material|colorway|formula|f[oó]rmula|fragancia|scent|logo|dieline|troquel|muestra|sample/.test(
+      text,
+    ) || payload.selectedInternalTool === "product-customization-agent";
+  const product = payload.product || brandHelper.niche || "producto principal";
+  const brandName = brandHelper.selectedName || cleanBrandName(payload.brand?.name || "") || "marca";
+  const palette = brandHelper.palette || buildColorPaletteForBrand(brandName, brandHelper.niche, brandHelper.tone);
+  const variants = buildCustomizationVariants(product, brandName, brandHelper.tone, text);
+  const packagingOptions = buildPackagingOptions(product, brandName, palette, text);
+
+  return {
+    wantsCustomization,
+    prompt: `Product customization helper:
+- Señal de producto personalizado/empaque: ${wantsCustomization ? "alta" : "baja"}
+- Producto base: ${product}
+- Marca o direccion visual: ${brandName}
+- Paleta sugerida para aplicar al empaque: primary ${palette.primary}, secondary ${palette.secondary}, accent ${palette.accent}, background ${palette.background}, text ${palette.text}
+- Variantes iniciales: ${variants.map((variant) => `${variant.name}: ${variant.summary}`).join("; ")}
+- Opciones de empaque iniciales: ${packagingOptions.map((option) => `${option.name}: ${option.summary}`).join("; ")}
+
+Reglas para customizationPlan:
+- Si la señal es alta, devuelve customizationPlan completo aunque tambien devuelvas brandPlan, websitePlan o sourcing.
+- productConcept debe convertir la descripcion del usuario en una idea clara de producto fabricable.
+- differentiationAngle debe explicar que hace distinta la idea sin depender solo de logo.
+- recommendedDirection debe escoger una ruta concreta para primer test, no solo listar opciones.
+- variantOptions debe traer 3 opciones: una low-MOQ para validar, una premium para marca y una giftable/content-friendly para UGC/unboxing.
+- packagingOptions debe cubrir formato, materiales, acabado, inserts, impacto de costo unitario, impacto de MOQ, riesgo de shipping y para quien conviene.
+- supplierBrief debe estar en ingles y pedir: product specs, customization method, logo/printing, packaging dielines, MOQ by variant, sample cost, lead time, carton size/gross weight, EXW/FOB/DDP to destination and Trade Assurance.
+- supplierQuestions debe estar en ingles, lista para enviar a proveedores.
+- samplePlan y qualityChecks deben proteger al principiante: primero muestra neutra, luego muestra con logo/empaque, luego pre-production sample.
+- Si hay adjuntos de logos, referencias o empaque, usalos como contexto; si no puedes verlos, dilo en limitations.
+- Para skincare, suplementos, alimentos, baby, electronics o productos regulados, agrega checks de claims, etiqueta, ingredientes/materiales y certificaciones antes de recomendar bulk order.`,
+  };
+}
+
+function buildCustomizationVariants(product, brandName, tone, text) {
+  const cleanProduct = String(product || "producto").replace(/\s+/g, " ").trim();
+  const premium = /premium|lujo|calidad|high end/.test(`${tone} ${text}`);
+  return [
+    {
+      name: "Low-MOQ validation",
+      summary: `${cleanProduct} stock/private label con logo simple y empaque individual basico para probar demanda sin tooling caro.`,
+    },
+    {
+      name: premium ? "Premium signature" : "Brand signature",
+      summary: `${cleanProduct} con color/acabado propio de ${brandName}, empaque primario mas cuidado e insert de marca.`,
+    },
+    {
+      name: "Giftable unboxing",
+      summary: `${cleanProduct} preparado para contenido: caja/sleeve, thank-you insert y detalles visuales que expliquen la promesa.`,
+    },
+  ];
+}
+
+function buildPackagingOptions(product, brandName, palette, text) {
+  const cleanProduct = String(product || "producto").replace(/\s+/g, " ").trim();
+  const ecommerceRisk = /fragil|vidrio|glass|liquid|liquido|l[ií]quido|ceramic|ceramica|cer[aá]mica/.test(text)
+    ? "requiere drop test, proteccion interna y carton master reforzado"
+    : "validar peso volumetrico y resistencia antes de aceptar DDP";
+  return [
+    {
+      name: "Starter label",
+      summary: `Etiqueta o logo aplicado sobre ${cleanProduct}; bajo costo, buen primer test para ${brandName}.`,
+    },
+    {
+      name: "Printed sleeve",
+      summary: `Sleeve/caja ligera con ${palette.primary} y ${palette.accent}; mas marca sin rediseñar todo el producto.`,
+    },
+    {
+      name: "Full unboxing kit",
+      summary: `Caja custom, insert y proteccion interna; mejor experiencia pero mayor MOQ, costo y riesgo de flete: ${ecommerceRisk}.`,
+    },
+  ];
 }
 
 function buildWebsiteHeroCopy(brandName, product, problem, tone) {
@@ -583,7 +677,7 @@ Reglas para adjuntos:
 - Si existe archivo local, puedes inspeccionarlo desde el directorio de trabajo antes de responder.
 - Si un adjunto solo tiene metadata o no puedes leerlo, dilo en limitations y no inventes contenido visual, precios ni specs.
 - Si el usuario pide analisis de marca/ads/organico/avatar, incorpora adjuntos relevantes en creativePerformance y avatarResearch; separa observacion real de hipotesis.
-- Incorpora insights relevantes de los adjuntos en supplierSearchPlan, qualityPlan, negotiationPlan, creativePerformance, avatarResearch y beginnerNextSteps.`;
+- Incorpora insights relevantes de los adjuntos en supplierSearchPlan, qualityPlan, negotiationPlan, creativePerformance, avatarResearch, customizationPlan y beginnerNextSteps.`;
 }
 
 function runProcess(command, args, stdin, timeoutMs) {

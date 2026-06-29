@@ -500,6 +500,78 @@
       ],
       "additionalProperties": false
     },
+    "customizationPlan": {
+      "type": "object",
+      "properties": {
+        "productConcept": { "type": "string" },
+        "differentiationAngle": { "type": "string" },
+        "recommendedDirection": { "type": "string" },
+        "variantOptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "productChanges": { "type": "string" },
+              "packaging": { "type": "string" },
+              "branding": { "type": "string" },
+              "bestFor": { "type": "string" },
+              "pros": { "type": "array", "items": { "type": "string" } },
+              "risks": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["name", "productChanges", "packaging", "branding", "bestFor", "pros", "risks"],
+            "additionalProperties": false
+          }
+        },
+        "packagingOptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "format": { "type": "string" },
+              "materials": { "type": "string" },
+              "finish": { "type": "string" },
+              "insertIdeas": { "type": "array", "items": { "type": "string" } },
+              "unitCostImpact": { "type": "string" },
+              "moqImpact": { "type": "string" },
+              "shippingRisk": { "type": "string" },
+              "bestFor": { "type": "string" }
+            },
+            "required": [
+              "name",
+              "format",
+              "materials",
+              "finish",
+              "insertIdeas",
+              "unitCostImpact",
+              "moqImpact",
+              "shippingRisk",
+              "bestFor"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "supplierBrief": { "type": "string" },
+        "supplierQuestions": { "type": "array", "items": { "type": "string" } },
+        "samplePlan": { "type": "array", "items": { "type": "string" } },
+        "qualityChecks": { "type": "array", "items": { "type": "string" } },
+        "nextSteps": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": [
+        "productConcept",
+        "differentiationAngle",
+        "recommendedDirection",
+        "variantOptions",
+        "packagingOptions",
+        "supplierBrief",
+        "supplierQuestions",
+        "samplePlan",
+        "qualityChecks",
+        "nextSteps"
+      ],
+      "additionalProperties": false
+    },
     "beginnerNextSteps": { "type": "array", "items": { "type": "string" } },
     "limitations": { "type": "array", "items": { "type": "string" } }
   },

@@ -6,6 +6,7 @@ import {
   SHOPIFY_SHOP_COOKIE,
   SHOPIFY_STATE_COOKIE,
 } from "../../../_auth.js";
+import { getScopes } from "../../../_lib/shopify.js";
 
 export async function onRequestGet({ request, env }) {
   if (!env.SHOPIFY_API_KEY || !env.SHOPIFY_API_SECRET) {
@@ -20,7 +21,7 @@ export async function onRequestGet({ request, env }) {
   const redirectUri = `${getOrigin(request)}/api/auth/shopify/callback`;
   const authUrl = new URL(`https://${shop}/admin/oauth/authorize`);
   authUrl.searchParams.set("client_id", env.SHOPIFY_API_KEY);
-  authUrl.searchParams.set("scope", env.SHOPIFY_SCOPES || "read_products,write_content");
+  authUrl.searchParams.set("scope", getScopes(env));
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("state", state);
 

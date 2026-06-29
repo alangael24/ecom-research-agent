@@ -111,6 +111,11 @@ const goalConfig = {
     icon: "shield-check",
     className: "quality",
   },
+  customize: {
+    label: "Producto personalizado",
+    icon: "package-plus",
+    className: "quality",
+  },
   shopify: {
     label: "Auditar Shopify",
     icon: "shopping-bag",
@@ -1186,6 +1191,37 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     "branding",
     "logo",
   ]);
+  const customizationIntent = hasAny(text, [
+    "personalizado",
+    "personalizada",
+    "personalizar",
+    "custom",
+    "private label",
+    "marca propia",
+    "producto propio",
+    "empaque",
+    "packaging",
+    "envase",
+    "caja",
+    "box",
+    "bolsa",
+    "pouch",
+    "sleeve",
+    "etiqueta",
+    "label",
+    "insert",
+    "unboxing",
+    "variante",
+    "variantes",
+    "acabado",
+    "material",
+    "colorway",
+    "formula",
+    "fórmula",
+    "fragancia",
+    "muestra",
+    "sample",
+  ]);
   const creativePerformanceIntent = isCreativePerformanceText(text);
   const inspirationIntent = creativePerformanceIntent || hasAny(text, [
     "inspiracion",
@@ -1288,11 +1324,13 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     qualityLevel,
     depth: text.includes("profundo") || text.includes("completo") ? "profundo" : "rapido",
     goals: sourcingIntent
-      ? ["interpret", "search", "negotiate", "ddp", "quality"]
+      ? ["interpret", "search", "negotiate", "ddp", "quality"].concat(customizationIntent ? ["customize"] : [])
       : toolFactoryIntent
         ? ["interpret", "shopify", "web", "quality"]
       : retailToOnlineIntent
         ? ["interpret", "retail", "costs", "content", "web"]
+      : customizationIntent
+        ? ["interpret", "customize", "brand", "quality"]
       : brandIntent
         ? ["interpret", "brand", "shopify", "quality"]
       : shopifyIntent
@@ -1304,6 +1342,8 @@ function inferRequest(naturalRequest, businessStage = "starter") {
         ? "agentgenia_tool_factory"
       : retailToOnlineIntent
         ? "retail-to-online-agent"
+      : customizationIntent
+        ? "product-customization-agent"
       : brandIntent && whitespaceIntent && !inspirationIntent
         ? "brand_whitespace_tool"
       : brandIntent
@@ -1333,6 +1373,10 @@ function buildReport(data) {
   const agentTasks = buildAgentTasks(query, data, category);
   const evidenceLinks = buildEvidenceLinks(query, data, category);
   const supplierProfiles = buildGuidedSupplierProfiles(data, category, targetUnitCost);
+  const customizationPlan =
+    data.selectedInternalTool === "product-customization-agent" || data.goals?.includes("customize")
+      ? buildGuidedCustomizationPlan(data, category)
+      : null;
 
   return {
     ...data,
@@ -1342,6 +1386,7 @@ function buildReport(data) {
     agentTasks,
     evidenceLinks,
     supplierProfiles,
+    ...(customizationPlan ? { customizationPlan } : {}),
     createdAt: new Date().toLocaleString("es-US", {
       dateStyle: "medium",
       timeStyle: "short",
@@ -1566,6 +1611,24 @@ function buildAgentTasks(query, data, category) {
       );
       return firstStep.concat(tasks);
     }
+    if (data.selectedInternalTool === "product-customization-agent") {
+      return firstStep.concat([
+        {
+          key: "customize",
+          title: "Diseñar producto personalizado",
+          status: "listo para harness",
+          result: `El agente convertira "${data.product}" en variantes de producto, empaque y branding.`,
+          nextAction: "Escoger una ruta low-MOQ, una premium y una giftable antes de pedir muestras.",
+        },
+        {
+          key: "quality",
+          title: "Preparar brief de proveedor",
+          status: "listo para RFQ",
+          result: "Se pediran specs, metodo de personalizacion, dielines, MOQ por variante, muestra, lead time y empaque.",
+          nextAction: "No pasar a bulk order hasta aprobar muestra neutra, muestra con logo/empaque y pre-production sample.",
+        },
+      ]);
+    }
     if (data.selectedInternalTool === "shopify-store-audit") {
       return firstStep.concat([
         {
@@ -1693,6 +1756,108 @@ function buildGuidedSupplierProfiles(data, category, targetUnitCost) {
       nextAsk: "Pedir desglose DDP exacto e importer-of-record.",
     },
   ];
+}
+
+function buildGuidedCustomizationPlan(data, category) {
+  const product = data.product || category.category || "producto ecommerce";
+  const brandName = data.brand?.name || "la marca";
+  const destination = data.destination || "destino final";
+
+  return {
+    productConcept: `${product} con una direccion private-label: validar primero una version simple, luego una version de marca y finalmente un empaque mas memorable.`,
+    differentiationAngle: "Diferenciar por experiencia de uso, calidad verificable y empaque que explique la promesa; no depender solo de poner logo.",
+    recommendedDirection: "Empezar con low-MOQ validation: producto base probado, logo simple, empaque individual resistente y muestra aprobada antes de pagar tooling o caja custom.",
+    variantOptions: [
+      {
+        name: "Low-MOQ validation",
+        productChanges: "Producto base del proveedor con specs claras, color disponible y logo simple si el MOQ lo permite.",
+        packaging: "Empaque individual resistente, etiqueta/sticker de marca y caja master con medidas confirmadas.",
+        branding: `Aplicar ${brandName} de forma simple: logo, one-liner, instrucciones y barcode si aplica.`,
+        bestFor: "primer test con menos riesgo",
+        pros: ["menor costo inicial", "menos riesgo de tooling", "mas facil conseguir muestra"],
+        risks: ["se puede sentir generico si el producto no tiene un angulo claro"],
+      },
+      {
+        name: "Brand signature",
+        productChanges: "Color, acabado o accesorio propio que conecte con el problema del cliente sin cambiar toda la fabricacion.",
+        packaging: "Sleeve o caja ligera impresa con direccion visual de marca.",
+        branding: "Paleta, tono, claim conservador, insert de uso y garantia/confianza.",
+        bestFor: "validar percepcion premium",
+        pros: ["mejor diferenciacion", "mas facil producir contenido", "eleva percepcion de precio"],
+        risks: ["puede subir MOQ, costo por unidad y lead time"],
+      },
+      {
+        name: "Giftable unboxing",
+        productChanges: "Bundle, set o detalle extra que haga mas clara la ocasion de compra.",
+        packaging: "Caja custom, proteccion interna e insert de thank-you/uso.",
+        branding: "Unboxing pensado para UGC: primer impacto, textura visual y CTA de recompra/review.",
+        bestFor: "regalos, contenido y AOV mas alto",
+        pros: ["mejor experiencia", "mas shareable", "puede justificar bundle"],
+        risks: ["mayor costo de flete, mayor MOQ y mas puntos de defecto"],
+      },
+    ],
+    packagingOptions: [
+      {
+        name: "Starter label",
+        format: "Producto stock + etiqueta, sticker o hangtag.",
+        materials: "Etiqueta BOPP/papel, polybag/caja individual segun categoria.",
+        finish: "Matte o satin para verse limpio sin subir mucho costo.",
+        insertIdeas: ["guia de uso", "QR a video/demo", "thank-you note con soporte"],
+        unitCostImpact: "bajo",
+        moqImpact: "normalmente el mas flexible",
+        shippingRisk: "bajo si el empaque protege el producto y no infla volumen",
+        bestFor: "validar demanda antes de invertir en caja custom",
+      },
+      {
+        name: "Printed sleeve",
+        format: "Sleeve/caja ligera alrededor del empaque individual.",
+        materials: "Cartulina 300-400 gsm o caja corrugada ligera si el producto pesa mas.",
+        finish: "Matte lamination, spot UV solo si el margen lo permite.",
+        insertIdeas: ["claim principal", "beneficios", "instrucciones", "QR a landing"],
+        unitCostImpact: "medio",
+        moqImpact: "puede exigir MOQ de impresion separado",
+        shippingRisk: "medio; validar dimensiones finales y resistencia",
+        bestFor: "verse como marca real sin rediseñar el producto completo",
+      },
+      {
+        name: "Full unboxing kit",
+        format: "Caja custom + proteccion interna + insert.",
+        materials: "Rigid box, mailer box o corrugado reforzado segun peso/fragilidad.",
+        finish: "Pantone/hex match, foil o emboss solo despues de validar margen.",
+        insertIdeas: ["historia de marca", "pasos de uso", "cross-sell", "review request"],
+        unitCostImpact: "alto",
+        moqImpact: "alto por tooling/dieline/printing",
+        shippingRisk: "alto; pedir drop test, carton size y gross weight antes de DDP",
+        bestFor: "producto premium, regalo o contenido de unboxing",
+      },
+    ],
+    supplierBrief: `Hello, I am developing a private-label version of ${product} for ${destination}. Please quote three options: (1) low-MOQ stock product with simple logo/label, (2) brand signature version with custom color/finish and printed packaging, and (3) giftable unboxing kit with custom box and insert.\n\nPlease include MOQ by option, unit price tiers, sample cost, customization method, printing method, packaging dielines, lead time, carton size/gross weight, EXW/FOB/DDP to ${destination}, certifications, and Alibaba Trade Assurance terms.`,
+    supplierQuestions: [
+      "What is the lowest MOQ for a stock product with logo or label?",
+      "What customization methods do you support: laser, screen print, heat transfer, sticker, emboss, custom mold, color matching?",
+      "Can you provide packaging dielines and material specs before we pay for samples?",
+      "What are the sample costs and lead times for neutral sample, logo sample, and packaging sample?",
+      "What is the MOQ and unit price impact for custom color, custom packaging, and inserts?",
+      `Can you quote EXW, FOB and DDP to ${destination} after confirming carton size and gross weight?`,
+      "Which certifications/test reports apply to this product and market?",
+    ],
+    samplePlan: [
+      "Ordenar una muestra neutra para validar producto base.",
+      "Si pasa, pedir muestra con logo/label y confirmar metodo de personalizacion.",
+      "Despues pedir muestra de empaque/pre-production sample antes de bulk order.",
+    ],
+    qualityChecks: category.sampleChecks.concat([
+      "comparar colores reales contra hex/Pantone aprobado",
+      "revisar alineacion de logo, errores de texto, barcode e instrucciones",
+      "hacer prueba de empaque: caida, aplastamiento, humedad ligera y apertura/cierre",
+    ]),
+    nextSteps: [
+      "Escoger una sola variante para el primer test.",
+      "Pedir cotizacion con MOQ, muestra, empaque y DDP por escrito.",
+      "Aprobar muestra antes de pagar bulk order.",
+      "Guardar golden sample para comparar produccion.",
+    ],
+  };
 }
 
 function renderEmptyState() {
@@ -2206,7 +2371,7 @@ function renderToolFactoryReport(report) {
   const publishedCard = publication
     ? `<article class="report-card full-span success-card">
         <h3>Herramienta aplicada</h3>
-        <p>Agent Genia ya publico, actualizo o inyecto este MVP en Shopify.</p>
+        <p>Agent Genia ya publico, actualizo o instalo esta herramienta en Shopify.</p>
         <div class="pill-row">
           <a class="pill link-pill" href="${escapeHtml(publication.url || "#")}" target="_blank" rel="noreferrer"><i data-lucide="external-link"></i>Ver herramienta</a>
           <a class="pill link-pill" href="${escapeHtml(publication.adminUrl || "#")}" target="_blank" rel="noreferrer"><i data-lucide="settings"></i>Abrir en Shopify</a>
@@ -2442,18 +2607,25 @@ function toolFactoryRuntimeSupport(reportOrCategory) {
   const report = typeof reportOrCategory === "object" && reportOrCategory ? reportOrCategory : null;
   const publishMode = report?.appReplacement?.publishMode || report?.requestedTool?.publishMode || "";
   const runtimeLabel = report?.appReplacement?.runtimeLabel || report?.requestedTool?.runtimeLabel || "runtime avanzado";
+  if (publishMode === "theme_template_block") {
+    return {
+      supported: true,
+      publishMode,
+      message: "Se puede instalar como bloque nativo en el template del theme de una LP existente.",
+    };
+  }
   if (publishMode && publishMode !== "shopify_page_mvp") {
     return {
       supported: false,
       publishMode,
-      message: `Esta herramienta necesita ${runtimeLabel}. Agent Genia puede planearla, pero no debe publicarla como Page simple.`,
+      message: `Esta herramienta necesita ${runtimeLabel}. Agent Genia puede planearla, pero no debe fingir ejecucion sin ese runtime.`,
     };
   }
   if (publishMode === "shopify_page_mvp") {
     return {
       supported: true,
       publishMode,
-      message: "Se puede publicar como una primera herramienta MVP usando una pagina segura de Shopify.",
+      message: "Este reporte antiguo se puede publicar como pagina Shopify legacy.",
     };
   }
 
@@ -2469,8 +2641,8 @@ function toolFactoryRuntimeSupport(reportOrCategory) {
   }
   return {
     supported: true,
-    publishMode: "shopify_page_mvp",
-    message: "Se puede publicar como una primera herramienta MVP usando una pagina segura de Shopify.",
+    publishMode: "theme_template_block",
+    message: "Se puede instalar como bloque nativo en el template del theme de una LP existente.",
   };
 }
 
@@ -2481,7 +2653,7 @@ function toolFactoryPublishMessage({ shop, runtime, publication, replacement }) 
     return `Ya existe una herramienta parecida: ${replacement.existingTool.title || replacement.existingTool.category}. Para iterarla sin crear otra, pidele al agente que la actualice.`;
   }
   if (!runtime.supported) return runtime.message;
-  return "Esto crea una Page real en Shopify con la version minima de la herramienta: segura, reversible y medible.";
+  return "Esto instala un bloque nativo en el theme de la LP objetivo: editable, medible y reversible.";
 }
 
 function shopifyToolHeaders(extra = {}) {
@@ -2695,6 +2867,10 @@ function extractWebsitePlan(report) {
   return report?.ai?.websitePlan || report?.websitePlan || null;
 }
 
+function extractCustomizationPlan(report) {
+  return report?.ai?.customizationPlan || report?.customizationPlan || null;
+}
+
 function isBrandStrategyReport(report) {
   return (
     report?.businessStage === "brand" ||
@@ -2871,6 +3047,66 @@ function renderWebsitePlanCard(websitePlan, brandPlan, brandNameFallback = "Marc
   </article>`;
 }
 
+function renderCustomizationPlanCard(customizationPlan, brandPlan) {
+  if (!customizationPlan) return "";
+  const variants = Array.isArray(customizationPlan.variantOptions) ? customizationPlan.variantOptions : [];
+  const packagingOptions = Array.isArray(customizationPlan.packagingOptions) ? customizationPlan.packagingOptions : [];
+  const supplierQuestions = Array.isArray(customizationPlan.supplierQuestions) ? customizationPlan.supplierQuestions : [];
+  const samplePlan = Array.isArray(customizationPlan.samplePlan) ? customizationPlan.samplePlan : [];
+  const qualityChecks = Array.isArray(customizationPlan.qualityChecks) ? customizationPlan.qualityChecks : [];
+  const nextSteps = Array.isArray(customizationPlan.nextSteps) ? customizationPlan.nextSteps : [];
+  const palette = brandPlan?.colorPalette || {};
+  const accent = safeHexColor(palette.accent || "#D06C4B");
+  const primary = safeHexColor(palette.primary || "#173F3A");
+
+  return `<article class="report-card full-span customization-card" style="--custom-primary:${primary};--custom-accent:${accent};">
+    <h3>Producto personalizado</h3>
+    <p>${escapeHtml(customizationPlan.productConcept || "El agente preparo variantes de producto, empaque y branding para validar con proveedores.")}</p>
+    <div class="customization-direction">
+      <div>
+        <span>Diferenciacion</span>
+        <strong>${escapeHtml(customizationPlan.differentiationAngle || "Diferenciar por uso, empaque y confianza; no solo por logo.")}</strong>
+      </div>
+      <div>
+        <span>Ruta recomendada</span>
+        <strong>${escapeHtml(customizationPlan.recommendedDirection || "Empezar con una version low-MOQ y muestras antes de bulk order.")}</strong>
+      </div>
+    </div>
+    ${variants.length ? `<h4>Variantes</h4><div class="customization-grid">
+      ${variants.slice(0, 3).map((variant) => `<article class="customization-option">
+        <span>${escapeHtml(variant.bestFor || "primer test")}</span>
+        <strong>${escapeHtml(variant.name || "Variante")}</strong>
+        <p>${escapeHtml(variant.productChanges || "")}</p>
+        <dl>
+          <div><dt>Empaque</dt><dd>${escapeHtml(variant.packaging || "--")}</dd></div>
+          <div><dt>Branding</dt><dd>${escapeHtml(variant.branding || "--")}</dd></div>
+        </dl>
+        ${Array.isArray(variant.risks) && variant.risks.length ? `<small>${escapeHtml(variant.risks[0])}</small>` : ""}
+      </article>`).join("")}
+    </div>` : ""}
+    ${packagingOptions.length ? `<h4>Opciones de empaque</h4><div class="packaging-grid">
+      ${packagingOptions.slice(0, 3).map((option) => `<article class="packaging-option">
+        <strong>${escapeHtml(option.name || "Empaque")}</strong>
+        <p>${escapeHtml(option.format || "")}</p>
+        <ul>
+          <li>${escapeHtml(option.materials || "material por confirmar")}</li>
+          <li>${escapeHtml(option.finish || "acabado por confirmar")}</li>
+          <li>${escapeHtml(option.unitCostImpact || "impacto de costo por confirmar")}</li>
+          <li>${escapeHtml(option.moqImpact || "MOQ por confirmar")}</li>
+          <li>${escapeHtml(option.shippingRisk || "riesgo de flete por confirmar")}</li>
+        </ul>
+      </article>`).join("")}
+    </div>` : ""}
+    ${customizationPlan.supplierBrief ? `<h4>Brief para proveedor</h4><pre class="supplier-brief">${escapeHtml(customizationPlan.supplierBrief)}</pre>` : ""}
+    ${supplierQuestions.length ? `<h4>Preguntas al proveedor</h4><ul>${supplierQuestions.slice(0, 7).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+    ${samplePlan.length || qualityChecks.length || nextSteps.length ? renderCompactSections([
+      ["Muestras", samplePlan],
+      ["Calidad", qualityChecks],
+      ["Siguiente", nextSteps],
+    ].filter(([, items]) => items.length)) : ""}
+  </article>`;
+}
+
 function normalizeWebsiteSections(websitePlan = {}) {
   if (Array.isArray(websitePlan.sections) && websitePlan.sections.length) {
     return websitePlan.sections;
@@ -2892,6 +3128,7 @@ function renderReport(report) {
   setTabLabels(isShopify ? tabLabelSets.shopify : tabLabelSets.sourcing);
   const ai = report.ai || null;
   const brandPlan = extractBrandPlan(report);
+  const customizationPlan = extractCustomizationPlan(report);
   const supplierShortlist = ai?.supplierShortlist?.length ? ai.supplierShortlist : report.supplierProfiles;
   const agentWorkLog = ai?.agentWorkLog?.length ? ai.agentWorkLog : report.agentTasks;
   const topRisks = ai?.executiveBrief?.topRisks?.length
@@ -3055,6 +3292,7 @@ function renderReport(report) {
   const quality = ai?.qualityPlan || buildQualityPlan(report);
   document.querySelector("#quality").innerHTML = `
     <div class="report-grid">
+      ${renderCustomizationPlanCard(customizationPlan, brandPlan)}
       <article class="report-card">
         <h3>Checklist de muestra</h3>
         <ul>${(quality.sampleChecklist || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
@@ -3092,6 +3330,7 @@ function renderBrandReport(report) {
   const audit = buildBrandAudit(report, brand);
   const brandPlan = extractBrandPlan(report);
   const websitePlan = extractWebsitePlan(report) || (brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
+  const customizationPlan = extractCustomizationPlan(report);
   const competitorInspiration = buildCompetitorInspiration(report, brand);
   const creativePerformance = buildCreativePerformanceLab(report, brand, competitorInspiration);
   const shopifyOverview = report.shopify?.shop ? renderShopifyOverview(report) : "";
@@ -3168,6 +3407,7 @@ function renderBrandReport(report) {
           ["Pruebas de producto", audit.productTests],
         ])}
       </article>
+      ${renderCustomizationPlanCard(customizationPlan, brandPlan)}
     </div>`;
 
   document.querySelector("#negotiation").innerHTML = `
@@ -4363,9 +4603,9 @@ function buildPrompt(report) {
   }
   if (report.businessStage === "brand") {
     const brand = normalizeBrandContext(report);
-    return `Actua como Agent Genia. El usuario tiene o quiere crear una marca: ${brand.name}. Solicitud: "${report.naturalRequest}". Adjuntos: ${attachments}. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si pide competencia o inspiracion, desglosa hooks, headlines, formato, avatar y pain points; separa evidencia observada de hipotesis y no copies claims. Si pide rendimiento de ads, creativos ganadores/perdedores, videos organicos virales, TikTok/Reels/UGC o performance creativa, compara paid vs organico y separa ganadores, bajo rendimiento y sin datos suficientes; analiza first frame, hook, guion, formato, avatar, pain point, prueba visual, CTA, oferta y metricas necesarias como CTR, CPA, ROAS, watch time, completion, shares, saves y conversion. No trates viralidad como prueba de ventas sin datos de intencion y conversion. Si pide naming, colores o identidad visual, crea brandPlan con nombre recomendado, opciones de nombre, paleta hex y checks de disponibilidad. Si pide pagina web/landing o creas brandPlan para marca nueva, crea websitePlan con hero, secciones, copy, aplicacion de colores y pasos de build. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
+    return `Actua como Agent Genia. El usuario tiene o quiere crear una marca: ${brand.name}. Solicitud: "${report.naturalRequest}". Adjuntos: ${attachments}. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si pide competencia o inspiracion, desglosa hooks, headlines, formato, avatar y pain points; separa evidencia observada de hipotesis y no copies claims. Si pide rendimiento de ads, creativos ganadores/perdedores, videos organicos virales, TikTok/Reels/UGC o performance creativa, compara paid vs organico y separa ganadores, bajo rendimiento y sin datos suficientes; analiza first frame, hook, guion, formato, avatar, pain point, prueba visual, CTA, oferta y metricas necesarias como CTR, CPA, ROAS, watch time, completion, shares, saves y conversion. No trates viralidad como prueba de ventas sin datos de intencion y conversion. Si pide naming, colores o identidad visual, crea brandPlan con nombre recomendado, opciones de nombre, paleta hex y checks de disponibilidad. Si pide producto personalizado, private label, empaque, packaging, logo, variantes, acabados o materiales, crea customizationPlan con variantes de producto/empaque, impacto en MOQ/costo, preguntas para proveedor y brief en ingles. Si pide pagina web/landing o creas brandPlan para marca nueva, crea websitePlan con hero, secciones, copy, aplicacion de colores y pasos de build. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
   }
-  return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Adjuntos: ${attachments}. Decide que herramienta interna usar. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Si hay intencion de crear marca, naming, colores o identidad visual, usa brand strategy helper y devuelve brandPlan. Si hay intencion de pagina web/landing, o brandPlan necesita convertirse en web, devuelve websitePlan. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
+  return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Adjuntos: ${attachments}. Decide que herramienta interna usar. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Si hay intencion de producto personalizado, private label, empaque, packaging, logo, variantes, acabados o materiales, usa product customization helper y devuelve customizationPlan. Si hay intencion de crear marca, naming, colores o identidad visual, usa brand strategy helper y devuelve brandPlan. Si hay intencion de pagina web/landing, o brandPlan necesita convertirse en web, devuelve websitePlan. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
 }
 
 function buildMarkdown(report) {
@@ -4454,8 +4694,10 @@ function buildBrandMarkdown(report) {
   const shopifySection = report.shopify?.shop ? buildShopifyMarkdown(report) : "";
   const brandPlan = extractBrandPlan(report);
   const websitePlan = extractWebsitePlan(report) || (brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
+  const customizationPlan = extractCustomizationPlan(report);
   const brandPlanSection = buildBrandPlanMarkdown(brandPlan);
   const websitePlanSection = buildWebsitePlanMarkdown(websitePlan);
+  const customizationPlanSection = buildCustomizationPlanMarkdown(customizationPlan);
 
   return `# Auditoria de marca
 
@@ -4469,6 +4711,7 @@ Herramienta interna: ${toolLabel(report.selectedInternalTool)}
 ${shopifySection}
 ${brandPlanSection}
 ${websitePlanSection}
+${customizationPlanSection}
 
 ## Decision
 
@@ -4602,6 +4845,47 @@ ${guardrails.map((item) => `- ${item}`).join("\n")}
 
 Build:
 ${steps.map((item) => `- ${item}`).join("\n")}
+`;
+}
+
+function buildCustomizationPlanMarkdown(customizationPlan) {
+  if (!customizationPlan) return "";
+  const variants = Array.isArray(customizationPlan.variantOptions) ? customizationPlan.variantOptions : [];
+  const packagingOptions = Array.isArray(customizationPlan.packagingOptions) ? customizationPlan.packagingOptions : [];
+  const supplierQuestions = Array.isArray(customizationPlan.supplierQuestions) ? customizationPlan.supplierQuestions : [];
+  const samplePlan = Array.isArray(customizationPlan.samplePlan) ? customizationPlan.samplePlan : [];
+  const qualityChecks = Array.isArray(customizationPlan.qualityChecks) ? customizationPlan.qualityChecks : [];
+  const nextSteps = Array.isArray(customizationPlan.nextSteps) ? customizationPlan.nextSteps : [];
+
+  return `
+## Producto personalizado
+
+Concepto: ${customizationPlan.productConcept || ""}
+
+Diferenciacion: ${customizationPlan.differentiationAngle || ""}
+
+Ruta recomendada: ${customizationPlan.recommendedDirection || ""}
+
+Variantes:
+${variants.map((variant) => `- ${variant.name}: ${variant.productChanges || ""} | Empaque: ${variant.packaging || ""} | Branding: ${variant.branding || ""} | Ideal para: ${variant.bestFor || ""}`).join("\n")}
+
+Opciones de empaque:
+${packagingOptions.map((option) => `- ${option.name}: ${option.format || ""} | ${option.materials || ""} | ${option.finish || ""} | Costo: ${option.unitCostImpact || ""} | MOQ: ${option.moqImpact || ""}`).join("\n")}
+
+Brief proveedor:
+${customizationPlan.supplierBrief || ""}
+
+Preguntas proveedor:
+${supplierQuestions.map((item) => `- ${item}`).join("\n")}
+
+Muestras:
+${samplePlan.map((item) => `- ${item}`).join("\n")}
+
+Calidad:
+${qualityChecks.map((item) => `- ${item}`).join("\n")}
+
+Siguiente:
+${nextSteps.map((item) => `- ${item}`).join("\n")}
 `;
 }
 
@@ -5023,6 +5307,7 @@ function buildAiMarkdown(report) {
   const ai = report.ai;
   const brandPlanSection = buildBrandPlanMarkdown(ai.brandPlan);
   const websitePlanSection = buildWebsitePlanMarkdown(ai.websitePlan);
+  const customizationPlanSection = buildCustomizationPlanMarkdown(ai.customizationPlan);
   const shopifySection = ai.shopifyPlan
     ? `
 ## Shopify
@@ -5046,6 +5331,7 @@ Adjuntos: ${attachmentSummary(report.attachments)}
 ${shopifySection}
 ${brandPlanSection}
 ${websitePlanSection}
+${customizationPlanSection}
 
 ## Decision
 
@@ -5287,6 +5573,7 @@ function toolLabel(value) {
   if (value === "brand_whitespace_tool") return "Brand whitespace";
   if (value === "agentgenia_tool_factory") return "Tool Factory";
   if (value === "shopify_page_builder") return "Shopify page builder";
+  if (value === "product-customization-agent") return "Producto personalizado";
   return "Ecom research";
 }
 

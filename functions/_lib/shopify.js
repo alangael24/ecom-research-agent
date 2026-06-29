@@ -1,5 +1,5 @@
 export const DEFAULT_API_VERSION = "2026-04";
-export const DEFAULT_SCOPES = "read_products,read_content,write_content";
+export const DEFAULT_SCOPES = "read_products,read_content,write_content,read_themes,write_themes";
 export const MAX_PRODUCTS = 50;
 export const STORE_PREFIX = "shopify:store:";
 export const STATE_COOKIE = "shopify_oauth_state";
@@ -305,6 +305,7 @@ export async function updateShopifyPage({ shop, accessToken, apiVersion, id, pag
           handle: page.handle,
           body: page.bodyHtml,
           isPublished: page.published !== false,
+          ...(page.templateSuffix !== undefined ? { templateSuffix: page.templateSuffix } : {}),
         },
       },
     }),
@@ -405,6 +406,154 @@ export async function findShopifyPageByHandle({ shop, accessToken, apiVersion, h
   const pages = body?.data?.pages?.nodes || [];
   const page = pages.find((item) => item?.handle === handle) || pages[0] || null;
   return page ? normalizeShopifyPage(page) : null;
+}
+
+export async function fetchMainThemeFiles({ shop, accessToken, apiVersion, filenames }) {
+  const response = await fetch(`https://${shop}/admin/api/${apiVersion}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-shopify-access-token": accessToken,
+    },
+    body: JSON.stringify({
+      query: `#graphql
+        query MainThemeFiles($filenames: [String!]) {
+          themes(first: 1, roles: [MAIN]) {
+            nodes {
+              id
+              name
+              role
+              files(first: 50, filenames: $filenames) {
+                nodes {
+                  filename
+                  body {
+                    ... on OnlineStoreThemeFileBodyText {
+                      content
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `,
+      variables: { filenames },
+    }),
+  });
+
+  const body = await response.json().catch(() => ({}));
+  const theme = body?.data?.themes?.nodes?.[0] || null;
+  if (!response.ok || body.errors?.length || !theme?.id) {
+    const message = summarizeGraphqlErrors(body.errors) || "No se pudo leer el theme principal de Shopify.";
+    const error = new Error(message);
+    error.status = response.ok ? 404 : response.status;
+    throw error;
+  }
+
+  return {
+    id: theme.id,
+    name: theme.name || "",
+    role: theme.role || "",
+    files: (theme.files?.nodes || []).map((file) => ({
+      filename: file.filename || "",
+      content: file.body?.content || "",
+    })),
+  };
+}
+
+export async function upsertShopifyThemeFiles({ shop, accessToken, apiVersion, themeId, files }) {
+  const response = await fetch(`https://${shop}/admin/api/${apiVersion}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-shopify-access-token": accessToken,
+    },
+    body: JSON.stringify({
+      query: `#graphql
+        mutation UpsertThemeFiles($files: [OnlineStoreThemeFilesUpsertFileInput!]!, $themeId: ID!) {
+          themeFilesUpsert(files: $files, themeId: $themeId) {
+            upsertedThemeFiles {
+              filename
+            }
+            job {
+              id
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `,
+      variables: {
+        themeId,
+        files: files.map((file) => ({
+          filename: file.filename,
+          body: {
+            type: "TEXT",
+            value: file.content,
+          },
+        })),
+      },
+    }),
+  });
+
+  const body = await response.json().catch(() => ({}));
+  const payload = body?.data?.themeFilesUpsert || {};
+  const userErrors = payload.userErrors || [];
+  if (!response.ok || body.errors?.length || userErrors.length) {
+    const message =
+      summarizeGraphqlErrors(body.errors) ||
+      userErrors.map((error) => error.message).filter(Boolean).join(" ") ||
+      "Shopify rechazo la actualizacion del theme.";
+    const error = new Error(message);
+    error.status = response.ok ? 422 : response.status;
+    throw error;
+  }
+
+  return {
+    jobId: payload.job?.id || "",
+    files: (payload.upsertedThemeFiles || []).map((file) => file.filename).filter(Boolean),
+  };
+}
+
+export async function waitForShopifyJob({ shop, accessToken, apiVersion, jobId, attempts = 8, delayMs = 500 }) {
+  if (!jobId) return { done: true };
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const response = await fetch(`https://${shop}/admin/api/${apiVersion}/graphql.json`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-shopify-access-token": accessToken,
+      },
+      body: JSON.stringify({
+        query: `#graphql
+          query JobStatus($id: ID!) {
+            job(id: $id) {
+              id
+              done
+            }
+          }
+        `,
+        variables: { id: jobId },
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    const job = body?.data?.job || null;
+    if (!response.ok || body.errors?.length || !job) {
+      const message = summarizeGraphqlErrors(body.errors) || "No se pudo confirmar el job de Shopify.";
+      const error = new Error(message);
+      error.status = response.ok ? 502 : response.status;
+      throw error;
+    }
+    if (job.done) return { done: true };
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  const error = new Error("Shopify todavia esta procesando los cambios del theme. Intenta de nuevo en unos segundos.");
+  error.status = 202;
+  error.code = "shopify_theme_job_pending";
+  throw error;
 }
 
 export function normalizeShopifySnapshot(data, fallbackDomain, apiVersion) {
