@@ -15,20 +15,19 @@ export async function onRequestGet(context) {
     return wantsJson(request) ? json({ ok: true, redirectUrl: startUrl.toString() }) : redirect(startUrl.toString());
   }
 
-  const pickerUrl = new URL("/", url.origin);
-  pickerUrl.searchParams.set("connect_shopify", "1");
+  const installUrl = env.SHOPIFY_INSTALL_URL || "";
+  if (!installUrl) {
+    return json(
+      {
+        ok: false,
+        code: "shopify_install_link_missing",
+        message: "Falta configurar SHOPIFY_INSTALL_URL con el link oficial de instalacion de Shopify.",
+      },
+      409,
+    );
+  }
 
-  return wantsJson(request)
-    ? json(
-        {
-          ok: false,
-          code: "shopify_shop_required",
-          message: "Selecciona o escribe una tienda Shopify para continuar.",
-          redirectUrl: pickerUrl.toString(),
-        },
-        400,
-      )
-    : redirect(pickerUrl.toString());
+  return wantsJson(request) ? json({ ok: true, redirectUrl: installUrl }) : redirect(installUrl);
 }
 
 export async function onRequestOptions() {
