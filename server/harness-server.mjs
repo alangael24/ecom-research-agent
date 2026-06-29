@@ -12,6 +12,7 @@ const HOST = process.env.HOST || "127.0.0.1";
 const TOKEN = process.env.HARNESS_TOKEN || "";
 const CODEX_BIN = process.env.CODEX_BIN || "codex";
 const MODEL = process.env.CODEX_MODEL || "";
+const REASONING_EFFORT = process.env.CODEX_REASONING_EFFORT || "low";
 const TIMEOUT_MS = Number(process.env.CODEX_TIMEOUT_MS || 900000);
 const SCHEMA_PATH = join(__dirname, "research-schema.json");
 const JOB_TTL_MS = Number(process.env.HARNESS_JOB_TTL_MS || 30 * 60 * 1000);
@@ -239,6 +240,8 @@ async function runCodexResearch(payload) {
   const outputPath = join(runDir, "result.json");
   const args = [
     "exec",
+    "-c",
+    `model_reasoning_effort="${REASONING_EFFORT}"`,
     "--skip-git-repo-check",
     "--sandbox",
     "read-only",
