@@ -1188,10 +1188,11 @@ function inferBrandContext(value) {
   const url = inferUrlFromText(text);
   const channels = inferChannelsFromText(lower);
   const goal = inferBrandGoalFromText(lower);
+  const referenceMode = isReferenceBrandRequest(lower);
   const nameMatch = text.match(
     /(?:marca|brand|tienda|store)\s+(?:se llama|llamada|llamado|es|de)?\s*([a-z0-9áéíóúñ& .'-]{2,60})/i,
   );
-  const name = cleanBrandName(nameMatch?.[1] || inferBrandNameFromUrl(url));
+  const name = referenceMode ? "" : cleanBrandName(nameMatch?.[1] || inferBrandNameFromUrl(url));
 
   return { name, url, channels, goal };
 }
@@ -1234,13 +1235,41 @@ function inferShopifyFocus(value) {
 
 function cleanBrandName(value) {
   return String(value || "")
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/\b(como esta|como este|similar a|parecid[ao] a|inspirad[ao] en)\b/gi, "")
     .replace(/\s+(que|para|con|en|y|,|\.).*$/i, "")
     .trim()
     .slice(0, 60);
 }
 
+function isReferenceBrandRequest(value) {
+  return /\b(marca como|brand like|como esta|como este|similar a|parecid[ao] a|inspirad[ao] en|inspirarme en)\b/i.test(
+    String(value || ""),
+  );
+}
+
 function inferRequest(naturalRequest, businessStage = "starter") {
   const text = naturalRequest.toLowerCase();
+  const hasReferenceUrl = Boolean(inferUrlFromText(naturalRequest));
+  const referenceBrandIntent =
+    isReferenceBrandRequest(text) ||
+    (hasReferenceUrl &&
+      hasAny(text, [
+        "marca",
+        "brand",
+        "posicion",
+        "posicionar",
+        "posicionarme",
+        "posicionamiento",
+        "diferenciar",
+        "diferenciacion",
+        "diferenciación",
+        "competencia",
+        "competidor",
+        "similar",
+        "inspiracion",
+        "inspiración",
+      ]));
   const sourcingIntent = hasAny(text, [
     "alibaba",
     "proveedor",
@@ -1365,7 +1394,23 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     "producto que resuelva",
     "solucion de producto",
     "solución de producto",
-  ]);
+    "posicionarme",
+    "posicionar",
+    "posicionamiento",
+    "diferenciar",
+    "diferenciacion",
+    "diferenciación",
+    "competencia",
+    "competidor",
+    "competidores",
+    "marca como",
+    "brand like",
+    "como esta",
+    "como este",
+    "similar a",
+    "parecida a",
+    "parecido a",
+  ]) || referenceBrandIntent;
   const creativePerformanceIntent = isCreativePerformanceText(text);
   const inspirationIntent = creativePerformanceIntent || hasAny(text, [
     "inspiracion",
@@ -1598,10 +1643,15 @@ function inferDestination(text, market) {
 }
 
 function inferProduct(value) {
-  const directMatch = value.match(/(?:vender|buscar|encontrar|cotizar|comprar)\s+(.+?)(?:\s+para\s+|\s+y\s+|\s+con\s+|\s+en\s+alibaba|\.|$)/i);
+  const withoutUrls = String(value || "").replace(/https?:\/\/\S+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s,]*)?/gi, " ");
+  const combined = `${value || ""} ${withoutUrls}`.toLowerCase();
+  if (/jolie|skin|skincare|piel|beauty|belleza|glow|serum|acne|acné|facial/.test(combined)) {
+    return "skincare";
+  }
+  const directMatch = withoutUrls.match(/(?:vender|buscar|encontrar|cotizar|comprar)\s+(.+?)(?:\s+para\s+|\s+y\s+|\s+con\s+|\s+en\s+alibaba|\.|$)/i);
   if (directMatch?.[1]) return directMatch[1].trim().slice(0, 90);
-  const cleaned = value
-    .replace(/quiero|necesito|busco|encontrar|proveedores?|fabricantes?|alibaba|ddp|moq|negociar|cotizar/gi, " ")
+  const cleaned = withoutUrls
+    .replace(/quiero|quisiera|me encantaria|me gustaría|necesito|busco|encontrar|proveedores?|fabricantes?|alibaba|ddp|moq|negociar|cotizar|marca|brand|como esta|como este|similar|parecid[ao]|posicionarme|posicionar|posicionamiento|ayudar/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
   const words = cleaned.split(/\s+/).slice(0, 8).join(" ");
@@ -3236,6 +3286,7 @@ function isBrandStrategyReport(report) {
   return (
     report?.businessStage === "brand" ||
     report?.selectedInternalTool === "brand-audit-agent" ||
+    report?.selectedInternalTool === "problem-discovery-agent" ||
     Boolean(extractBrandPlan(report)) ||
     Boolean(extractWebsitePlan(report))
   );
@@ -3744,10 +3795,6 @@ function renderReport(report) {
         <h3>No-go defects</h3>
         <ul>${(quality.noGoDefects || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       </article>
-      <article class="report-card full-span">
-        <h3>Prompt profundo</h3>
-        <p>${escapeHtml(buildPrompt(report))}</p>
-      </article>
     </div>`;
 
   lucide.createIcons();
@@ -3879,10 +3926,6 @@ function renderBrandReport(report) {
         <h3>Siguientes experimentos</h3>
         <ol>${audit.nextExperiments.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
       </article>
-      <article class="report-card full-span">
-        <h3>Prompt profundo</h3>
-        <p>${escapeHtml(buildPrompt(report))}</p>
-      </article>
     </div>`;
 
   lucide.createIcons();
@@ -3991,10 +4034,6 @@ function renderBrandWhitespaceReport(report) {
       <article class="report-card full-span">
         <h3>Siguientes pasos</h3>
         <ol>${nextSteps.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
-      </article>
-      <article class="report-card full-span">
-        <h3>Prompt profundo</h3>
-        <p>${escapeHtml(`Actua como Agent Genia. Toma la marca ${brand.name || "marca"} y valida el whitespace "${brief.primaryWhitespace || primary.title || ""}" contra competidores, reviews, ads y comentarios reales. Clasifica cada angulo como explotado, debil, libre_necesita_test o no_recomendado. Separa evidencia fuerte, hipotesis y ruido.`)}</p>
       </article>
     </div>`;
 
@@ -4268,8 +4307,10 @@ function normalizeBrandContext(report) {
   const storeContext = commerceContext(report);
   const promptBrand = inferBrandContext(report.naturalRequest || "");
   const url = brand.url || promptBrand.url || "";
+  const referenceMode = isReferenceBrandRequest(report.naturalRequest || "") && !brand.name;
   const inferredName =
     brand.name ||
+    (referenceMode ? "Marca nueva" : "") ||
     promptBrand.name ||
     inferBrandNameFromUrl(url) ||
     report.product?.split(/\s+/).slice(0, 4).join(" ") ||
@@ -4279,7 +4320,12 @@ function normalizeBrandContext(report) {
     url,
     channels: brand.channels || promptBrand.channels || "canales no definidos",
     goal: brand.goal || storeContext.focus || promptBrand.goal || "crecer con mejor contexto",
-    stage: storeContext.storeId ? `con ${storeContext.platformLabel} conectado` : url ? "marca con presencia digital" : "contexto inicial",
+    stage: storeContext.storeId
+      ? `con ${storeContext.platformLabel} conectado`
+      : referenceMode
+        ? "marca por definir con referencia competitiva"
+      : url ? "marca con presencia digital" : "contexto inicial",
+    referenceMode,
   };
 }
 
@@ -4295,7 +4341,7 @@ function inferBrandNameFromUrl(value) {
 function buildCompetitorInspiration(report, brand) {
   const text = `${report.naturalRequest || ""} ${brand.goal || ""} ${brand.channels || ""}`.toLowerCase();
   const category = report.category?.category || report.product || "producto";
-  const references = extractUrlsFromText(report.naturalRequest || "").filter((url) => url !== brand.url);
+  const references = extractUrlsFromText(report.naturalRequest || "").filter((url) => brand.referenceMode || url !== brand.url);
   const primaryChannel = inferPrimaryCreativeChannel(text, brand.channels);
   const format = primaryChannel === "TikTok"
     ? "UGC corto / problema-solucion"
@@ -4676,6 +4722,8 @@ function buildBrandAudit(report, brand) {
   return {
     decision: creativePerformanceFocus
       ? `Analizar performance creativa para ${brand.name}: separar ads/videos ganadores, piezas con bajo rendimiento y contenido organico viral antes de producir mas.`
+      : brand.referenceMode
+        ? `Usar la referencia ${brand.url || "competitiva"} como punto de partida, pero construir una posicion propia: problema, avatar, angulo, oferta y pruebas antes de copiar estetica o claims.`
       : inspirationFocus
       ? `Desglosar competencia para ${brand.name}: extraer patrones de hooks, headlines, formatos, avatar y pain points para inspirar nuevos angulos sin copiar.`
       : hasCatalog
@@ -4684,7 +4732,9 @@ function buildBrandAudit(report, brand) {
     context: [
       `Objetivo principal: ${brand.goal}.`,
       `Canales declarados: ${brand.channels}.`,
-      brand.url ? `Sitio o referencia: ${brand.url}.` : "Falta sitio, tienda o perfil social para leer señales externas.",
+      brand.url
+        ? `${brand.referenceMode ? "Referencia competitiva" : "Sitio o referencia"}: ${brand.url}.`
+        : "Falta sitio, tienda o perfil social para leer señales externas.",
       storeContext.storeId ? `${storeContext.platformLabel} conectado: ${storeContext.label || storeContext.storeId}.` : "Tienda ecommerce no conectada; la auditoria usa contexto declarado.",
     ],
     risks: [
@@ -4694,9 +4744,11 @@ function buildBrandAudit(report, brand) {
       ...(creativePerformanceFocus ? ["Tratar un video viral como prueba de ventas sin revisar intencion, clicks, conversion y margen."] : []),
     ],
     positioning: [
-      "Definir una frase: para quien es, que problema resuelve y por que comprar aqui.",
-      "Identificar el angulo ganador: precio, calidad, resultado, rapidez, identidad o conveniencia.",
-      "Comparar la promesa principal contra competidores directos antes de meter mas presupuesto.",
+      brand.referenceMode
+        ? "No posicionarse como copia de la referencia; elegir un dolor/segmento mas especifico donde la marca pueda ser memorable."
+        : "Definir una frase: para quien es, que problema resuelve y por que comprar aqui.",
+      "Identificar el angulo ganador: precio, calidad, resultado, rapidez, identidad, ritual, prueba o conveniencia.",
+      "Comparar la promesa principal contra competidores directos antes de meter presupuesto.",
     ],
     customer: [
       "Separar comprador actual, comprador ideal y comprador que solo pregunta pero no compra.",
@@ -4771,7 +4823,9 @@ function buildBrandAudit(report, brand) {
             "Separar videos virales organicos de ads pagados; medir si el mismo angulo vende cuando tiene CTA/oferta.",
           ]
         : []),
-      "Pegar URL de marca y 3 productos top para una auditoria mas precisa.",
+      brand.referenceMode
+        ? "Ejecutar deep research de la referencia y 3 competidores: website, ads activos, reviews y TikTok organico."
+        : "Pegar URL de marca y 3 productos top para una auditoria mas precisa.",
       "Conectar la plataforma ecommerce cuando el flujo este listo para leer catalogo real.",
       "Ejecutar filtro de rentabilidad con AOV, costo, envio, margen y CAC objetivo.",
       "Crear 5 hooks por avatar y escoger 2 para probar en ads o TikTok organico.",
@@ -5305,10 +5359,6 @@ ${ddp.ddpQuestions.map((item) => `- ${item}`).join("\n")}
 ## Calidad
 
 ${quality.sampleChecklist.map((item) => `- ${item}`).join("\n")}
-
-## Prompt profundo
-
-${buildPrompt(report)}
 `;
 }
 

@@ -339,7 +339,7 @@ function buildProblemDiscoveryHelper(payload) {
     .join(" ")
     .toLowerCase();
   const wantsProblemDiscovery =
-    /buscar problema|encontrar problema|problema real|validar oportunidad|validar idea|oportunidad|nicho|avatar|pain points?|puntos? de dolor|angulo|ángulo|no explotado|whitespace|white space|research profundo|investigaci[oó]n profunda|audiencia|voz del cliente|voice of customer|meta ads|amazon reviews?|reseñas amazon|tiktok|comentarios|lanzar marca|empezar marca|producto que resuelva|soluci[oó]n de producto/.test(
+    /buscar problema|encontrar problema|problema real|validar oportunidad|validar idea|oportunidad|nicho|avatar|pain points?|puntos? de dolor|angulo|ángulo|no explotado|whitespace|white space|research profundo|investigaci[oó]n profunda|audiencia|voz del cliente|voice of customer|meta ads|amazon reviews?|reseñas amazon|tiktok|comentarios|lanzar marca|empezar marca|producto que resuelva|soluci[oó]n de producto|posicion(?:ar|arme|amiento)|diferenciaci[oó]n|diferenciar|marca como|brand like|como esta|como este|similar a|parecid[ao] a|competidor(?:es)?|competencia/.test(
       text,
     ) || payload.selectedInternalTool === "problem-discovery-agent";
   const category = inferBrandNiche(text, payload.product || payload.productDetails || "");
@@ -359,6 +359,7 @@ function buildProblemDiscoveryHelper(payload) {
 Reglas para problemDiscovery:
 - Si la señal es alta, devuelve problemDiscovery completo aunque tambien devuelvas brandPlan, websitePlan, creativePerformance, customizationPlan o sourcing.
 - Usa $ecom-problem-research como orquestador conceptual: Meta Ads para promesas/ofertas/hooks activos, Amazon reviews para frustraciones y requisitos de producto, TikTok pain points para lenguaje organico y deseo del avatar.
+- Si el usuario da una URL de referencia tipo "quiero una marca como X", no audites una marca existente del usuario: trata esa URL como competidor/referencia y responde con posicionamiento propio, whitespace, avatar, promesa, oferta y pruebas.
 - Si puedes recolectar datos vivos, preserva URLs, ad ids, ASINs, TikTok ids, row ids o archivos. Si no puedes, di exactamente que faltó y marca la evidencia como hipotesis.
 - No conviertas claims de ads, reseñas o comentarios en verdad cientifica. Para salud, piel, cabello, suplementos, baby, comida o body-effect, incluye claim-safety risks.
 - opportunityScore debe penalizar falta de evidencia, saturacion, claims riesgosos, margen incierto y sourcing dificil.

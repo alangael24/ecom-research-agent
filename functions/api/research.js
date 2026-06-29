@@ -716,7 +716,7 @@ function shouldUseProductCustomizationTool(payload) {
 function shouldUseProblemDiscoveryTool(payload) {
   if (payload.selectedInternalTool === "problem-discovery-agent") return true;
   const text = payloadText(payload).toLowerCase();
-  return /buscar problema|encontrar problema|problema real|validar oportunidad|validar idea|oportunidad|nicho|avatar|pain point|pain points|punto(s)? de dolor|angulo|ángulo|no explotado|white ?space|research profundo|investigaci[oó]n profunda|audiencia|voz del cliente|voice of customer|meta ads|amazon reviews|reseñas amazon|tiktok|comentarios|lanzar marca|empezar marca|producto que resuelva|soluci[oó]n de producto/.test(text);
+  return /buscar problema|encontrar problema|problema real|validar oportunidad|validar idea|oportunidad|nicho|avatar|pain point|pain points|punto(s)? de dolor|angulo|ángulo|no explotado|white ?space|research profundo|investigaci[oó]n profunda|audiencia|voz del cliente|voice of customer|meta ads|amazon reviews|reseñas amazon|tiktok|comentarios|lanzar marca|empezar marca|producto que resuelva|soluci[oó]n de producto|posicion(?:ar|arme|amiento)|diferenciaci[oó]n|diferenciar|marca como|brand like|como esta|como este|similar a|parecid[ao] a|competidor(?:es)?|competencia/.test(text);
 }
 
 function shouldUseRetailToOnlineTool(payload) {
