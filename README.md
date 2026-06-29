@@ -10,6 +10,7 @@ The app can run in two modes:
 - Retail-to-online mode: if the prompt describes a physical store/local business trying to sell online, Agent Genia routes to an internal plan for product understanding, unit economics, TikTok organic vs paid ads, competitor/content research, and the first web build. Users can upload a digital database from the same `+` button, including CSV, Excel, JSON, SQL, SQLite/DB, inventory, sales, customer, or product files.
 - Brand strategy helper: when the prompt asks for a brand name, colors, palette, identity, website, landing page, or a new brand from a problem/niche, the harness can return `brandPlan` and `websitePlan` with name options, selected colors, hero copy, page sections, visual direction, and availability/build checks.
 - Tool Factory mode: when a merchant asks for an app, widget, plugin, or paid-tool replacement, Agent Genia returns a native Shopify MVP blueprint using app extensions, theme blocks, pixels, functions, metafields/metaobjects, and Agent Genia configuration before recommending another subscription.
+- Product customization helper: when the prompt asks for a custom/private-label product, packaging, logo, variants, materials, inserts, or unboxing, the harness can return `customizationPlan` with product variants, packaging options, MOQ/cost/shipping tradeoffs, supplier questions, sample steps, and an English Alibaba supplier brief.
 
 The main page has two ecommerce paths without changing the cockpit structure:
 

@@ -306,7 +306,11 @@ export async function onRequestPost(context) {
       return json({ ok: true, report, diagnostics, runId: runContext.id });
     }
 
-    if (agentPayload.businessStage !== "brand" && shouldUseProfitabilityTool(agentPayload)) {
+    if (
+      agentPayload.businessStage !== "brand" &&
+      shouldUseProfitabilityTool(agentPayload) &&
+      !shouldUseProductCustomizationTool(agentPayload)
+    ) {
       const report = await runProfitabilityTool(agentPayload, env);
       const diagnostics = {
         tool: "unit_economics_filter",
@@ -668,6 +672,12 @@ function optionalString(value, maxLength) {
 function payloadText(payload) {
   const brand = payload.brand || {};
   return `${payload.naturalRequest || ""} ${payload.reference || ""} ${payload.problem || ""} ${payload.product || ""} ${payload.productDetails || ""} ${brand.name || ""} ${brand.url || ""} ${brand.channels || ""} ${brand.goal || ""}`;
+}
+
+function shouldUseProductCustomizationTool(payload) {
+  if (payload.selectedInternalTool === "product-customization-agent") return true;
+  const text = payloadText(payload).toLowerCase();
+  return /personaliz|custom|private label|marca propia|producto propio|empaque|packaging|envase|caja|box|bolsa|pouch|sleeve|etiqueta|label|insert|unboxing|variante|variantes|acabado|finish|material|colorway|formula|f[oó]rmula|fragancia|scent|logo|dieline|troquel|muestra|sample/.test(text);
 }
 
 function shouldUseRetailToOnlineTool(payload) {

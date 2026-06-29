@@ -1631,6 +1631,126 @@ textarea:focus {
   margin-bottom: 4px;
 }
 
+.customization-card h4 {
+  margin-top: 18px;
+}
+
+.customization-direction {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.customization-direction div {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+}
+
+.customization-direction div + div {
+  border-left: 1px solid var(--line);
+}
+
+.customization-direction span,
+.customization-option span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.customization-direction strong {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.customization-grid,
+.packaging-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.customization-option,
+.packaging-option {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  position: relative;
+}
+
+.customization-option::before {
+  background: linear-gradient(90deg, var(--custom-primary), var(--custom-accent));
+  content: "";
+  display: block;
+  height: 4px;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.customization-option strong,
+.packaging-option strong {
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.customization-option dl {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.customization-option dl div {
+  border-top: 1px solid var(--line);
+  padding-top: 7px;
+}
+
+.customization-option dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.customization-option dd {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+  margin: 2px 0 0;
+}
+
+.customization-option small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.packaging-option ul {
+  display: grid;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.supplier-brief {
+  background: #f6faf7;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+  overflow-x: auto;
+  padding: 14px;
+  white-space: pre-wrap;
+}
+
 .source-list {
   display: grid;
   gap: 12px;
@@ -2253,12 +2373,20 @@ textarea:focus {
 
   .brand-plan-hero,
   .brand-name-options,
-  .website-plan-grid {
+  .website-plan-grid,
+  .customization-direction,
+  .customization-grid,
+  .packaging-grid {
     grid-template-columns: 1fr;
   }
 
   .brand-plan-hero {
     align-items: start;
+  }
+
+  .customization-direction div + div {
+    border-left: 0;
+    border-top: 1px solid var(--line);
   }
 
   .brand-plan-hero strong {
