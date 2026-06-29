@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { onRequestPost } from "../functions/api/research.js";
 
 const APP_PASSWORD = "test-app-password";
@@ -14,6 +15,17 @@ const directCases = [
       naturalRequest: "Calcula si una idea de skincare es rentable con precio 68, costo 16, envio 8, CAC objetivo y ROAS.",
       businessStage: "starter",
       product: "skincare serum",
+      market: "US",
+    },
+  },
+  {
+    name: "unit economics explicit priority",
+    expectedType: "profitability",
+    payload: {
+      selectedInternalTool: "unit_economics_filter",
+      naturalRequest: "Aunque luego hagamos avatar research, primero calcula rentabilidad con precio 72, costo 18, envio 9 y CAC objetivo.",
+      businessStage: "starter",
+      product: "skincare kit",
       market: "US",
     },
   },
@@ -253,9 +265,21 @@ try {
   assert.equal(unauthenticated.ok, false);
   assert.equal(unauthenticated.code, "missing_session");
 
+  await assertFrontendDoesNotSimulateHarnessReports();
+
   console.log(`internal tools ok: ${directCases.length} direct, ${harnessCases.length} harness`);
 } finally {
   await new Promise((resolve) => harness.close(resolve));
+}
+
+async function assertFrontendDoesNotSimulateHarnessReports() {
+  const app = await readFile(new URL("../app.js", import.meta.url), "utf8");
+  assert.match(app, /const report = buildBackendReportShell\(data\);/, "live harness responses use backend shell");
+  assert.match(app, /const report = buildBackendReportShell\(\{[\s\S]*run\.natural_request/, "history uses backend shell");
+  assert.match(app, /isBackendHarnessReport\(report\) \? null : report\?\.problemDiscovery/, "no local problemDiscovery fallback for harness");
+  assert.match(app, /isBackendHarnessReport\(report\) \? null : report\?\.customizationPlan/, "no local customization fallback for harness");
+  assert.match(app, /backendMode \? \[\] : report\.supplierProfiles/, "no local supplier fallback for harness");
+  assert.match(app, /missingNegotiationPlan\(\)/, "missing harness negotiation is explicit");
 }
 
 async function callResearch(payload, envOverrides = {}, options = {}) {

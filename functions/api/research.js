@@ -769,7 +769,19 @@ function hasExplicitTool(payload) {
   return Boolean(selectedTool(payload));
 }
 
+function isDirectInternalTool(tool) {
+  return [
+    "unit_economics_filter",
+    "shipping_rate_quote",
+    "retail-to-online-agent",
+    "brand_whitespace_tool",
+    "agentgenia_tool_factory",
+    "shopify_page_builder",
+  ].includes(tool);
+}
+
 function shouldUseAvatarResearchHarness(payload) {
+  if (isDirectInternalTool(selectedTool(payload))) return false;
   const text = payloadText(payload).toLowerCase();
   return /avatar research|investigaci[oó]n del avatar|research del avatar|voice of customer|\bvoc\b|frases reales|lenguaje real|objeciones?|deseos?|momentos de uso|creencias?|why now|jobs? to be done|\bjtbd\b|pain points?|pains?|puntos de dolor|dolores?|miedos?|detonadores?|triggers?|urgencia de compra|avatar profundo/.test(
     text,

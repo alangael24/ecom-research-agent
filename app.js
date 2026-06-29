@@ -995,7 +995,7 @@ async function runResearch(data) {
         showToast(typedReportToast(backend.report));
         return;
       }
-      const report = buildReport(data);
+      const report = buildBackendReportShell(data);
       report.ai = backend.report;
       report.backendMode = "codex-harness";
       report.diagnostics = backend.diagnostics || null;
@@ -1634,6 +1634,25 @@ function buildReport(data) {
     supplierProfiles,
     ...(customizationPlan ? { customizationPlan } : {}),
     ...(problemDiscovery ? { problemDiscovery } : {}),
+    createdAt: new Date().toLocaleString("es-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }),
+  };
+}
+
+function buildBackendReportShell(data) {
+  const category =
+    productProfiles.find((item) => item.match.some((word) => `${data.product} ${data.productDetails}`.toLowerCase().includes(word))) ||
+    genericProfile(data.product || "producto");
+  return {
+    ...data,
+    category,
+    query: cleanQuery(data.product || data.naturalRequest || "producto", category.category),
+    targetUnitCost: data.targetCost || (data.budget && data.orderQuantity ? data.budget / data.orderQuantity : 0),
+    agentTasks: [],
+    evidenceLinks: [],
+    supplierProfiles: [],
     createdAt: new Date().toLocaleString("es-US", {
       dateStyle: "medium",
       timeStyle: "short",
@@ -3314,19 +3333,23 @@ async function publishShopifyPage(button) {
 }
 
 function extractBrandPlan(report) {
-  return report?.ai?.brandPlan || report?.brandPlan || null;
+  return report?.ai?.brandPlan || (isBackendHarnessReport(report) ? null : report?.brandPlan) || null;
 }
 
 function extractWebsitePlan(report) {
-  return report?.ai?.websitePlan || report?.websitePlan || null;
+  return report?.ai?.websitePlan || (isBackendHarnessReport(report) ? null : report?.websitePlan) || null;
 }
 
 function extractCustomizationPlan(report) {
-  return report?.ai?.customizationPlan || report?.customizationPlan || null;
+  return report?.ai?.customizationPlan || (isBackendHarnessReport(report) ? null : report?.customizationPlan) || null;
 }
 
 function extractProblemDiscovery(report) {
-  return report?.ai?.problemDiscovery || report?.problemDiscovery || null;
+  return report?.ai?.problemDiscovery || (isBackendHarnessReport(report) ? null : report?.problemDiscovery) || null;
+}
+
+function isBackendHarnessReport(report) {
+  return report?.backendMode === "codex-harness";
 }
 
 function isBrandStrategyReport(report) {
@@ -3651,16 +3674,19 @@ function renderReport(report) {
 
   const storeContext = commerceContext(report);
   const isShopify = report.businessStage === "shopify" || Boolean(storeContext.storeId && report.selectedInternalTool === "shopify-store-audit");
+  const backendMode = isBackendHarnessReport(report);
   setTabLabels(isShopify ? tabLabelSets.shopify : tabLabelSets.sourcing);
   const ai = report.ai || null;
   const brandPlan = extractBrandPlan(report);
   const problemDiscovery = extractProblemDiscovery(report);
   const customizationPlan = extractCustomizationPlan(report);
-  const supplierShortlist = ai?.supplierShortlist?.length ? ai.supplierShortlist : report.supplierProfiles;
-  const agentWorkLog = ai?.agentWorkLog?.length ? ai.agentWorkLog : report.agentTasks;
+  const supplierShortlist = ai?.supplierShortlist?.length ? ai.supplierShortlist : backendMode ? [] : report.supplierProfiles;
+  const agentWorkLog = ai?.agentWorkLog?.length ? ai.agentWorkLog : backendMode ? [] : report.agentTasks;
   const topRisks = ai?.executiveBrief?.topRisks?.length
     ? ai.executiveBrief.topRisks
-    : [
+    : backendMode
+      ? ["El harness no devolvio riesgos especificos para esta ejecucion."]
+      : [
         "comprar inventario sin muestra aprobada",
         "comparar solo precio sin costo DDP aterrizado",
         "aceptar certificaciones o DDP sin documentos",
@@ -3684,7 +3710,7 @@ function renderReport(report) {
     <div class="report-grid">
       <article class="report-card full-span">
         <h3>Decision</h3>
-        <p>${escapeHtml(ai?.executiveBrief?.decision || "El agente interpreto tu solicitud y preparo el flujo interno. Si la intencion es sourcing, usara Alibaba como herramienta interna y devolvera shortlist, negociacion, DDP y calidad aqui mismo.")}</p>
+        <p>${escapeHtml(ai?.executiveBrief?.decision || (backendMode ? "El harness respondio, pero no devolvio una decision estructurada." : "El agente interpreto tu solicitud y preparo el flujo interno. Si la intencion es sourcing, usara Alibaba como herramienta interna y devolvera shortlist, negociacion, DDP y calidad aqui mismo."))}</p>
         <div class="pill-row">
           <span class="pill"><i data-lucide="message-square-text"></i>${escapeHtml(report.naturalRequest)}</span>
           <span class="pill"><i data-lucide="package"></i>${escapeHtml(report.product)}</span>
@@ -3695,7 +3721,7 @@ function renderReport(report) {
       </article>
       <article class="report-card">
         <h3>Ruta recomendada</h3>
-        <p>${escapeHtml(ai?.executiveBrief?.recommendedPath || "Conectar el backend de produccion para que el agente busque proveedores, compare candidatos, prepare outreach y devuelva todo dentro de esta pagina.")}</p>
+        <p>${escapeHtml(ai?.executiveBrief?.recommendedPath || (backendMode ? "Falta recommendedPath en la respuesta del harness." : "Conectar el backend de produccion para que el agente busque proveedores, compare candidatos, prepare outreach y devuelva todo dentro de esta pagina."))}</p>
       </article>
       <article class="report-card">
         <h3>Riesgos principales</h3>
@@ -3763,7 +3789,7 @@ function renderReport(report) {
           ["Filtros", ai.supplierSearchPlan.filters],
           ["Datos a capturar", ai.supplierSearchPlan.dataToCapture],
           ["Reglas de rechazo", ai.supplierSearchPlan.rejectRules],
-        ])}` : renderCompactSections([
+        ])}` : backendMode ? "<p>El harness no devolvio supplierSearchPlan; no se muestran criterios simulados.</p>" : renderCompactSections([
           ["Queries internas", report.evidenceLinks.map((source) => source.query)],
           ["Filtros", ["Verified Supplier", "Trade Assurance", "sample available", "MOQ compatible", "respuesta clara sobre DDP"]],
           ["Reglas de rechazo", ["sin muestra", "sin Trade Assurance", "DDP ambiguo", "certificados no verificables", "presion para pagar fuera de Alibaba"]],
@@ -3771,10 +3797,12 @@ function renderReport(report) {
       </article>
     </div>`;
 
-  const negotiation = ai?.negotiationPlan || buildNegotiationPlan(report);
+  const negotiation = ai?.negotiationPlan || (backendMode ? missingNegotiationPlan() : buildNegotiationPlan(report));
   const outreachQueue = ai?.supplierOutreachQueue?.length
     ? ai.supplierOutreachQueue
-    : buildOutreachQueue(supplierShortlist, negotiation);
+    : backendMode
+      ? []
+      : buildOutreachQueue(supplierShortlist, negotiation);
   document.querySelector("#negotiation").innerHTML = isShopify
     ? renderShopifyActions(report)
     : `
@@ -3793,7 +3821,7 @@ function renderReport(report) {
       </article>
     </div>`;
 
-  const ddp = ai?.ddpPlan || buildDdpPlan(report);
+  const ddp = ai?.ddpPlan || (backendMode ? missingDdpPlan(report) : buildDdpPlan(report));
   document.querySelector("#ddp").innerHTML = `
     <div class="report-grid">
       <article class="report-card">
@@ -3818,7 +3846,7 @@ function renderReport(report) {
       </article>
     </div>`;
 
-  const quality = ai?.qualityPlan || buildQualityPlan(report);
+  const quality = ai?.qualityPlan || (backendMode ? missingQualityPlan() : buildQualityPlan(report));
   document.querySelector("#quality").innerHTML = `
     <div class="report-grid">
       ${renderCustomizationPlanCard(customizationPlan, brandPlan)}
@@ -3847,17 +3875,48 @@ function renderReport(report) {
   lucide.createIcons();
 }
 
+function missingNegotiationPlan() {
+  return {
+    rfqMessage: "El harness no devolvio rfqMessage.",
+    priceNegotiationMessage: "El harness no devolvio priceNegotiationMessage.",
+    moqMessage: "El harness no devolvio moqMessage.",
+    sampleMessage: "El harness no devolvio sampleMessage.",
+    termsToConfirm: ["negotiationPlan no devuelto por el harness"],
+  };
+}
+
+function missingDdpPlan(report) {
+  return {
+    destination: report.destination || "destino pendiente",
+    ddpQuestions: [],
+    includedChecklist: [],
+    redFlags: ["ddpPlan no devuelto por el harness"],
+    fallbackIncoterm: "pendiente",
+  };
+}
+
+function missingQualityPlan() {
+  return {
+    sampleChecklist: [],
+    certificationChecks: [],
+    inspectionPlan: [],
+    packagingChecks: [],
+    noGoDefects: ["qualityPlan no devuelto por el harness"],
+  };
+}
+
 function renderBrandReport(report) {
   resultPanel.hidden = false;
   setTabLabels(tabLabelSets.brand);
 
+  const backendMode = isBackendHarnessReport(report);
   const brand = normalizeBrandContext(report);
-  const audit = buildBrandAudit(report, brand);
+  const audit = backendMode ? buildBackendBrandAudit(report, brand) : buildBrandAudit(report, brand);
   const brandPlan = extractBrandPlan(report);
-  const websitePlan = extractWebsitePlan(report) || (brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
+  const websitePlan = extractWebsitePlan(report) || (!backendMode && brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
   const problemDiscovery = extractProblemDiscovery(report);
   const customizationPlan = extractCustomizationPlan(report);
-  const competitorInspiration = buildCompetitorInspiration(report, brand);
+  const competitorInspiration = backendMode ? buildBackendCompetitorInspiration(report, brand) : buildCompetitorInspiration(report, brand);
   const creativePerformance = buildCreativePerformanceLab(report, brand, competitorInspiration);
   const angleValidator = normalizeAngleWhitespaceValidator(report.angleValidation || report.angleWhitespaceValidator || report.ai?.angleWhitespaceValidator);
   const storeContext = commerceContext(report);
@@ -4251,6 +4310,7 @@ function emptyReportCard(title, copy) {
 function renderCompetitorInspiration(inspiration) {
   const rows = inspiration.rows || [];
   const references = inspiration.references || [];
+  if (!rows.length && !references.length) return "";
   return `<article class="report-card full-span">
     <h3>Analizador de competencia</h3>
     <p>Desglose para inspiracion creativa. No copia claims: convierte patrones en angulos propios para la marca.</p>
@@ -4443,6 +4503,7 @@ function buildCompetitorInspiration(report, brand) {
 function buildCreativePerformanceLab(report, brand, inspiration = {}) {
   const aiLab = normalizeAiCreativePerformance(report.ai?.creativePerformance);
   if (aiLab) return aiLab;
+  if (isBackendHarnessReport(report)) return { shouldRender: false };
 
   const text = `${report.naturalRequest || ""} ${brand.goal || ""} ${brand.channels || ""}`.toLowerCase();
   const creativeSources = collectCreativeSources(report, brand);
@@ -4752,6 +4813,79 @@ function inferCompetitivePainPoints(text, category) {
     "Quiere evitar comprar algo barato que termine saliendo caro.",
     "Necesita confianza: prueba social, garantia, materiales y uso real.",
   ];
+}
+
+function buildBackendBrandAudit(report, brand) {
+  const ai = report.ai || {};
+  const brief = ai.executiveBrief || {};
+  const shopifyPlan = ai.shopifyPlan || {};
+  const problemDiscovery = ai.problemDiscovery || {};
+  const websitePlan = ai.websitePlan || {};
+  const customizationPlan = ai.customizationPlan || {};
+  const creative = ai.creativePerformance || {};
+  const risks = Array.isArray(brief.topRisks) && brief.topRisks.length
+    ? brief.topRisks
+    : Array.isArray(ai.limitations) && ai.limitations.length
+      ? ai.limitations
+      : ["El harness no devolvio topRisks/limitations especificos."];
+  const hooks = problemDiscovery.creativeBrief?.hooks || websitePlan.copyBlocks || creative.nextTests || [];
+  const nextSteps = Array.isArray(ai.beginnerNextSteps) && ai.beginnerNextSteps.length
+    ? ai.beginnerNextSteps
+    : Array.isArray(problemDiscovery.nextSteps) && problemDiscovery.nextSteps.length
+      ? problemDiscovery.nextSteps
+      : ["Pedir al agente que complete el bloque faltante con datos concretos, no con hipotesis locales."];
+  const catalogActions = Array.isArray(shopifyPlan.catalogOpportunities) && shopifyPlan.catalogOpportunities.length
+    ? shopifyPlan.catalogOpportunities
+    : ["shopifyPlan.catalogOpportunities no devuelto por el harness."];
+
+  return {
+    decision: brief.decision || "El harness respondio, pero no devolvio decision estructurada de marca.",
+    context: [
+      `Objetivo principal: ${brand.goal}.`,
+      `Canales declarados: ${brand.channels}.`,
+      brand.url ? `Sitio o referencia: ${brand.url}.` : "No se recibio sitio o referencia.",
+      shopifyPlan.storeSummary ? `Store summary: ${shopifyPlan.storeSummary}.` : "shopifyPlan.storeSummary no devuelto por el harness.",
+    ],
+    risks,
+    positioning: [
+      brief.recommendedPath || "recommendedPath no devuelto por el harness.",
+      problemDiscovery.decision || "problemDiscovery.decision no devuelto por el harness.",
+    ],
+    customer: problemDiscovery.avatars?.length
+      ? problemDiscovery.avatars.map((avatar) => `${avatar.name}: ${avatar.problem || avatar.trigger || ""}`)
+      : ["problemDiscovery.avatars no devuelto por el harness."],
+    missingData: Array.isArray(shopifyPlan.nextDataToCollect) && shopifyPlan.nextDataToCollect.length
+      ? shopifyPlan.nextDataToCollect
+      : ["nextDataToCollect no devuelto por el harness."],
+    offer: Array.isArray(shopifyPlan.priorityActions) && shopifyPlan.priorityActions.length
+      ? shopifyPlan.priorityActions
+      : [brief.recommendedPath || "priorityActions no devuelto por el harness."],
+    catalog: catalogActions,
+    productTests: problemDiscovery.productHypotheses?.length
+      ? problemDiscovery.productHypotheses.map((item) => `${item.product}: ${item.validationStep || item.whyItSolves || ""}`)
+      : ["productHypotheses no devuelto por el harness."],
+    growth: nextSteps,
+    messaging: hooks.length ? hooks : ["creative hooks/copy blocks no devueltos por el harness."],
+    conversion: websitePlan.sections?.length
+      ? websitePlan.sections.map((section) => `${section.name}: ${section.copyAngle || section.goal || ""}`)
+      : Array.isArray(shopifyPlan.conversionRisks) && shopifyPlan.conversionRisks.length
+        ? shopifyPlan.conversionRisks
+        : ["websitePlan.sections/conversionRisks no devuelto por el harness."],
+    retention: customizationPlan.nextSteps?.length
+      ? customizationPlan.nextSteps
+      : ["retention/customization next steps no devueltos por el harness."],
+    measurement: creative.measurementChecklist?.length
+      ? creative.measurementChecklist
+      : ["measurementChecklist no devuelto por el harness."],
+    nextExperiments: nextSteps,
+  };
+}
+
+function buildBackendCompetitorInspiration(report, brand) {
+  return {
+    references: extractUrlsFromText(report.naturalRequest || "").filter((url) => url !== brand.url),
+    rows: [],
+  };
 }
 
 function buildBrandAudit(report, brand) {
@@ -5275,14 +5409,14 @@ async function handleHistoryClick(event) {
       return;
     }
 
-    const report = buildReport({
+    const report = buildBackendReportShell({
       ...input,
       naturalRequest: run.natural_request || input.naturalRequest || "Research guardado",
       attachments: input.attachments || [],
       accessKey: "",
     });
     report.ai = run.result_json || null;
-    report.backendMode = "supabase";
+    report.backendMode = "codex-harness";
     report.runId = run.id;
     state.latest = report;
     document.body.classList.add("report-ready");
@@ -5410,14 +5544,15 @@ ${quality.sampleChecklist.map((item) => `- ${item}`).join("\n")}
 }
 
 function buildBrandMarkdown(report) {
+  const backendMode = isBackendHarnessReport(report);
   const brand = normalizeBrandContext(report);
-  const audit = buildBrandAudit(report, brand);
-  const competitorInspiration = buildCompetitorInspiration(report, brand);
+  const audit = backendMode ? buildBackendBrandAudit(report, brand) : buildBrandAudit(report, brand);
+  const competitorInspiration = backendMode ? buildBackendCompetitorInspiration(report, brand) : buildCompetitorInspiration(report, brand);
   const creativePerformance = buildCreativePerformanceLab(report, brand, competitorInspiration);
   const angleValidator = normalizeAngleWhitespaceValidator(report.angleValidation || report.angleWhitespaceValidator || report.ai?.angleWhitespaceValidator);
   const shopifySection = commerceContext(report).storeId ? buildShopifyMarkdown(report) : "";
   const brandPlan = extractBrandPlan(report);
-  const websitePlan = extractWebsitePlan(report) || (brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
+  const websitePlan = extractWebsitePlan(report) || (!backendMode && brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
   const problemDiscovery = extractProblemDiscovery(report);
   const customizationPlan = extractCustomizationPlan(report);
   const brandPlanSection = buildBrandPlanMarkdown(brandPlan);
@@ -6116,6 +6251,14 @@ function shippingQuoteSummary(shippingQuote) {
 
 function buildAiMarkdown(report) {
   const ai = report.ai;
+  const executiveBrief = ai.executiveBrief || {};
+  const suppliers = Array.isArray(ai.supplierShortlist) ? ai.supplierShortlist : [];
+  const outreachQueue = Array.isArray(ai.supplierOutreachQueue) ? ai.supplierOutreachQueue : [];
+  const negotiationPlan = ai.negotiationPlan || missingNegotiationPlan();
+  const ddpPlan = ai.ddpPlan || missingDdpPlan(report);
+  const qualityPlan = ai.qualityPlan || missingQualityPlan();
+  const limitations = Array.isArray(ai.limitations) ? ai.limitations : ["limitations no devuelto por el harness"];
+  const nextSteps = Array.isArray(ai.beginnerNextSteps) ? ai.beginnerNextSteps : ["beginnerNextSteps no devuelto por el harness"];
   const brandPlanSection = buildBrandPlanMarkdown(ai.brandPlan);
   const websitePlanSection = buildWebsitePlanMarkdown(ai.websitePlan);
   const problemDiscoverySection = buildProblemDiscoveryMarkdown(ai.problemDiscovery);
@@ -6148,43 +6291,43 @@ ${customizationPlanSection}
 
 ## Decision
 
-${ai.executiveBrief.decision}
+${executiveBrief.decision || "decision no devuelta por el harness"}
 
 ## Ruta recomendada
 
-${ai.executiveBrief.recommendedPath}
+${executiveBrief.recommendedPath || "recommendedPath no devuelto por el harness"}
 
 ## Proveedores
 
-${ai.supplierShortlist
+${suppliers
   .map((item, index) => `${index + 1}. ${item.supplierName} | ${item.alibabaUrl || "sin URL"} | MOQ: ${item.moq} | Precio: ${item.unitPrice} | DDP: ${item.ddpStatus} | Score: ${item.score}`)
-  .join("\n")}
+  .join("\n") || "supplierShortlist no devuelto por el harness"}
 
 ## RFQ
 
-${ai.negotiationPlan.rfqMessage}
+${negotiationPlan.rfqMessage}
 
 ## Cola de negociacion
 
-${(ai.supplierOutreachQueue || [])
+${outreachQueue
   .map((item) => `- ${item.supplierName}: ${item.status} | ${item.waitingFor}`)
-  .join("\n")}
+  .join("\n") || "supplierOutreachQueue no devuelto por el harness"}
 
 ## DDP
 
-${ai.ddpPlan.ddpQuestions.map((item) => `- ${item}`).join("\n")}
+${(ddpPlan.ddpQuestions || []).map((item) => `- ${item}`).join("\n") || (ddpPlan.redFlags || []).map((item) => `- ${item}`).join("\n")}
 
 ## Calidad
 
-${ai.qualityPlan.sampleChecklist.map((item) => `- ${item}`).join("\n")}
+${(qualityPlan.sampleChecklist || []).map((item) => `- ${item}`).join("\n") || (qualityPlan.noGoDefects || []).map((item) => `- ${item}`).join("\n")}
 
 ## Limitaciones
 
-${ai.limitations.map((item) => `- ${item}`).join("\n")}
+${limitations.map((item) => `- ${item}`).join("\n")}
 
 ## Siguientes pasos
 
-${ai.beginnerNextSteps.map((item) => `- ${item}`).join("\n")}
+${nextSteps.map((item) => `- ${item}`).join("\n")}
 `;
 }
 
