@@ -11,14 +11,14 @@ The app can run in two modes:
 - Problem discovery agent: when the prompt asks to find a real problem, validate an opportunity, identify an avatar, find an underused angle, or choose a product from a pain point, the harness can return `problemDiscovery` using the `$ecom-problem-research` flow across Meta Ads, Amazon reviews, and TikTok pain-point research. If live collection is not available, it marks those sources as pending and keeps evidence separate from hypotheses.
 - Brand strategy helper: when the prompt asks for a brand name, colors, palette, identity, website, landing page, or a new brand from a validated problem/niche, the harness can return `brandPlan` and `websitePlan` with name options, selected colors, hero copy, page sections, visual direction, and availability/build checks.
 - Avatar research module: when the natural-language request asks for avatar research, VOC, real phrases, objections, desires, moments of use, beliefs, pains, or why-now triggers, the harness can return `avatarResearch` with evidence-labeled customer language and hypotheses. This is backend/harness-only and does not require a separate UI flow.
-- Tool Factory mode: when a merchant asks for an app, widget, plugin, or paid-tool replacement, Agent Genia returns a native Shopify MVP blueprint using app extensions, theme blocks, pixels, functions, metafields/metaobjects, and Agent Genia configuration before recommending another subscription.
+- Tool Factory mode: when a merchant asks for an app, widget, plugin, or paid-tool replacement, Agent Genia returns a platform-aware MVP blueprint. Shopify can publish supported theme/Page tools today; Tiendanube and WooCommerce currently contribute connected catalog context and require their own runtime before native publishing.
 - Product customization helper: when the prompt asks for a custom/private-label product, packaging, logo, variants, materials, inserts, or unboxing, the harness can return `customizationPlan` with product variants, packaging options, MOQ/cost/shipping tradeoffs, supplier questions, sample steps, and an English Alibaba supplier brief.
 
 The main page has two ecommerce paths without changing the cockpit structure:
 
 - `Empezar desde cero`: for beginners who only know they want to sell online.
-- `Tienda Shopify`: connects one or more Shopify stores with OAuth, stores encrypted offline tokens in Cloudflare KV, and lets Agent Genia audit the real catalog without asking merchants to paste tokens.
-- `Analizar marca`: uses existing brand context and optional Shopify catalog data. When the prompt asks for positioning, differentiation, competitors, or an "espacio libre", the backend returns a `brand_whitespace` report with whitespace hypotheses, evidence coverage, angle/whitespace verdicts, risks, and a validation plan.
+- `Tienda conectada`: connects Shopify, Tiendanube, or WooCommerce stores and lets Agent Genia audit real catalog, prices, inventory/status, and product mix without asking merchants to paste catalog data into the prompt.
+- `Analizar marca`: uses existing brand context and optional connected catalog data. When the prompt asks for positioning, differentiation, competitors, or an "espacio libre", the backend returns a `brand_whitespace` report with whitespace hypotheses, evidence coverage, angle/whitespace verdicts, risks, and a validation plan.
 
 ## Supabase
 
@@ -107,6 +107,9 @@ pnpm dlx wrangler pages secret put SHOPIFY_API_SECRET --project-name ecom-resear
 pnpm dlx wrangler pages secret put SHOPIFY_TOKEN_ENCRYPTION_SECRET --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put SHOPIFY_INSTALL_URL --project-name ecom-research-agent
 pnpm dlx wrangler pages secret put SHOPIFY_SCOPES --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put TIENDANUBE_CLIENT_ID --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put TIENDANUBE_CLIENT_SECRET --project-name ecom-research-agent
+pnpm dlx wrangler pages secret put TIENDANUBE_USER_AGENT --project-name ecom-research-agent
 ```
 
 Optional Mexico shipping config:
@@ -125,8 +128,8 @@ The Envia integration is rate-only. The Cloudflare Function only calls the quote
 
 Internal tools currently handled directly by `/api/research`:
 
-- `agentgenia_tool_factory`: native Shopify mini-tool planner that can install selected mini-tools as theme template blocks on existing Shopify landing pages.
-- `brand_whitespace_tool`: existing-brand whitespace hypotheses from declared brand context, attachments, and connected Shopify catalog data, including the internal Angle/Whitespace Validator.
+- `agentgenia_tool_factory`: platform-aware mini-tool planner. Shopify supports selected theme template block installs on existing landing pages; Tiendanube/WooCommerce are catalog-aware planning adapters until native publishing runtime is added.
+- `brand_whitespace_tool`: existing-brand whitespace hypotheses from declared brand context, attachments, and connected catalog data, including the internal Angle/Whitespace Validator.
 - `shopify_page_builder`: creates an approved Shopify Page draft and lets the user publish it through `/api/shopify/pages`.
 - `shipping_rate_quote`: rate-only Envia shipping quotes when a shipping-only intent is detected.
 - `unit_economics_filter`: beginner-friendly profitability filter for non-brand-stage ideas.
@@ -146,7 +149,7 @@ Each Tool Factory report now includes an `appReplacement` decision with:
 
 Tool Factory reports also include a `toolSpec` contract. This is the executable shape of the mini-tool: target surface/runtime, primary action, success metric, data destination, fields, blocks, automation rules, safety checks, and upgrade path. The theme-template runtime renders this spec into the Agent Genia section settings, and the registry stores it with the installed mini-tool.
 
-When Shopify is connected, the browser includes the store's registered Agent Genia mini-tools in the `/api/research` payload. Tool Factory uses that registry context to avoid duplicating work: if a matching active/paused mini-tool already exists, the agent recommends iterating, reactivating, pausing, or archiving the existing tool before creating another one. The user can stay in natural language: prompts such as "actualiza esta herramienta existente", "pausa esta herramienta", "archivala", "publicala en mi Shopify", or "agrega una seccion de reviews a /pages/mi-landing" let `/api/research` call the internal Shopify tool endpoint. `PATCH /api/shopify/tools` can update lifecycle status only, or accept a fresh Tool Factory report for registered tools. `POST /api/shopify/tools` installs the section into the target Page template when a `targetPage` id, handle, or `/pages/...` URL is provided; it stores the previous theme/template state in KV before calling `themeFilesUpsert` and `pageUpdate`.
+When Shopify is connected, the browser includes the store's registered Agent Genia mini-tools in the `/api/research` payload. Tool Factory uses that registry context to avoid duplicating work: if a matching active/paused mini-tool already exists, the agent recommends iterating, reactivating, pausing, or archiving the existing tool before creating another one. The user can stay in natural language: prompts such as "actualiza esta herramienta existente", "pausa esta herramienta", "archivala", "publicala en mi Shopify", or "agrega una seccion de reviews a /pages/mi-landing" let `/api/research` call the internal Shopify tool endpoint. `PATCH /api/shopify/tools` can update lifecycle status only, or accept a fresh Tool Factory report for registered tools. `POST /api/shopify/tools` installs the section into the target Page template when a `targetPage` id, handle, or `/pages/...` URL is provided; it stores the previous theme/template state in KV before calling `themeFilesUpsert` and `pageUpdate`. For Tiendanube and WooCommerce, Tool Factory can use catalog context and produce a build plan, but it must not claim native publishing until a platform-specific writer exists.
 
 `brand_whitespace_tool` labels output as hypotheses. Its Angle/Whitespace Validator classifies each angle as `explotado`, `debil`, `libre_necesita_test`, or `no_recomendado`, then recommends the next landing/PDP/creative test and the decision rule. It does not perform live Meta Ads, Amazon review, or TikTok collection by itself; use the deeper competitive research harness/skills to confirm demand, saturation, and customer language.
 
@@ -180,6 +183,26 @@ Login endpoints:
 - `GET /api/auth/shopify/start?shop=store.myshopify.com`: optional direct-shop Shopify login.
 - `GET /api/auth/shopify/callback`: validates direct-shop Shopify OAuth and creates the session.
 
+Commerce connector endpoints:
+
+- `GET /api/commerce`: lists connected Shopify, Tiendanube, and WooCommerce stores without exposing tokens/secrets.
+- `POST /api/commerce`: returns a normalized catalog snapshot for a connected store. Body: `{ "platform": "shopify|tiendanube|woocommerce", "id": "..." }`.
+- `DELETE /api/commerce`: disconnects a store. Shopify delegates to the legacy Shopify KV delete path.
+- `GET /api/commerce/tiendanube/start`: starts Tiendanube OAuth.
+- `GET /api/commerce/tiendanube/callback`: exchanges the OAuth code, stores the encrypted access token, and returns to the main cockpit.
+- `POST /api/commerce/woocommerce`: connects WooCommerce from site URL plus REST API consumer key/secret, validates `/wp-json/wc/v3/products`, then stores the encrypted consumer secret.
+
+Tiendanube/Nuvemshop connector setup:
+
+- Create a Tiendanube/Nuvemshop app and configure the redirect URL: `https://YOUR_PAGES_DOMAIN/api/commerce/tiendanube/callback`.
+- Secrets: `TIENDANUBE_CLIENT_ID`, `TIENDANUBE_CLIENT_SECRET`, and `TIENDANUBE_USER_AGENT`.
+- Optional overrides: `TIENDANUBE_AUTHORIZE_URL`, `TIENDANUBE_TOKEN_URL`, `TIENDANUBE_API_BASE_URL`, `TIENDANUBE_API_VERSION`.
+
+WooCommerce connector setup:
+
+- In WordPress/WooCommerce, create REST API keys with product read permission.
+- The frontend asks for store URL, consumer key, and consumer secret. The Worker validates over HTTPS against `/wp-json/wc/v3/products`.
+
 ## Shopify OAuth
 
 Create a Shopify Partner app and configure:
@@ -210,7 +233,7 @@ Cloudflare endpoints:
 
 If `read_themes`/`write_themes` are added after a store was already connected, the merchant must reconnect/reinstall the Shopify app so Shopify grants a token with the new scopes. Shopify also requires `write_themes` authorization for apps that modify theme files.
 
-The KV binding is declared in `wrangler.toml` as `SHOPIFY_STORES`.
+The KV binding is declared in `wrangler.toml` as `SHOPIFY_STORES`. Shopify keeps the legacy `shopify:store:*` records; Tiendanube and WooCommerce use `commerce:store:*` records in the same namespace with encrypted access tokens/secrets.
 
 Deploy:
 

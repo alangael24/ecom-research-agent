@@ -636,6 +636,7 @@ function validatePayload(payload) {
   if (payload.destination && typeof payload.destination !== "string") return "Invalid destination.";
   if (payload.businessStage && !["starter", "brand", "shopify"].includes(payload.businessStage)) return "Invalid business stage.";
   if (payload.brand && typeof payload.brand !== "object") return "Invalid brand payload.";
+  if (payload.commerce && typeof payload.commerce !== "object") return "Invalid commerce payload.";
   if (payload.shopify && typeof payload.shopify !== "object") return "Invalid Shopify payload.";
   if (payload.attachments && !validAttachments(payload.attachments)) return "Invalid attachments.";
   if (payload.shopify?.shop && !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(payload.shopify.shop)) {
@@ -674,7 +675,29 @@ function optionalString(value, maxLength) {
 
 function payloadText(payload) {
   const brand = payload.brand || {};
-  return `${payload.naturalRequest || ""} ${payload.reference || ""} ${payload.problem || ""} ${payload.product || ""} ${payload.productDetails || ""} ${brand.name || ""} ${brand.url || ""} ${brand.channels || ""} ${brand.goal || ""}`;
+  const commerce = payload.commerce || {};
+  return `${payload.naturalRequest || ""} ${payload.reference || ""} ${payload.problem || ""} ${payload.product || ""} ${payload.productDetails || ""} ${brand.name || ""} ${brand.url || ""} ${brand.channels || ""} ${brand.goal || ""} ${commerce.platform || ""} ${commerce.label || ""} ${commerce.storeId || ""}`;
+}
+
+function platformLabel(platform) {
+  const value = String(platform || "").toLowerCase();
+  if (value === "tiendanube") return "Tiendanube";
+  if (value === "woocommerce") return "WooCommerce";
+  return value ? "Shopify" : "tienda ecommerce";
+}
+
+function connectedProducts(payload) {
+  if (Array.isArray(payload.commerce?.snapshot?.products) && payload.commerce.snapshot.products.length) {
+    return payload.commerce.snapshot.products;
+  }
+  if (Array.isArray(payload.shopify?.snapshot?.products)) {
+    return payload.shopify.snapshot.products;
+  }
+  return [];
+}
+
+function connectedPlatform(payload) {
+  return payload.commerce?.platform || (payload.shopify?.shop ? "shopify" : "");
 }
 
 function shouldUseAvatarResearchHarness(payload) {
@@ -788,6 +811,7 @@ function runToolFactory(payload) {
       installedTools,
       installedToolsError: payload.shopify?.installedToolsError || "",
     },
+    commerce: payload.commerce || null,
     requestedTool: profile,
     executiveBrief: {
       decision: existingToolMatch
@@ -798,7 +822,10 @@ function runToolFactory(payload) {
       guardrail: "Si la necesidad requiere infraestructura regulada, entregabilidad, pagos, fraude, SMS compliance o marketplace externo, Agent Genia debe integrarse con un proveedor o limitar el alcance.",
     },
     buildStrategy: {
-      appShell: "Agent Genia Shopify app como contenedor unico.",
+      appShell:
+        connectedPlatform(payload) === "shopify"
+          ? "Agent Genia Shopify app como contenedor unico."
+          : `Agent Genia commerce adapter para ${platformLabel(connectedPlatform(payload))}: lectura de catalogo y planeacion hoy; publicacion nativa requiere runtime especifico de esa plataforma.`,
       primitives,
       dataModel: buildToolFactoryDataModel(profile),
       events: buildToolFactoryEvents(profile),
@@ -1460,9 +1487,9 @@ function buildOrBuyDecision(capability) {
 
 function runBrandWhitespaceTool(payload) {
   const brand = normalizeBrandForWhitespace(payload);
-  const products = payload.shopify?.snapshot?.products || [];
+  const products = connectedProducts(payload);
   const declaredSignals = extractDeclaredSignals(payload);
-  const catalogSignals = extractCatalogSignals(products);
+  const catalogSignals = extractCatalogSignals(payload, products);
   const competitorSignals = extractCompetitorSignals(payloadText(payload), brand);
   const candidates = buildWhitespaceCandidates({ payload, brand, products, declaredSignals, catalogSignals, competitorSignals });
   const angleValidation = buildAngleWhitespaceValidation({ payload, brand, products, declaredSignals, catalogSignals, competitorSignals, candidates });
@@ -1484,6 +1511,7 @@ function runBrandWhitespaceTool(payload) {
       shop: payload.shopify?.shop || "",
       focus: payload.shopify?.focus || "",
     },
+    commerce: payload.commerce || null,
     sourceCoverage: buildWhitespaceCoverage(payload, products, declaredSignals, competitorSignals),
     executiveBrief: {
       decision: primary
@@ -1519,7 +1547,9 @@ function normalizeBrandForWhitespace(payload) {
     url: brand.url || "",
     channels: cleanSentence(brand.channels) || "canales no definidos",
     goal: cleanSentence(brand.goal || payload.shopify?.focus) || "encontrar un posicionamiento mas claro",
-    stage: payload.shopify?.shop ? "marca con Shopify conectado" : brand.url ? "marca con presencia digital" : "marca con contexto declarado",
+    stage: payload.commerce?.storeId
+      ? `marca con ${platformLabel(payload.commerce.platform)} conectado`
+      : payload.shopify?.shop ? `marca con ${platformLabel(connectedPlatform(payload))} conectado` : brand.url ? "marca con presencia digital" : "marca con contexto declarado",
   };
 }
 
@@ -1549,14 +1579,14 @@ function extractDeclaredSignals(payload) {
   return [...new Set(signals)].slice(0, 8);
 }
 
-function extractCatalogSignals(products) {
+function extractCatalogSignals(payload, products) {
   if (!products.length) return ["catalogo no conectado o sin productos leidos"];
   const activeProducts = products.filter((product) => String(product.status || "").toLowerCase() === "active");
   const types = [...new Set(products.map((product) => product.productType || "").filter(Boolean))];
   const vendors = [...new Set(products.map((product) => product.vendor || "").filter(Boolean))];
   const lowInventory = products.filter((product) => Number(product.totalInventory) <= 5).length;
   const signals = [
-    `${products.length} productos leidos desde Shopify`,
+    `${products.length} productos leidos desde ${platformLabel(connectedPlatform(payload))}`,
     `${activeProducts.length || products.length} productos activos o vendibles`,
   ];
   if (types.length) signals.push(`${types.slice(0, 4).join(", ")} como categorias visibles`);
@@ -2029,9 +2059,10 @@ function confidenceFromSignals(signalCount, competitorCount) {
 }
 
 function buildWhitespaceCoverage(payload, products, declaredSignals, competitorSignals) {
+  const platform = platformLabel(connectedPlatform(payload));
   return [
     `Contexto de marca: ${payload.brand?.name || payload.brand?.url ? "recibido" : "limitado"}.`,
-    `Shopify/catalogo: ${products.length ? `${products.length} productos leidos` : "no conectado o sin productos"}.`,
+    `Catalogo conectado: ${products.length ? `${products.length} productos leidos desde ${platform}` : "no conectado o sin productos"}.`,
     `Senales declaradas: ${declaredSignals.join(", ")}.`,
     `Competidores declarados: ${competitorSignals.length ? competitorSignals.join(", ") : "ninguno; falta benchmark externo"}.`,
     "Meta/Amazon/TikTok live: no consultados en esta herramienta interna; usar research competitivo profundo para confirmar.",

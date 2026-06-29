@@ -73,6 +73,7 @@ function validatePayload(payload) {
   if (payload.goals && !Array.isArray(payload.goals)) return "Invalid goals.";
   if (payload.businessStage && !["starter", "brand", "shopify"].includes(payload.businessStage)) return "Invalid business stage.";
   if (payload.brand && typeof payload.brand !== "object") return "Invalid brand payload.";
+  if (payload.commerce && typeof payload.commerce !== "object") return "Invalid commerce payload.";
   if (payload.shopify && typeof payload.shopify !== "object") return "Invalid Shopify payload.";
   if (payload.attachments && !validAttachments(payload.attachments)) return "Invalid attachments.";
   return "";
@@ -100,6 +101,40 @@ function validAttachments(value) {
 
 function optionalString(value, maxLength) {
   return value === undefined || (typeof value === "string" && value.length <= maxLength);
+}
+
+function normalizeCommerceContext(payload) {
+  const commerce = payload.commerce || {};
+  const snapshot =
+    commerce.snapshot ||
+    (payload.shopify?.snapshot
+      ? {
+          platform: "shopify",
+          platformLabel: "Shopify",
+          storeId: payload.shopify.shop || "",
+          store: payload.shopify.snapshot.shop || null,
+          products: payload.shopify.snapshot.products || [],
+          capabilities: { readCatalog: true, publishPages: true, installThemeTools: true },
+        }
+      : null);
+  const platform = commerce.platform || snapshot?.platform || (payload.shopify?.shop ? "shopify" : "");
+  const platformLabel = commerce.platformLabel || snapshot?.platformLabel || platformLabelFor(platform);
+  const store = snapshot?.store || snapshot?.shop || null;
+  return {
+    platform,
+    platformLabel,
+    storeId: commerce.storeId || snapshot?.storeId || payload.shopify?.shop || "",
+    label: commerce.label || store?.name || commerce.storeId || payload.shopify?.shop || "",
+    focus: commerce.focus || payload.shopify?.focus || "",
+    snapshot,
+  };
+}
+
+function platformLabelFor(platform) {
+  const value = String(platform || "").toLowerCase();
+  if (value === "tiendanube") return "Tiendanube";
+  if (value === "woocommerce") return "WooCommerce";
+  return value ? "Shopify" : "no";
 }
 
 async function runCodexResearch(payload) {
@@ -198,6 +233,7 @@ function buildPrompt(payload, attachmentFiles = []) {
   const brandHelper = buildBrandStrategyHelper(payload);
   const websiteHelper = buildWebsiteStrategyHelper(payload, brandHelper);
   const customizationHelper = buildProductCustomizationHelper(payload, brandHelper);
+  const commerce = normalizeCommerceContext(payload);
 
   return `Eres Agent Genia. El usuario escribe una solicitud natural en la main page y tu trabajo es decidir que herramientas internas usar, como Cursor cuando llama tools durante su flujo.
 
@@ -233,9 +269,10 @@ Inferencias del frontend, revisalas y corrigelas si hace falta:
 - Sitio o referencia de marca: ${payload.brand?.url || "no especificado"}
 - Canales de marca: ${payload.brand?.channels || "no especificados"}
 - Objetivo de marca: ${payload.brand?.goal || "no especificado"}
-- Shopify conectado: ${payload.shopify?.shop || "no"}
-- Foco Shopify: ${payload.shopify?.focus || "no especificado"}
-- Snapshot Shopify: ${payload.shopify?.snapshot ? JSON.stringify(payload.shopify.snapshot).slice(0, 6000) : "sin snapshot"}
+- Plataforma ecommerce conectada: ${commerce.platformLabel}
+- Tienda conectada: ${commerce.label || commerce.storeId || "no"}
+- Foco tienda: ${commerce.focus || "no especificado"}
+- Snapshot tienda: ${commerce.snapshot ? JSON.stringify(commerce.snapshot).slice(0, 6000) : "sin snapshot"}
 
 Herramientas internas disponibles:
 - $alibaba-sourcing-agent: usar cuando la solicitud mencione Alibaba, proveedores, fabricantes, sourcing, MOQ, DDP, muestras, precio de proveedor, negociar con proveedor o encontrar productos para vender.
@@ -245,7 +282,7 @@ Herramientas internas disponibles:
 - shipping rate quote: usar cuando la solicitud pida cotizar envio, tarifa de paqueteria, costo de paquete, origen/destino, CP, peso o medidas.
 - brand audit: usar cuando businessStage sea brand o el usuario tenga una marca/tienda existente. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y experimentos. Si pide competencia o inspiracion, desglosa hooks, headlines, formato, avatar y pain points. Si pide avatar research, frases reales, objeciones, deseos, momentos de uso, creencias, pains o why now, usa avatarResearch. Si pide ads/videos con mejor o peor rendimiento, usa creativePerformance.
 - angle/whitespace validator: usar cuando el usuario pida validar angulos, whitespace, espacio libre, saturacion, competidores o posicionamiento. Debe comparar angulos contra competidores y clasificar cada uno como explotado, debil, libre_necesita_test o no_recomendado.
-- shopify store audit: usar cuando businessStage sea shopify o cuando exista una tienda Shopify conectada. Lee el snapshot como contexto real; no pidas tokens manuales.
+- ecommerce store audit: usar cuando businessStage sea shopify o cuando exista una tienda Shopify, Tiendanube o WooCommerce conectada. Lee el snapshot como contexto real; no pidas tokens manuales.
 - retail to online agent: usar cuando el usuario ya tiene tienda fisica/local/negocio offline y quiere vender en internet, crear pagina web, elegir TikTok organico vs paid ads, entender producto, analizar competencia o crear contenido.
 - brand strategy helper: usar cuando la solicitud pida nombre de marca, colores, identidad visual, branding, nicho/problema o crear una marca desde cero.
 - website page builder: usar cuando la solicitud pida pagina web, landing page, homepage, PDP, tienda online, estructura de pagina, copy de web o cuando brandPlan necesite convertirse en una primera web.
@@ -259,14 +296,14 @@ Reglas:
 - Si la solicitud pide nombre, colores, identidad visual, nueva marca, o si brand strategy helper tiene señal alta, llena brandPlan en el JSON. Usa nombres memorables segun problema/nicho y colores en hex segun nombre, tono y categoria. No digas que el nombre esta legalmente disponible; pide revisar marca registrada, dominio y redes.
 - Si la solicitud pide web, pagina, landing, tienda online, homepage, PDP o si llenas brandPlan para una marca nueva, llena websitePlan. websitePlan debe aplicar el nombre recomendado, colores, tono y problema/nicho en hero, secciones, copy y guardrails. No afirmes que ya creaste/deployaste una web si solo estas entregando el plan.
 - Si la solicitud pide producto personalizado, private label, empaque, packaging, logo, variantes, materiales o unboxing, llena customizationPlan. Debe incluir 3 rutas accionables de producto/empaque, impacto cualitativo en MOQ/costo/flete, preguntas para proveedor y un supplierBrief en ingles listo para copiar en Alibaba. Si brandPlan existe, aplica su nombre, paleta y tono; si no existe, usa una direccion temporal y marca que debe validarse.
-- Si el usuario tiene tienda fisica y quiere vender online, primero entiende producto/oferta/margen/capacidad; recomienda web simple, canal inicial, research de competencia y contenido. No asumas que Shopify audit aplica si no hay tienda Shopify conectada.
+- Si el usuario tiene tienda fisica y quiere vender online, primero entiende producto/oferta/margen/capacidad; recomienda web simple, canal inicial, research de competencia y contenido. No asumas que auditoria de tienda aplica si no hay una tienda ecommerce conectada.
 - Si businessStage es brand, responde como auditoria de marca existente. No trates al usuario como principiante sin tienda; separa lo que ya existe, lo que falta medir y las decisiones de crecimiento.
 - Si la solicitud pide competencia, competidores, inspiracion, hooks, headlines, formato, avatar o pain points, entrega un bloque de inspiracion competitiva. Separa evidencia observada de hipotesis; no inventes que viste anuncios si no los pudiste verificar. El desglose minimo debe cubrir: hook, headline, formato, avatar y pain point.
 - Si la solicitud pide avatar research, investigacion del avatar, voice of customer, VOC, frases reales, lenguaje real, objeciones, deseos, momentos de uso, creencias, pains, why now, JTBD, jobs to be done, miedos, detonadores, triggers o urgencia de compra, llena avatarResearch. Extrae segmentos de avatar, frases reales, pains, objeciones, deseos, momentos de uso, creencias, why-now triggers y angulos creativos. No inventes citas directas: voiceOfCustomer.quote solo debe contener texto observado en adjuntos, comentarios, reviews, transcripciones, ads, links o datos declarados por el usuario. Si no hay fuente real, deja voiceOfCustomer vacio, marca ideas como hipotesis y pon los faltantes en researchGaps. Usa evidenceType como observado, adjunto, declarado_por_usuario, link_no_verificado o hipotesis.
 - Si la solicitud pide validar angulos, whitespace, espacio libre, saturacion, posicionamiento o comparacion contra competidores, llena angleWhitespaceValidator. Para cada angulo devuelve verdict exactamente como uno de: explotado, debil, libre_necesita_test, no_recomendado. "explotado" significa muchos competidores usan el mismo hook/claim/avatar/oferta; "debil" significa hay senal pero el angulo esta mal defendido o poco especifico; "libre_necesita_test" significa parece abierto pero necesita landing/PDP/creativos y metrica; "no_recomendado" significa que el riesgo de claim, margen o falta de demanda supera la evidencia. No marques un angulo como libre solo porque no pudiste buscar; si falta data, dilo en evidence y nextTest.
 - Si la solicitud pide ads con mejor rendimiento, bajo rendimiento, ganadores/perdedores, videos organicos virales, TikTok/Reels/UGC, CTR, CPA, ROAS, watch time o performance creativa, llena creativePerformance. Debe comparar paid ads vs organico viral cuando aplique, separar winners y underperformers, explicar first frame, hook, guion, formato, avatar, pain point, prueba visual, CTA, oferta y metrica. No trates viralidad como ventas; marca si la evidencia es observada, declarada por el usuario, adjunto, link o hipotesis.
 - Para creativePerformance, si faltan metricas, no inventes numeros. Pide o lista: spend, impressions, CTR, CPM, CPC, CPA, ROAS, purchases, 3s views, average watch time, completion rate, shares, saves, comentarios con intencion, profile clicks, sesiones, add-to-cart, conversion, AOV y margen.
-- Si businessStage es shopify, conserva la auditoria dentro del mismo schema y, cuando tengas datos suficientes, llena shopifyPlan con resumen de tienda, oportunidades de catalogo y acciones prioritarias.
+- Si businessStage es shopify o hay una tienda ecommerce conectada, conserva la auditoria dentro del mismo schema y, cuando tengas datos suficientes, llena shopifyPlan con resumen de tienda, oportunidades de catalogo y acciones prioritarias. Solo propongas publicar paginas/theme si la plataforma conectada es Shopify.
 - Si eliges Alibaba sourcing, usa $alibaba-sourcing-agent como herramienta interna. No lo presentes como pagina separada ni pidas al usuario llenar formulario extra.
 - Si detectas intencion de costos, margen, CAC, ROAS, break even o rentabilidad, separa numeros dados de supuestos y no recomiendes lanzar sin pasar por unit economics.
 - Si detectas intencion de envio, usa cotizacion de tarifa como herramienta interna. No crees guia ni compres envio; solo cotiza y marca faltantes.

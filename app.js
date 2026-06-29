@@ -6,6 +6,7 @@ const state = {
   runs: [],
   shopifyStores: [],
   pendingShopifyShop: "",
+  pendingCommerceStore: "",
   user: null,
   mvpMode: false,
 };
@@ -40,6 +41,7 @@ const shopifyConnectionStatus = document.querySelector("#shopifyConnectionStatus
 const toolMenuToggle = document.querySelector("#toolMenuToggle");
 const toolMenu = document.querySelector("#toolMenu");
 const toolOptionButtons = [...document.querySelectorAll("[data-tool-option]")];
+const connectPlatformButtons = [...document.querySelectorAll("[data-connect-platform]")];
 const uploadToolButton = document.querySelector("[data-tool-action='upload']");
 const activeContextChip = document.querySelector("#activeContextChip");
 const hero = document.querySelector(".hero");
@@ -55,7 +57,7 @@ const tabLabelSets = {
   brand: ["Resumen", "Competencia", "Oferta", "Crecimiento", "Web", "Siguiente"],
   brandWhitespace: ["Resumen", "Espacios", "Evidencia", "Validacion", "Riesgos", "Siguiente"],
   toolFactory: ["Resumen", "Arquitectura", "MVP", "Datos", "Riesgos", "Siguiente"],
-  shopify: ["Resumen", "Shopify", "Catalogo", "Acciones", "DDP", "Calidad"],
+  shopify: ["Resumen", "Tienda", "Catalogo", "Acciones", "DDP", "Calidad"],
   profitability: ["Resumen", "Numeros", "Alertas", "Siguiente", "Supuestos", "Notas"],
   shipping: ["Resumen", "Tarifas", "Detalles", "Alertas", "Siguiente", "Notas"],
   shopifyPage: ["Preview", "Contenido", "Shopify", "Publicar", "SEO", "Notas"],
@@ -315,10 +317,13 @@ function setupStageControls() {
   toolOptionButtons.forEach((button) => {
     button.addEventListener("click", () => selectToolOption(button.dataset.toolOption));
   });
+  connectPlatformButtons.forEach((button) => {
+    button.addEventListener("click", () => startStoreConnection(button.dataset.connectPlatform));
+  });
   shopifyAuthLogin?.addEventListener("click", (event) => {
     event.preventDefault();
     selectBusinessStage("shopify");
-    startShopifyLogin();
+    startStoreConnection("shopify");
   });
   document.querySelector("#connectShopify")?.addEventListener("click", connectShopifyStore);
   document.querySelector("#refreshShopifyStores")?.addEventListener("click", loadShopifyStores);
@@ -343,10 +348,6 @@ function closeToolMenu() {
 function selectToolOption(stage) {
   closeToolMenu();
   selectBusinessStage(stage);
-  if (stage === "shopify") {
-    startShopifyLogin();
-    return;
-  }
   form.naturalRequest.focus();
 }
 
@@ -369,6 +370,20 @@ function handleShopifyEntryParams() {
 function handleShopifyCallbackParams() {
   const params = new URLSearchParams(window.location.search);
   const connectedShop = normalizeShopifyDomain(params.get("shopify_connected"));
+  const connectedCommerce = params.get("commerce_connected") || "";
+  if (connectedCommerce) {
+    const shopifyInput = form.querySelector("input[name='businessStage'][value='shopify']");
+    if (shopifyInput) shopifyInput.checked = true;
+    state.pendingCommerceStore = connectedCommerce;
+    updateStageUI();
+    showToast(`Tienda conectada: ${connectedCommerce.replace(":", " ")}`);
+
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("commerce_connected");
+    cleanUrl.searchParams.delete("stage");
+    window.history.replaceState({}, "", cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+    return;
+  }
   if (!connectedShop) return;
 
   const shopifyInput = form.querySelector("input[name='businessStage'][value='shopify']");
@@ -393,6 +408,20 @@ function consumeShopifyPickerParam() {
 }
 
 function startShopifyLogin() {
+  startStoreConnection("shopify");
+}
+
+async function startStoreConnection(platform = "shopify") {
+  closeToolMenu();
+  selectBusinessStage("shopify");
+  if (platform === "tiendanube") {
+    window.location.href = shopifyApiUrl("/api/commerce/tiendanube/start");
+    return;
+  }
+  if (platform === "woocommerce") {
+    await connectWooCommerceStore();
+    return;
+  }
   window.location.href = shopifyApiUrl("/api/shopify/login");
 }
 
@@ -442,44 +471,46 @@ function updateActiveContextChip(stage) {
 async function loadShopifyStores() {
   if (!shopifyStoreSelect) return;
   try {
-    const response = await fetch(shopifyApiUrl("/api/shopify"));
-    if (response.status === 404) throw new Error("Shopify backend not deployed");
+    const response = await fetch(shopifyApiUrl("/api/commerce"));
+    if (response.status === 404) throw new Error("Commerce backend not deployed");
     const body = await response.json();
-    if (!body.ok) throw new Error(body.message || "No se pudieron leer las tiendas Shopify.");
+    if (!body.ok) throw new Error(body.message || "No se pudieron leer las tiendas conectadas.");
     state.shopifyStores = body.stores || [];
     renderShopifyStoreOptions();
     if (shopifyConnectionStatus) {
       shopifyConnectionStatus.textContent = state.shopifyStores.length
         ? `${state.shopifyStores.length} tienda(s) conectada(s).`
-        : "Conecta cada tienda una vez con OAuth de Shopify.";
+        : "Conecta Shopify, Tiendanube o WooCommerce una vez.";
     }
   } catch (error) {
     state.shopifyStores = [];
     renderShopifyStoreOptions();
     if (shopifyConnectionStatus) {
-      shopifyConnectionStatus.textContent = "La conexion Shopify funciona desde la URL publicada en Cloudflare.";
+      shopifyConnectionStatus.textContent = "La conexion de tiendas funciona desde la URL publicada en Cloudflare.";
     }
   }
 }
 
 function renderShopifyStoreOptions() {
   if (!shopifyStoreSelect) return;
-  const current = state.pendingShopifyShop || shopifyStoreSelect.value;
+  const current = state.pendingCommerceStore || (state.pendingShopifyShop ? commerceStoreValue({ platform: "shopify", id: state.pendingShopifyShop }) : shopifyStoreSelect.value);
   shopifyStoreSelect.innerHTML = state.shopifyStores.length
     ? state.shopifyStores
         .map((store) => {
-          const label = store.shopInfo?.name ? `${store.shopInfo.name} (${store.shop})` : store.shop;
-          return `<option value="${escapeHtml(store.shop)}">${escapeHtml(label)}</option>`;
+          const value = commerceStoreValue(store);
+          const label = store.label || store.domain || store.id;
+          return `<option value="${escapeHtml(value)}">${escapeHtml(`${store.platformLabel || platformLabel(store.platform)} - ${label}`)}</option>`;
         })
         .join("")
     : '<option value="">Sin tiendas conectadas</option>';
 
-  if (state.shopifyStores.some((store) => store.shop === current)) {
+  if (state.shopifyStores.some((store) => commerceStoreValue(store) === current)) {
     shopifyStoreSelect.value = current;
-  } else if (state.shopifyStores[0]?.shop) {
-    shopifyStoreSelect.value = state.shopifyStores[0].shop;
+  } else if (state.shopifyStores[0]?.id) {
+    shopifyStoreSelect.value = commerceStoreValue(state.shopifyStores[0]);
   }
   state.pendingShopifyShop = "";
+  state.pendingCommerceStore = "";
 }
 
 function connectShopifyStore() {
@@ -492,37 +523,41 @@ function connectShopifyStore() {
 }
 
 async function disconnectSelectedShopifyStore() {
-  const shop = shopifyStoreSelect?.value || "";
-  if (!shop) {
+  const selected = selectedCommerceStore();
+  if (!selected?.id) {
     showToast("Selecciona una tienda conectada");
     return;
   }
 
-  const response = await fetch(shopifyApiUrl("/api/shopify"), {
+  const response = await fetch(shopifyApiUrl("/api/commerce"), {
     method: "DELETE",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ shop }),
+    body: JSON.stringify({ platform: selected.platform, id: selected.id }),
   });
   const body = await response.json();
   if (!body.ok) {
-    showToast(body.message || "No se pudo desconectar Shopify");
+    showToast(body.message || "No se pudo desconectar la tienda");
     return;
   }
-  showToast(`Tienda desconectada: ${shop}`);
+  showToast(`Tienda desconectada: ${selected.label || selected.id}`);
   await loadShopifyStores();
 }
 
 async function requestShopifySnapshot(shop) {
-  const response = await fetch(shopifyApiUrl("/api/shopify"), {
+  return requestCommerceSnapshot({ platform: "shopify", id: shop });
+}
+
+async function requestCommerceSnapshot(store) {
+  const response = await fetch(shopifyApiUrl("/api/commerce"), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ shop }),
+    body: JSON.stringify({ platform: store.platform, id: store.id }),
   });
   const body = await response.json();
   if (!body.ok) {
-    throw new Error(body.message || "No se pudo leer Shopify.");
+    throw new Error(body.message || "No se pudo leer la tienda.");
   }
-  return body.shopify;
+  return body.commerce;
 }
 
 async function requestInstalledShopifyTools(shop) {
@@ -535,6 +570,50 @@ async function requestInstalledShopifyTools(shop) {
     throw new Error(body.message || "No se pudieron leer las herramientas Agent Genia.");
   }
   return Array.isArray(body.tools) ? body.tools : [];
+}
+
+async function connectWooCommerceStore() {
+  const siteUrl = window.prompt("URL de tu tienda WooCommerce (ej. https://mitienda.com)");
+  if (!siteUrl) return;
+  const consumerKey = window.prompt("WooCommerce Consumer Key (ck_...)");
+  if (!consumerKey) return;
+  const consumerSecret = window.prompt("WooCommerce Consumer Secret (cs_...)");
+  if (!consumerSecret) return;
+
+  try {
+    const response = await fetch(shopifyApiUrl("/api/commerce/woocommerce"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ siteUrl, consumerKey, consumerSecret }),
+    });
+    const body = await response.json();
+    if (!body.ok) throw new Error(body.message || "No se pudo conectar WooCommerce.");
+    state.pendingCommerceStore = commerceStoreValue(body.store);
+    await loadShopifyStores();
+    showToast(`WooCommerce conectado: ${body.store?.label || body.store?.domain || "tienda"}`);
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : "No se pudo conectar WooCommerce.");
+  }
+}
+
+function selectedCommerceStore() {
+  const value = shopifyStoreSelect?.value || "";
+  const [platform, ...idParts] = value.split(":");
+  const id = idParts.join(":");
+  if (!platform || !id) return null;
+  const found = state.shopifyStores.find((store) => commerceStoreValue(store) === value);
+  return found || { platform, id, label: id };
+}
+
+function commerceStoreValue(store = {}) {
+  if (!store.platform || !store.id) return "";
+  return `${store.platform}:${store.id}`;
+}
+
+function platformLabel(platform) {
+  if (platform === "tiendanube") return "Tiendanube";
+  if (platform === "woocommerce") return "WooCommerce";
+  return platform ? "Shopify" : "tienda ecommerce";
 }
 
 function normalizeShopifyDomain(value) {
@@ -874,16 +953,25 @@ async function handleSubmit(event) {
 async function runResearch(data) {
   setLoading(true);
 
-  if ((data.businessStage === "shopify" || data.businessStage === "brand") && data.shopify.shop) {
+  if ((data.businessStage === "shopify" || data.businessStage === "brand") && data.commerce?.storeId) {
     try {
-      data.shopify.snapshot = await requestShopifySnapshot(data.shopify.shop);
+      data.commerce.snapshot = await requestCommerceSnapshot({
+        platform: data.commerce.platform,
+        id: data.commerce.storeId,
+      });
+      if (data.commerce.platform === "shopify") {
+        data.shopify.snapshot = data.commerce.snapshot;
+      }
     } catch (error) {
-      data.shopify.error = error instanceof Error ? error.message : "No se pudo leer la tienda Shopify.";
+      data.commerce.error = error instanceof Error ? error.message : "No se pudo leer la tienda conectada.";
+      if (data.commerce.platform === "shopify") data.shopify.error = data.commerce.error;
     }
-    try {
-      data.shopify.installedTools = await requestInstalledShopifyTools(data.shopify.shop);
-    } catch (error) {
-      data.shopify.installedToolsError = error instanceof Error ? error.message : "No se pudieron leer las herramientas Agent Genia.";
+    if (data.commerce.platform === "shopify" && data.shopify.shop) {
+      try {
+        data.shopify.installedTools = await requestInstalledShopifyTools(data.shopify.shop);
+      } catch (error) {
+        data.shopify.installedToolsError = error instanceof Error ? error.message : "No se pudieron leer las herramientas Agent Genia.";
+      }
     }
   }
 
@@ -1058,13 +1146,30 @@ function readForm() {
   const businessStage = selectedBusinessStage();
   const inferred = inferRequest(naturalRequest, businessStage);
   const inferredBrand = businessStage === "brand" ? inferBrandContext(naturalRequest) : {};
+  const selectedStore = selectedCommerceStore();
+  const commerce = selectedStore
+    ? {
+        platform: selectedStore.platform,
+        platformLabel: selectedStore.platformLabel || platformLabel(selectedStore.platform),
+        storeId: selectedStore.id,
+        label: selectedStore.label || selectedStore.domain || selectedStore.id,
+        focus: shopifyFocusInput?.value.trim() || inferShopifyFocus(naturalRequest),
+      }
+    : {
+        platform: "",
+        platformLabel: "",
+        storeId: "",
+        label: "",
+        focus: shopifyFocusInput?.value.trim() || inferShopifyFocus(naturalRequest),
+      };
   return {
     businessStage,
     naturalRequest,
     ...inferred,
+    commerce,
     shopify: {
-      shop: shopifyStoreSelect?.value || "",
-      focus: shopifyFocusInput?.value.trim() || inferShopifyFocus(naturalRequest),
+      shop: commerce.platform === "shopify" ? commerce.storeId : "",
+      focus: commerce.focus,
     },
     brand: {
       name: brandNameInput?.value.trim() || inferredBrand.name || "",
@@ -1151,7 +1256,7 @@ function inferRequest(naturalRequest, businessStage = "starter") {
   ]);
   const shopifyIntent =
     businessStage === "shopify" ||
-    hasAny(text, ["shopify", "catalogo shopify", "catálogo shopify", "conversion", "conversiones"]);
+    hasAny(text, ["shopify", "tiendanube", "nuvemshop", "woocommerce", "woo commerce", "catalogo", "catálogo", "conversion", "conversiones"]);
   const physicalRetailIntent = hasAny(text, [
     "tienda fisica",
     "tienda física",
@@ -1703,14 +1808,16 @@ function buildAgentTasks(query, data, category) {
       ]);
     }
     if (data.selectedInternalTool === "shopify-store-audit") {
+      const platform = data.commerce?.platformLabel || platformLabel(data.commerce?.platform);
+      const store = data.commerce?.label || data.commerce?.storeId || "";
       return firstStep.concat([
         {
           key: "shopify",
-          title: "Leer tienda Shopify",
-          status: data.shopify?.shop ? "listo para OAuth" : "requiere conexion",
-          result: data.shopify?.shop
-            ? `El agente usara la tienda conectada ${data.shopify.shop} como contexto real.`
-            : "El agente necesita que conectes una tienda Shopify para leer catalogo real.",
+          title: "Leer tienda conectada",
+          status: data.commerce?.storeId ? "lista para lectura" : "requiere conexion",
+          result: data.commerce?.storeId
+            ? `El agente usara ${platform} (${store}) como contexto real.`
+            : "El agente necesita que conectes Shopify, Tiendanube o WooCommerce para leer catalogo real.",
           nextAction: "Auditar catalogo, pricing, inventario y siguientes acciones dentro de esta pagina.",
         },
       ]);
@@ -3444,7 +3551,8 @@ function renderReport(report) {
     return;
   }
 
-  const isShopify = report.businessStage === "shopify";
+  const storeContext = commerceContext(report);
+  const isShopify = report.businessStage === "shopify" || Boolean(storeContext.storeId && report.selectedInternalTool === "shopify-store-audit");
   setTabLabels(isShopify ? tabLabelSets.shopify : tabLabelSets.sourcing);
   const ai = report.ai || null;
   const brandPlan = extractBrandPlan(report);
@@ -3461,7 +3569,7 @@ function renderReport(report) {
       ];
   const goals = (report.goals || []).map((key) => goalConfig[key]?.label || key).join(", ");
   const shopifyOverview = isShopify ? renderShopifyOverview(report) : "";
-  const shopifyProductCount = report.shopify?.snapshot?.products?.length || 0;
+  const shopifyProductCount = storeContext.products.length || 0;
   const backendNotice = report.backendError
     ? `<article class="report-card full-span notice-card">
         <h3>Backend privado</h3>
@@ -3471,8 +3579,8 @@ function renderReport(report) {
 
   document.querySelector("#brief").innerHTML = `
     <div class="metric-row">
-      <article class="metric-card"><strong>${isShopify ? shopifyProductCount : supplierShortlist.length}</strong><p>${isShopify ? "productos Shopify" : ai ? "proveedores" : "candidatos meta"}</p></article>
-      <article class="metric-card"><strong>${isShopify ? (report.shopify?.shop || "--") : report.targetUnitCost ? formatMoney(report.targetUnitCost) : "--"}</strong><p>${isShopify ? "tienda" : "costo objetivo"}</p></article>
+      <article class="metric-card"><strong>${isShopify ? shopifyProductCount : supplierShortlist.length}</strong><p>${isShopify ? "productos de tienda" : ai ? "proveedores" : "candidatos meta"}</p></article>
+      <article class="metric-card"><strong>${isShopify ? (storeContext.label || "--") : report.targetUnitCost ? formatMoney(report.targetUnitCost) : "--"}</strong><p>${isShopify ? storeContext.platformLabel || "tienda" : "costo objetivo"}</p></article>
       <article class="metric-card"><strong>${escapeHtml(toolLabel(report.selectedInternalTool))}</strong><p>herramienta interna</p></article>
     </div>
     <div class="report-grid">
@@ -3658,7 +3766,8 @@ function renderBrandReport(report) {
   const competitorInspiration = buildCompetitorInspiration(report, brand);
   const creativePerformance = buildCreativePerformanceLab(report, brand, competitorInspiration);
   const angleValidator = normalizeAngleWhitespaceValidator(report.angleValidation || report.angleWhitespaceValidator || report.ai?.angleWhitespaceValidator);
-  const shopifyOverview = report.shopify?.shop ? renderShopifyOverview(report) : "";
+  const storeContext = commerceContext(report);
+  const shopifyOverview = storeContext.storeId ? renderShopifyOverview(report) : "";
   const backendNotice = report.backendError
     ? `<article class="report-card full-span notice-card">
         <h3>Backend privado</h3>
@@ -3720,7 +3829,7 @@ function renderBrandReport(report) {
         <div class="pill-row">
           <span class="pill"><i data-lucide="message-square-text"></i>${escapeHtml(report.naturalRequest)}</span>
           <span class="pill"><i data-lucide="globe"></i>${escapeHtml(brand.url || "sin URL")}</span>
-          <span class="pill"><i data-lucide="shopping-bag"></i>${escapeHtml(report.shopify?.shop || "Shopify opcional")}</span>
+          <span class="pill"><i data-lucide="shopping-bag"></i>${escapeHtml(storeContext.storeId ? `${storeContext.platformLabel}: ${storeContext.label || storeContext.storeId}` : "tienda opcional")}</span>
         </div>
       </article>
     </div>`;
@@ -4156,6 +4265,7 @@ function renderCreativeTestPlan(lab) {
 
 function normalizeBrandContext(report) {
   const brand = report.brand || {};
+  const storeContext = commerceContext(report);
   const promptBrand = inferBrandContext(report.naturalRequest || "");
   const url = brand.url || promptBrand.url || "";
   const inferredName =
@@ -4168,8 +4278,8 @@ function normalizeBrandContext(report) {
     name: inferredName,
     url,
     channels: brand.channels || promptBrand.channels || "canales no definidos",
-    goal: brand.goal || report.shopify?.focus || promptBrand.goal || "crecer con mejor contexto",
-    stage: report.shopify?.shop ? "con tienda conectada" : url ? "marca con presencia digital" : "contexto inicial",
+    goal: brand.goal || storeContext.focus || promptBrand.goal || "crecer con mejor contexto",
+    stage: storeContext.storeId ? `con ${storeContext.platformLabel} conectado` : url ? "marca con presencia digital" : "contexto inicial",
   };
 }
 
@@ -4470,6 +4580,44 @@ function buildCreativeNextTests(category, brand, rows) {
   ];
 }
 
+function commerceContext(report = {}) {
+  const commerce = report.commerce || {};
+  const snapshot = commerce.snapshot || (report.shopify?.snapshot ? {
+    platform: "shopify",
+    platformLabel: "Shopify",
+    storeId: report.shopify.shop,
+    store: report.shopify.snapshot.shop,
+    shop: report.shopify.snapshot.shop,
+    products: report.shopify.snapshot.products || [],
+    capabilities: {
+      readCatalog: true,
+      publishPages: true,
+      installThemeTools: true,
+    },
+  } : null);
+  const platform = commerce.platform || snapshot?.platform || (report.shopify?.shop ? "shopify" : "");
+  const label = commerce.platformLabel || snapshot?.platformLabel || platformLabel(platform);
+  const storeId = commerce.storeId || snapshot?.storeId || report.shopify?.shop || "";
+  const store = snapshot?.store || snapshot?.shop || null;
+  const products = Array.isArray(snapshot?.products) ? snapshot.products : [];
+  return {
+    platform,
+    platformLabel: label,
+    storeId,
+    label: commerce.label || store?.name || storeId,
+    focus: commerce.focus || report.shopify?.focus || "conversion, catalogo y producto ganador",
+    snapshot,
+    store,
+    products,
+    error: commerce.error || report.shopify?.error || "",
+    capabilities: snapshot?.capabilities || {
+      readCatalog: Boolean(snapshot),
+      publishPages: platform === "shopify",
+      installThemeTools: platform === "shopify",
+    },
+  };
+}
+
 function extractUrlsFromText(value) {
   const matches = String(value || "").match(/https?:\/\/[^\s,]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s,]*)?/gi) || [];
   return [...new Set(matches.map((match) => normalizeBrandUrl(match)))];
@@ -4514,7 +4662,8 @@ function inferCompetitivePainPoints(text, category) {
 }
 
 function buildBrandAudit(report, brand) {
-  const products = report.shopify?.snapshot?.products || [];
+  const storeContext = commerceContext(report);
+  const products = storeContext.products;
   const hasCatalog = products.length > 0;
   const goal = brand.goal.toLowerCase();
   const conversionFocus = /conversion|conversi[oó]n|roas|cac|ads|anuncios/.test(goal);
@@ -4536,7 +4685,7 @@ function buildBrandAudit(report, brand) {
       `Objetivo principal: ${brand.goal}.`,
       `Canales declarados: ${brand.channels}.`,
       brand.url ? `Sitio o referencia: ${brand.url}.` : "Falta sitio, tienda o perfil social para leer señales externas.",
-      report.shopify?.shop ? `Shopify conectado: ${report.shopify.shop}.` : "Shopify no conectado; la auditoria usa contexto declarado.",
+      storeContext.storeId ? `${storeContext.platformLabel} conectado: ${storeContext.label || storeContext.storeId}.` : "Tienda ecommerce no conectada; la auditoria usa contexto declarado.",
     ],
     risks: [
       "Optimizar anuncios sin tener clara la oferta y el margen real.",
@@ -4566,12 +4715,12 @@ function buildBrandAudit(report, brand) {
     ],
     catalog: hasCatalog
       ? [
-          `${products.length} productos leidos desde Shopify.`,
+          `${products.length} productos leidos desde ${storeContext.platformLabel || "la tienda"}.`,
           "Ordenar productos por inventario, precio y estado antes de decidir campañas.",
           "Detectar productos sin categoria, sin tipo o con poca claridad de uso.",
         ]
       : [
-          "Conectar Shopify para leer catalogo real, inventario y precios.",
+          "Conectar Shopify, Tiendanube o WooCommerce para leer catalogo real, inventario y precios.",
           "Si no usa Shopify, pegar productos top y precios en el prompt.",
           "Priorizar 3-5 SKUs antes de intentar optimizar toda la marca.",
         ],
@@ -4623,7 +4772,7 @@ function buildBrandAudit(report, brand) {
           ]
         : []),
       "Pegar URL de marca y 3 productos top para una auditoria mas precisa.",
-      "Conectar Shopify cuando el install flow este listo para leer catalogo real.",
+      "Conectar la plataforma ecommerce cuando el flujo este listo para leer catalogo real.",
       "Ejecutar filtro de rentabilidad con AOV, costo, envio, margen y CAC objetivo.",
       "Crear 5 hooks por avatar y escoger 2 para probar en ads o TikTok organico.",
     ],
@@ -4631,32 +4780,33 @@ function buildBrandAudit(report, brand) {
 }
 
 function renderShopifyOverview(report) {
-  const snapshot = report.shopify?.snapshot || null;
+  const context = commerceContext(report);
   const plan = report.ai?.shopifyPlan || null;
-  const shop = snapshot?.shop || null;
-  const products = snapshot?.products || [];
-  const focus = report.shopify?.focus || "conversion, catalogo y producto ganador";
-  const error = report.shopify?.error || "";
+  const shop = context.store || null;
+  const products = context.products || [];
+  const focus = context.focus || "conversion, catalogo y producto ganador";
+  const error = context.error || "";
 
-  if (!report.shopify?.shop) {
+  if (!context.storeId) {
     return `<article class="report-card full-span notice-card">
-      <h3>Shopify sin conectar</h3>
-      <p>Selecciona el modo Tienda Shopify, conecta una tienda .myshopify.com y vuelve a ejecutar el agente para auditar catalogo real.</p>
+      <h3>Tienda sin conectar</h3>
+      <p>Selecciona el modo tienda y conecta Shopify, Tiendanube o WooCommerce para auditar catalogo real.</p>
     </article>`;
   }
 
   if (error) {
     return `<article class="report-card full-span notice-card">
-      <h3>No se pudo leer Shopify</h3>
+      <h3>No se pudo leer la tienda</h3>
       <p>${escapeHtml(error)}</p>
     </article>`;
   }
 
   return `<article class="report-card full-span">
-    <h3>${escapeHtml(shop?.name || report.shopify.shop)}</h3>
-    <p>${escapeHtml(plan?.storeSummary || `Tienda conectada por OAuth. El agente puede leer catalogo y enfocar la auditoria en ${focus}.`)}</p>
+    <h3>${escapeHtml(shop?.name || context.label || context.storeId)}</h3>
+    <p>${escapeHtml(plan?.storeSummary || `${context.platformLabel} conectado. El agente puede leer catalogo y enfocar la auditoria en ${focus}.`)}</p>
     <div class="pill-row">
-      <span class="pill"><i data-lucide="shopping-bag"></i>${escapeHtml(report.shopify.shop)}</span>
+      <span class="pill"><i data-lucide="shopping-bag"></i>${escapeHtml(context.platformLabel || "Tienda")}</span>
+      <span class="pill"><i data-lucide="globe"></i>${escapeHtml(context.storeId)}</span>
       <span class="pill"><i data-lucide="package-search"></i>${products.length} productos</span>
       <span class="pill"><i data-lucide="coins"></i>${escapeHtml(shop?.currencyCode || "moneda pendiente")}</span>
       <span class="pill"><i data-lucide="target"></i>${escapeHtml(focus)}</span>
@@ -4665,12 +4815,12 @@ function renderShopifyOverview(report) {
 }
 
 function renderShopifyCatalog(report) {
-  const snapshot = report.shopify?.snapshot || null;
-  const products = snapshot?.products || [];
-  if (!report.shopify?.shop) {
+  const context = commerceContext(report);
+  const products = context.products || [];
+  if (!context.storeId) {
     return `<div class="report-grid">${renderShopifyOverview(report)}</div>`;
   }
-  if (report.shopify?.error) {
+  if (context.error) {
     return `<div class="report-grid">${renderShopifyOverview(report)}</div>`;
   }
   if (!products.length) {
@@ -4686,7 +4836,7 @@ function renderShopifyCatalog(report) {
   return `<div class="report-grid">
     ${renderShopifyOverview(report)}
     <article class="report-card full-span">
-      <h3>Catalogo Shopify</h3>
+      <h3>Catalogo ${escapeHtml(context.platformLabel || "ecommerce")}</h3>
       <div class="table-wrap"><table class="comparison-table">
         <thead>
           <tr>
@@ -4718,8 +4868,8 @@ function renderShopifyCatalog(report) {
 }
 
 function renderShopifyActions(report) {
-  const snapshot = report.shopify?.snapshot || null;
-  const products = snapshot?.products || [];
+  const context = commerceContext(report);
+  const products = context.products || [];
   const plan = report.ai?.shopifyPlan || null;
   const actions = Array.isArray(plan?.priorityActions) && plan.priorityActions.length
     ? plan.priorityActions
@@ -4742,11 +4892,12 @@ function renderShopifyActions(report) {
 }
 
 function buildShopifyActions(products, report) {
-  if (!report.shopify?.shop) {
-    return ["Conectar una tienda Shopify para leer catalogo real.", "Definir foco: conversion, catalogo, pricing o producto ganador."];
+  const context = commerceContext(report);
+  if (!context.storeId) {
+    return ["Conectar Shopify, Tiendanube o WooCommerce para leer catalogo real.", "Definir foco: conversion, catalogo, pricing o producto ganador."];
   }
-  if (report.shopify?.error) {
-    return ["Reinstalar la app OAuth si el permiso expiro.", "Confirmar que la tienda tenga permiso read_products."];
+  if (context.error) {
+    return ["Reconectar la plataforma si el permiso expiro.", "Confirmar que la tienda tenga permiso de lectura de productos."];
   }
   if (!products.length) {
     return ["Crear el primer producto con fotos, precio y propuesta clara.", "Validar una landing simple antes de comprar inventario grande."];
@@ -4761,11 +4912,11 @@ function buildShopifyActions(products, report) {
 
 function buildShopifyCatalogOpportunities(products) {
   if (!products.length) return ["Sin catalogo conectado todavia."];
-  const draftCount = products.filter((product) => product.status && product.status !== "ACTIVE").length;
+  const draftCount = products.filter((product) => product.status && String(product.status).toLowerCase() !== "active").length;
   const noTypeCount = products.filter((product) => !product.productType).length;
   const lowInventoryCount = products.filter((product) => Number(product.totalInventory) <= 3).length;
   return [
-    `${products.length} productos leidos desde Shopify.`,
+    `${products.length} productos leidos desde la tienda conectada.`,
     draftCount ? `${draftCount} productos no activos requieren decision: publicar, mejorar o eliminar.` : "No se detectaron borradores en la muestra leida.",
     noTypeCount ? `${noTypeCount} productos no tienen tipo; conviene categorizar para analizar oferta.` : "Los productos leidos ya tienen tipo/categoria.",
     lowInventoryCount ? `${lowInventoryCount} productos tienen inventario bajo o cero.` : "No se detecto inventario critico en la muestra leida.",
@@ -5076,7 +5227,7 @@ function buildPrompt(report) {
   }
   if (report.businessStage === "brand") {
     const brand = normalizeBrandContext(report);
-    return `Actua como Agent Genia. El usuario tiene o quiere crear una marca: ${brand.name}. Solicitud: "${report.naturalRequest}". Adjuntos: ${attachments}. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si pide buscar problema, validar oportunidad, encontrar avatar, descubrir angulo no explotado o hacer research profundo, crea problemDiscovery con Meta Ads, Amazon reviews y TikTok pain points separados por fuente; si no hay browsing real, marca las fuentes como pendientes y no inventes evidencia. Si pide competencia o inspiracion, desglosa hooks, headlines, formato, avatar y pain points; separa evidencia observada de hipotesis y no copies claims. Si pide rendimiento de ads, creativos ganadores/perdedores, videos organicos virales, TikTok/Reels/UGC o performance creativa, compara paid vs organico y separa ganadores, bajo rendimiento y sin datos suficientes; analiza first frame, hook, guion, formato, avatar, pain point, prueba visual, CTA, oferta y metricas necesarias como CTR, CPA, ROAS, watch time, completion, shares, saves y conversion. No trates viralidad como prueba de ventas sin datos de intencion y conversion. Si pide naming, colores o identidad visual, crea brandPlan con nombre recomendado, opciones de nombre, paleta hex y checks de disponibilidad. Si pide producto personalizado, private label, empaque, packaging, logo, variantes, acabados o materiales, crea customizationPlan con variantes de producto/empaque, impacto en MOQ/costo, preguntas para proveedor y brief en ingles. Si pide pagina web/landing o creas brandPlan para marca nueva, crea websitePlan con hero, secciones, copy, aplicacion de colores y pasos de build. Si Shopify esta conectado, usa catalogo/precios/inventario como contexto real.`;
+    return `Actua como Agent Genia. El usuario tiene o quiere crear una marca: ${brand.name}. Solicitud: "${report.naturalRequest}". Adjuntos: ${attachments}. Analiza posicionamiento, oferta, catalogo, conversion, canales, retencion, metricas faltantes y siguientes experimentos. Si pide buscar problema, validar oportunidad, encontrar avatar, descubrir angulo no explotado o hacer research profundo, crea problemDiscovery con Meta Ads, Amazon reviews y TikTok pain points separados por fuente; si no hay browsing real, marca las fuentes como pendientes y no inventes evidencia. Si pide competencia o inspiracion, desglosa hooks, headlines, formato, avatar y pain points; separa evidencia observada de hipotesis y no copies claims. Si pide rendimiento de ads, creativos ganadores/perdedores, videos organicos virales, TikTok/Reels/UGC o performance creativa, compara paid vs organico y separa ganadores, bajo rendimiento y sin datos suficientes; analiza first frame, hook, guion, formato, avatar, pain point, prueba visual, CTA, oferta y metricas necesarias como CTR, CPA, ROAS, watch time, completion, shares, saves y conversion. No trates viralidad como prueba de ventas sin datos de intencion y conversion. Si pide naming, colores o identidad visual, crea brandPlan con nombre recomendado, opciones de nombre, paleta hex y checks de disponibilidad. Si pide producto personalizado, private label, empaque, packaging, logo, variantes, acabados o materiales, crea customizationPlan con variantes de producto/empaque, impacto en MOQ/costo, preguntas para proveedor y brief en ingles. Si pide pagina web/landing o creas brandPlan para marca nueva, crea websitePlan con hero, secciones, copy, aplicacion de colores y pasos de build. Si hay tienda ecommerce conectada, usa catalogo/precios/inventario como contexto real.`;
   }
   return `Actua como Agent Genia. El usuario escribio: "${report.naturalRequest}". Adjuntos: ${attachments}. Decide que herramienta interna usar. Si hay intencion de buscar problema, validar oportunidad, encontrar avatar, descubrir angulo no explotado, elegir producto desde dolor o hacer research profundo, usa problem discovery agent y devuelve problemDiscovery con Meta Ads, Amazon reviews y TikTok pain points separados por fuente; si no hay browsing real, marca fuentes pendientes y no inventes evidencia. Si hay intencion de Alibaba/proveedores/MOQ/DDP/negociacion, usa $alibaba-sourcing-agent sin sacar al usuario de la main page. Si hay intencion de producto personalizado, private label, empaque, packaging, logo, variantes, acabados o materiales, usa product customization helper y devuelve customizationPlan. Si hay intencion de crear marca, naming, colores o identidad visual, usa brand strategy helper y devuelve brandPlan. Si hay intencion de pagina web/landing, o brandPlan necesita convertirse en web, devuelve websitePlan. Entrega bitacora de tool calls, shortlist, score, cola de mensajes de negociacion, plan DDP, checklist de calidad y siguientes pasos.`;
 }
@@ -5167,7 +5318,7 @@ function buildBrandMarkdown(report) {
   const competitorInspiration = buildCompetitorInspiration(report, brand);
   const creativePerformance = buildCreativePerformanceLab(report, brand, competitorInspiration);
   const angleValidator = normalizeAngleWhitespaceValidator(report.angleValidation || report.angleWhitespaceValidator || report.ai?.angleWhitespaceValidator);
-  const shopifySection = report.shopify?.shop ? buildShopifyMarkdown(report) : "";
+  const shopifySection = commerceContext(report).storeId ? buildShopifyMarkdown(report) : "";
   const brandPlan = extractBrandPlan(report);
   const websitePlan = extractWebsitePlan(report) || (brandPlan ? buildBrandWebsitePlan(report, brandPlan, audit) : null);
   const problemDiscovery = extractProblemDiscovery(report);
@@ -5518,13 +5669,14 @@ function buildToolFactoryMarkdown(report) {
   const toolSpec = report.toolSpec || {};
   const mvp = report.mvp || {};
   const savings = report.savings || {};
+  const storeContext = commerceContext(report);
 
   return `# Agent Genia Tool Factory
 
 Fecha: ${report.createdAt || ""}
 Solicitud: ${report.naturalRequest || ""}
 Herramienta interna: ${toolLabel(report.toolUsed)}
-Tienda Shopify: ${report.shopify?.shop || "no conectada"}
+Tienda conectada: ${storeContext.storeId ? `${storeContext.platformLabel} - ${storeContext.label || storeContext.storeId}` : "no conectada"}
 Publicacion: ${report.publication?.url || "no publicada"}
 Herramienta existente sugerida: ${replacement.existingTool?.title || "ninguna"}
 
@@ -5633,8 +5785,9 @@ ${report.publication ? `## Herramienta creada
 }
 
 function buildShopifyMarkdown(report) {
-  const snapshot = report.shopify?.snapshot || null;
-  const products = snapshot?.products || [];
+  const context = commerceContext(report);
+  const snapshot = context.snapshot || null;
+  const products = context.products || [];
   const productsText = products.length
     ? products
         .slice(0, 20)
@@ -5643,11 +5796,12 @@ function buildShopifyMarkdown(report) {
     : "- Sin productos leidos.";
 
   return `
-Tienda Shopify: ${report.shopify?.shop || "no conectada"}
-Foco Shopify: ${report.shopify?.focus || "no definido"}
+Plataforma: ${context.platformLabel || "tienda ecommerce"}
+Tienda: ${context.label || context.storeId || "no conectada"}
+Foco: ${context.focus || "no definido"}
 Productos leidos: ${products.length}
 
-## Shopify
+## Tienda
 
 ${productsText}
 `;
@@ -5871,7 +6025,7 @@ function buildAiMarkdown(report) {
   const customizationPlanSection = buildCustomizationPlanMarkdown(ai.customizationPlan);
   const shopifySection = ai.shopifyPlan
     ? `
-## Shopify
+## Tienda
 
 ${ai.shopifyPlan.storeSummary || ""}
 
@@ -6130,7 +6284,7 @@ function formatRunDate(value) {
 
 function toolLabel(value) {
   if (value === "alibaba-sourcing-agent") return "Alibaba sourcing";
-  if (value === "shopify-store-audit") return "Shopify audit";
+  if (value === "shopify-store-audit") return "Store audit";
   if (value === "brand-audit-agent") return "Brand audit";
   if (value === "brand_whitespace_tool") return "Brand whitespace";
   if (value === "agentgenia_tool_factory") return "Tool Factory";
