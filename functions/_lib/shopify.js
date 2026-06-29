@@ -1,5 +1,5 @@
 export const DEFAULT_API_VERSION = "2026-04";
-export const DEFAULT_SCOPES = "read_products,write_content";
+export const DEFAULT_SCOPES = "read_products,read_content,write_content";
 export const MAX_PRODUCTS = 50;
 export const STORE_PREFIX = "shopify:store:";
 export const STATE_COOKIE = "shopify_oauth_state";
@@ -330,6 +330,83 @@ export async function updateShopifyPage({ shop, accessToken, apiVersion, id, pag
   };
 }
 
+export async function fetchShopifyPage({ shop, accessToken, apiVersion, id }) {
+  const response = await fetch(`https://${shop}/admin/api/${apiVersion}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-shopify-access-token": accessToken,
+    },
+    body: JSON.stringify({
+      query: `#graphql
+        query PageById($id: ID!) {
+          page(id: $id) {
+            id
+            title
+            handle
+            body
+            isPublished
+            updatedAt
+            templateSuffix
+          }
+        }
+      `,
+      variables: { id },
+    }),
+  });
+
+  const body = await response.json().catch(() => ({}));
+  const page = body?.data?.page || null;
+  if (!response.ok || body.errors?.length || !page) {
+    const message = summarizeGraphqlErrors(body.errors) || "No se encontro la pagina de Shopify.";
+    const error = new Error(message);
+    error.status = response.ok ? 404 : response.status;
+    throw error;
+  }
+
+  return normalizeShopifyPage(page);
+}
+
+export async function findShopifyPageByHandle({ shop, accessToken, apiVersion, handle }) {
+  const response = await fetch(`https://${shop}/admin/api/${apiVersion}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-shopify-access-token": accessToken,
+    },
+    body: JSON.stringify({
+      query: `#graphql
+        query PageByHandle($query: String!) {
+          pages(first: 5, query: $query) {
+            nodes {
+              id
+              title
+              handle
+              body
+              isPublished
+              updatedAt
+              templateSuffix
+            }
+          }
+        }
+      `,
+      variables: { query: `handle:${handle}` },
+    }),
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body.errors?.length) {
+    const message = summarizeGraphqlErrors(body.errors) || "No se pudo buscar la pagina de Shopify.";
+    const error = new Error(message);
+    error.status = response.ok ? 502 : response.status;
+    throw error;
+  }
+
+  const pages = body?.data?.pages?.nodes || [];
+  const page = pages.find((item) => item?.handle === handle) || pages[0] || null;
+  return page ? normalizeShopifyPage(page) : null;
+}
+
 export function normalizeShopifySnapshot(data, fallbackDomain, apiVersion) {
   const shop = data?.shop || {};
   const products = data?.products?.nodes || [];
@@ -343,6 +420,18 @@ export function normalizeShopifySnapshot(data, fallbackDomain, apiVersion) {
       currencyCode: shop.currencyCode || "",
     },
     products: products.map(normalizeProduct),
+  };
+}
+
+function normalizeShopifyPage(page) {
+  return {
+    id: page.id,
+    title: page.title || "",
+    handle: page.handle || "",
+    bodyHtml: page.body || "",
+    isPublished: page.isPublished !== false,
+    updatedAt: page.updatedAt || "",
+    templateSuffix: page.templateSuffix || "",
   };
 }
 

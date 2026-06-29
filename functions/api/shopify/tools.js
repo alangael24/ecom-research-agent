@@ -2,6 +2,8 @@ import { readSession } from "../../_auth.js";
 import { requireActiveUser } from "../../_shared/supabase.js";
 import {
   createShopifyPage,
+  fetchShopifyPage,
+  findShopifyPageByHandle,
   getApiVersion,
   getConnectedStore,
   isValidShopDomain,
@@ -12,9 +14,11 @@ import {
 } from "../../_lib/shopify.js";
 
 const MAX_PAYLOAD_LENGTH = 200000;
+const MAX_PAGE_BODY_LENGTH = 500000;
 const MAX_TITLE_LENGTH = 255;
 const MAX_HANDLE_LENGTH = 255;
 const TOOL_PREFIX = "shopify:tool:";
+const PAGE_BACKUP_PREFIX = "shopify:page-backup:";
 const TOOL_STATUSES = new Set(["active", "paused", "archived"]);
 
 const PAGE_RUNTIME_CATEGORIES = new Set([
@@ -88,6 +92,39 @@ export async function onRequestPost(context) {
   }
 
   const pageDraft = buildToolPageDraft(report);
+  const targetPage = normalizeTargetPage(payload.targetPage);
+
+  if (targetPage) {
+    try {
+      const result = await injectToolIntoExistingPage({
+        env,
+        shop,
+        store,
+        report,
+        runtime,
+        targetPage,
+      });
+      return json({
+        ok: true,
+        tool: publicToolRecord(result.toolRecord),
+        injectedPage: true,
+        backupKey: result.backupKey,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo inyectar la herramienta en la pagina existente.";
+      const needsScope = /scope|permission|forbidden|access denied|unauthorized/i.test(message) || error.status === 401 || error.status === 403;
+      return json(
+        {
+          ok: false,
+          code: needsScope ? "shopify_scope_required" : error.code || "shopify_tool_injection_failed",
+          message: needsScope
+            ? "Shopify no permitio leer o actualizar la pagina. Reinstala la app para aceptar permisos de contenido."
+            : message,
+        },
+        needsScope ? 403 : error.status || 502,
+      );
+    }
+  }
 
   try {
     const page = await createShopifyPage({
@@ -441,6 +478,7 @@ function publicToolRecord(record) {
     shopifyPageId: record.shopifyPageId || "",
     url: record.url || "",
     adminUrl: record.adminUrl || "",
+    injection: record.injection || null,
     createdAt: record.createdAt || "",
     updatedAt: record.updatedAt || "",
   };
@@ -474,6 +512,9 @@ function validateToolPayload(payload) {
   const requested = report.requestedTool || {};
   if (!textField(requested.name, 120) && !textField(requested.category, 120)) {
     return "Missing tool name or category.";
+  }
+  if (payload.targetPage && !normalizeTargetPage(payload.targetPage)) {
+    return "Target page must include a Shopify Page id, /pages/ handle, or Shopify Page URL.";
   }
   return "";
 }
@@ -575,6 +616,232 @@ function buildToolPageDraft(report) {
     published: true,
     category,
   };
+}
+
+async function injectToolIntoExistingPage({ env, shop, store, report, runtime, targetPage }) {
+  const apiVersion = getApiVersion(env);
+  const existingPage = await resolveTargetShopifyPage({
+    shop,
+    accessToken: store.accessToken,
+    apiVersion,
+    targetPage,
+  });
+  if (!existingPage) {
+    const error = new Error("No encontre esa Shopify Page. Usa una URL tipo /pages/tu-landing o el handle exacto.");
+    error.status = 404;
+    error.code = "target_page_not_found";
+    throw error;
+  }
+
+  const pageDraft = buildToolPageDraft(report);
+  const sectionDraft = buildInjectedToolSection(report, existingPage, targetPage);
+  const nextBodyHtml = injectSectionHtml(existingPage.bodyHtml, sectionDraft);
+  if (nextBodyHtml.length > MAX_PAGE_BODY_LENGTH) {
+    const error = new Error("La pagina resultante es demasiado grande para actualizarla de forma segura.");
+    error.status = 413;
+    error.code = "page_body_too_large";
+    throw error;
+  }
+
+  const backupKey = await savePageBackup(env, {
+    shop,
+    page: existingPage,
+    targetPage,
+    report,
+  });
+
+  const page = await updateShopifyPage({
+    shop,
+    accessToken: store.accessToken,
+    apiVersion,
+    id: existingPage.id,
+    page: {
+      title: existingPage.title,
+      handle: existingPage.handle,
+      bodyHtml: nextBodyHtml,
+      published: existingPage.isPublished,
+    },
+  });
+  const publicUrl = buildPublicPageUrl(store, shop, page.handle);
+  const adminId = numericShopifyId(page.id);
+  const adminUrl = adminId ? `https://${shop}/admin/pages/${adminId}` : `https://${shop}/admin/pages`;
+  const now = new Date().toISOString();
+  const id = `inject-${numericShopifyId(page.id) || normalizeHandle(page.handle)}-${sectionDraft.categorySlug}`;
+  const requested = report.requestedTool || {};
+  const replacement = report.appReplacement || {};
+  const toolRecord = {
+    id,
+    shop,
+    source: "agentgenia_tool_factory",
+    status: "active",
+    title: `${sectionDraft.toolName} en ${page.title}`,
+    handle: page.handle,
+    category: pageDraft.category,
+    mode: "shopify_page_injection",
+    runtime: runtime.runtime,
+    publishMode: "shopify_page_injection",
+    runtimeLabel: "Inyectado en Shopify Page existente",
+    replaceabilityLevel: replacement.replaceabilityLevel || "crear ahora",
+    limitations: runtime.limitations || [],
+    requestedTool: {
+      name: requested.name || sectionDraft.toolName,
+      category: requested.category || pageDraft.category,
+      jobToBeDone: requested.jobToBeDone || "",
+      desiredOutcome: requested.desiredOutcome || "",
+    },
+    appReplacement: {
+      buildOrBuyDecision: replacement.buildOrBuyDecision || "",
+      firstVersion: replacement.firstVersion || "",
+      upgradePath: replacement.upgradePath || "",
+    },
+    toolSpec: normalizeToolSpec(report.toolSpec),
+    shopifyPageId: page.id,
+    url: publicUrl,
+    adminUrl,
+    injection: {
+      targetPageId: page.id,
+      targetPageHandle: page.handle,
+      targetPageTitle: page.title,
+      markerId: sectionDraft.markerId,
+      placement: sectionDraft.placement,
+      backupKey,
+      injectedAt: now,
+    },
+    createdAt: now,
+    updatedAt: now,
+    lastSyncedAt: now,
+  };
+  await saveToolRecord(env, toolRecord);
+  return { toolRecord, backupKey };
+}
+
+async function resolveTargetShopifyPage({ shop, accessToken, apiVersion, targetPage }) {
+  if (targetPage.id) {
+    return fetchShopifyPage({ shop, accessToken, apiVersion, id: shopifyPageGid(targetPage.id) });
+  }
+  if (targetPage.handle) {
+    return findShopifyPageByHandle({ shop, accessToken, apiVersion, handle: targetPage.handle });
+  }
+  return null;
+}
+
+async function savePageBackup(env, { shop, page, targetPage, report }) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const id = numericShopifyId(page.id) || normalizeHandle(page.handle);
+  const key = `${PAGE_BACKUP_PREFIX}${shop}:${id}:${timestamp}`;
+  await env.SHOPIFY_STORES.put(
+    key,
+    JSON.stringify({
+      shop,
+      pageId: page.id,
+      title: page.title,
+      handle: page.handle,
+      bodyHtml: page.bodyHtml,
+      targetPage,
+      requestedTool: report.requestedTool || null,
+      createdAt: new Date().toISOString(),
+    }),
+  );
+  return key;
+}
+
+function buildInjectedToolSection(report, targetPage, targetRequest = {}) {
+  const requested = report.requestedTool || {};
+  const strategy = report.buildStrategy || {};
+  const mvp = report.mvp || {};
+  const toolSpec = normalizeToolSpec(report.toolSpec);
+  const category = cleanText(requested.category, "herramienta ecommerce personalizada", 120).toLowerCase();
+  const categorySlug = normalizeHandle(category).slice(0, 80);
+  const toolName = cleanText(requested.name || mvp.name, "Herramienta Agent Genia", 90);
+  const markerId = `agent-genia-${categorySlug}`;
+  const placement = normalizePlacement(targetRequest.placement || "end");
+  const html = [
+    `<div class="agent-genia-injected-tool" data-agent-genia-tool="${escapeHtml(markerId)}" style="max-width:1100px;margin:32px auto;padding:0 18px;font-family:inherit;color:#14201b;">`,
+    `<section style="border:1px solid #dbe5df;padding:22px;background:#f8fbf9;margin-bottom:18px;">`,
+    `<p style="margin:0 0 8px;color:#0f7b68;font-size:12px;font-weight:800;text-transform:uppercase;">Seccion Agent Genia</p>`,
+    `<h2 style="font-size:clamp(28px,5vw,44px);line-height:1.08;margin:0 0 10px;">${escapeHtml(toolName)}</h2>`,
+    `<p style="color:#5d6f68;line-height:1.55;margin:0;">Agregada a ${escapeHtml(targetPage.title || targetPage.handle || "esta pagina")} para resolver una necesidad concreta sin instalar otra app.</p>`,
+    `</section>`,
+    renderCategoryTool({ category, toolName, requested, mvp, strategy, toolSpec }),
+    renderToolSpecSummary(toolSpec),
+    `<p style="margin-top:18px;color:#5d6f68;font-size:13px;">Seccion creada con Agent Genia. Si no aporta valor, pide al agente que la quite o la itere.</p>`,
+    `</div>`,
+  ].join("");
+  return {
+    markerId,
+    categorySlug,
+    toolName,
+    placement,
+    html: [
+      `<!-- agent-genia-tool:start ${markerId} -->`,
+      html,
+      `<!-- agent-genia-tool:end ${markerId} -->`,
+    ].join("\n"),
+  };
+}
+
+function injectSectionHtml(existingBodyHtml, sectionDraft) {
+  const body = String(existingBodyHtml || "");
+  const start = `<!-- agent-genia-tool:start ${sectionDraft.markerId} -->`;
+  const end = `<!-- agent-genia-tool:end ${sectionDraft.markerId} -->`;
+  const pattern = new RegExp(`${escapeRegExp(start)}[\\s\\S]*?${escapeRegExp(end)}`, "i");
+  if (pattern.test(body)) return body.replace(pattern, sectionDraft.html);
+  if (sectionDraft.placement === "top") return `${sectionDraft.html}\n${body}`;
+  return `${body}\n${sectionDraft.html}`;
+}
+
+function normalizeTargetPage(value) {
+  if (!value || typeof value !== "object") return null;
+  const id = cleanText(value.id, "", 120);
+  const rawHandle = cleanText(value.handle, "", MAX_HANDLE_LENGTH);
+  const url = cleanText(value.url || value.href, "", 500);
+  const handle = normalizePageHandle(rawHandle || handleFromPageUrl(url));
+  if (!id && !handle) return null;
+  return {
+    id,
+    handle,
+    url,
+    placement: normalizePlacement(value.placement),
+  };
+}
+
+function handleFromPageUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const path = raw.startsWith("/") ? raw : safeUrlPath(raw);
+  const match = path.match(/\/pages\/([^/?#]+)/i);
+  return match?.[1] ? decodeURIComponent(match[1]) : "";
+}
+
+function safeUrlPath(value) {
+  try {
+    return new URL(value).pathname;
+  } catch {
+    return "";
+  }
+}
+
+function normalizePageHandle(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^\/?pages\//i, "")
+    .split(/[/?#]/)[0]
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, MAX_HANDLE_LENGTH);
+}
+
+function normalizePlacement(value) {
+  const normalized = cleanText(value, "end", 30).toLowerCase();
+  if (/arriba|top|inicio|before/.test(normalized)) return "top";
+  return "end";
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function renderHero({ toolName, requested, brief }) {

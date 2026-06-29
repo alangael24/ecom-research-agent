@@ -2372,8 +2372,8 @@ function renderToolFactoryReport(report) {
     : "";
   const publishedCard = publication
     ? `<article class="report-card full-span success-card">
-        <h3>Herramienta creada</h3>
-        <p>Agent Genia ya publico o actualizo este MVP en Shopify como una pagina segura.</p>
+        <h3>Herramienta aplicada</h3>
+        <p>Agent Genia ya publico, actualizo o inyecto este MVP en Shopify.</p>
         <div class="pill-row">
           <a class="pill link-pill" href="${escapeHtml(publication.url || "#")}" target="_blank" rel="noreferrer"><i data-lucide="external-link"></i>Ver herramienta</a>
           <a class="pill link-pill" href="${escapeHtml(publication.adminUrl || "#")}" target="_blank" rel="noreferrer"><i data-lucide="settings"></i>Abrir en Shopify</a>
