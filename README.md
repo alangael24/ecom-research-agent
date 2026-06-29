@@ -122,13 +122,26 @@ The Envia integration is rate-only. The Cloudflare Function only calls the quote
 
 Internal tools currently handled directly by `/api/research`:
 
-- `agentgenia_tool_factory`: blueprint-first native Shopify mini-app/tool planner for replacing unnecessary paid app subscriptions.
+- `agentgenia_tool_factory`: native Shopify mini-tool planner that can also publish safe Page-based MVP tools for selected categories.
 - `brand_whitespace_tool`: existing-brand whitespace hypotheses from declared brand context, attachments, and connected Shopify catalog data.
 - `shopify_page_builder`: creates an approved Shopify Page draft and lets the user publish it through `/api/shopify/pages`.
 - `shipping_rate_quote`: rate-only Envia shipping quotes when a shipping-only intent is detected.
 - `unit_economics_filter`: beginner-friendly profitability filter for non-brand-stage ideas.
 
-`agentgenia_tool_factory` is intentionally scoped as blueprint-first. It identifies the smallest native Shopify MVP that can replace the merchant's actual job-to-be-done, plus the cases where a third-party app is still safer because of deliverability, compliance, fraud, payments, carrier labels, or enterprise support.
+`agentgenia_tool_factory` identifies the smallest native Shopify MVP that can replace the merchant's actual job-to-be-done, plus the cases where a third-party app is still safer because of deliverability, compliance, fraud, payments, carrier labels, or enterprise support. It treats paid apps as jobs-to-be-done, not as brands to clone.
+
+For supported low-risk categories, it can publish a real Shopify Page MVP through `POST /api/shopify/tools`. Current Page runtime categories include simple quiz/recommendation tools, support/trust hubs, landing/section-builder outputs, lightweight social-proof pages, lead-capture pages, returns/post-purchase forms, and generic ecommerce helper pages. Published Tool Factory MVPs are registered in the Shopify KV namespace so Agent Genia can list the mini-tools already installed for a store. Deep categories such as email/SMS retention, pixels/analytics, checkout, discounts, bundles, loyalty, subscriptions, and advanced search remain blueprint-only until Agent Genia has the right Shopify extension/function/provider runtime for them.
+
+Each Tool Factory report now includes an `appReplacement` decision with:
+
+- `publishMode`: `shopify_page_mvp`, `theme_app_extension`, `shopify_function`, `web_pixel_extension`, `provider_integration`, or `provider_required`.
+- `canCreateNow`: whether the current Shopify Page runtime may publish a safe MVP today.
+- `buildOrBuyDecision`: when Agent Genia should build, integrate, validate first, or keep a third-party app.
+- `firstVersion` and `upgradePath`: the smallest useful version and the runtime path if it proves valuable.
+
+Tool Factory reports also include a `toolSpec` contract. This is the executable shape of the mini-tool: target surface/runtime, primary action, success metric, data destination, fields, blocks, automation rules, safety checks, and upgrade path. The Shopify Page runtime renders this spec when it can safely publish a Page MVP, and the registry stores it with the installed mini-tool.
+
+When Shopify is connected, the browser includes the store's registered Agent Genia mini-tools in the `/api/research` payload. Tool Factory uses that registry context to avoid duplicating work: if a matching active/paused mini-tool already exists, the agent recommends iterating, reactivating, pausing, or archiving the existing tool before creating another one. The user can stay in natural language: prompts such as "actualiza esta herramienta existente", "pausa esta herramienta", "archivala", or "publicala en mi Shopify" let `/api/research` call the internal Shopify tool endpoint. `PATCH /api/shopify/tools` can update lifecycle status only, or accept a fresh Tool Factory report to refresh the existing Shopify Page and stored mini-tool spec.
 
 `brand_whitespace_tool` labels output as hypotheses. It does not perform live Meta Ads, Amazon review, or TikTok collection by itself; use the deeper competitive research harness/skills to confirm demand, saturation, and customer language.
 
@@ -154,6 +167,9 @@ Login endpoints:
 - `GET /api/shopify/login`: sends the user to Shopify's own login/store selection flow.
 - `GET /api/shopify/callback`: connects the Shopify store and creates the Agent Genia session.
 - `POST /api/shopify/pages`: creates a real Shopify Online Store page after the user approves the preview.
+- `GET /api/shopify/tools?shop=store.myshopify.com`: lists Agent Genia mini-tools registered for a connected Shopify store.
+- `POST /api/shopify/tools`: creates a real Shopify Online Store Page MVP for supported Tool Factory reports and records it as an installed mini-tool.
+- `PATCH /api/shopify/tools`: changes an installed mini-tool status to `active`, `paused`, or `archived`.
 - `GET /api/auth/shopify/start?shop=store.myshopify.com`: optional direct-shop Shopify login.
 - `GET /api/auth/shopify/callback`: validates direct-shop Shopify OAuth and creates the session.
 
@@ -180,6 +196,9 @@ Cloudflare endpoints:
 - `GET /api/shopify/callback`: validates Shopify HMAC/state, exchanges code for an access token, encrypts it, stores the shop in KV, and signs in the user.
 - `POST /api/shopify`: returns a sanitized catalog snapshot for a connected store.
 - `POST /api/shopify/pages`: publishes an approved Agent Genia page draft to Shopify Pages.
+- `GET /api/shopify/tools?shop=store.myshopify.com`: lists registered Agent Genia mini-tools for the store.
+- `POST /api/shopify/tools`: publishes an approved Tool Factory MVP as a safe Shopify Page when the category supports the Page runtime, then persists a public mini-tool record in KV.
+- `PATCH /api/shopify/tools`: updates mini-tool lifecycle status in KV without deleting Shopify content.
 - `DELETE /api/shopify`: disconnects a store by deleting its KV record.
 
 If `write_content` is added after a store was already connected, the merchant must reconnect/reinstall the Shopify app so Shopify grants a token with the new scope.

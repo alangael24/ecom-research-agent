@@ -73,7 +73,7 @@ export function redirect(location, headers = {}) {
 export function corsHeaders() {
   return {
     "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
+    "access-control-allow-methods": "GET,PATCH,POST,DELETE,OPTIONS",
     "access-control-allow-headers": "content-type",
   };
 }
@@ -262,6 +262,62 @@ export async function createShopifyPage({ shop, accessToken, apiVersion, page })
       summarizeGraphqlErrors(body.errors) ||
       userErrors.map((error) => error.message).filter(Boolean).join(" ") ||
       "Shopify rechazo la creacion de la pagina.";
+    const error = new Error(message);
+    error.status = response.ok ? 422 : response.status;
+    throw error;
+  }
+
+  return {
+    id: pageData.id,
+    title: pageData.title,
+    handle: pageData.handle,
+  };
+}
+
+export async function updateShopifyPage({ shop, accessToken, apiVersion, id, page }) {
+  const response = await fetch(`https://${shop}/admin/api/${apiVersion}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-shopify-access-token": accessToken,
+    },
+    body: JSON.stringify({
+      query: `#graphql
+        mutation UpdatePage($id: ID!, $page: PageUpdateInput!) {
+          pageUpdate(id: $id, page: $page) {
+            page {
+              id
+              title
+              handle
+            }
+            userErrors {
+              code
+              field
+              message
+            }
+          }
+        }
+      `,
+      variables: {
+        id,
+        page: {
+          title: page.title,
+          handle: page.handle,
+          body: page.bodyHtml,
+          isPublished: page.published !== false,
+        },
+      },
+    }),
+  });
+
+  const body = await response.json().catch(() => ({}));
+  const userErrors = body?.data?.pageUpdate?.userErrors || [];
+  const pageData = body?.data?.pageUpdate?.page || null;
+  if (!response.ok || body.errors?.length || userErrors.length || !pageData) {
+    const message =
+      summarizeGraphqlErrors(body.errors) ||
+      userErrors.map((error) => error.message).filter(Boolean).join(" ") ||
+      "Shopify rechazo la actualizacion de la pagina.";
     const error = new Error(message);
     error.status = response.ok ? 422 : response.status;
     throw error;

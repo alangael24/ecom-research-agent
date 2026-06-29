@@ -522,6 +522,18 @@ async function requestShopifySnapshot(shop) {
   return body.shopify;
 }
 
+async function requestInstalledShopifyTools(shop) {
+  const response = await fetch(shopifyApiUrl(`/api/shopify/tools?shop=${encodeURIComponent(shop)}`), {
+    headers: shopifyToolHeaders({ accept: "application/json" }),
+    credentials: "include",
+  });
+  const body = await response.json();
+  if (!response.ok || !body.ok) {
+    throw new Error(body.message || "No se pudieron leer las herramientas Agent Genia.");
+  }
+  return Array.isArray(body.tools) ? body.tools : [];
+}
+
 function normalizeShopifyDomain(value) {
   const raw = String(value || "").trim();
   const adminStoreMatch = raw.match(/admin\.shopify\.com\/store\/([^/?#]+)/i);
@@ -865,6 +877,11 @@ async function runResearch(data) {
     } catch (error) {
       data.shopify.error = error instanceof Error ? error.message : "No se pudo leer la tienda Shopify.";
     }
+    try {
+      data.shopify.installedTools = await requestInstalledShopifyTools(data.shopify.shop);
+    } catch (error) {
+      data.shopify.installedToolsError = error instanceof Error ? error.message : "No se pudieron leer las herramientas Agent Genia.";
+    }
   }
 
   const report = buildReport(data);
@@ -969,6 +986,7 @@ function handleDocumentClick(event) {
   const publishButton = target?.closest("[data-publish-shopify-page]");
   if (publishButton) {
     publishShopifyPage(publishButton);
+    return;
   }
 }
 
@@ -2164,6 +2182,8 @@ function renderToolFactoryReport(report) {
   const requested = report.requestedTool || {};
   const brief = report.executiveBrief || {};
   const strategy = report.buildStrategy || {};
+  const replacement = report.appReplacement || {};
+  const toolSpec = report.toolSpec || {};
   const mvp = report.mvp || {};
   const savings = report.savings || {};
   const risks = Array.isArray(report.risks) ? report.risks : [];
@@ -2173,6 +2193,33 @@ function renderToolFactoryReport(report) {
   const dataModel = Array.isArray(strategy.dataModel) ? strategy.dataModel : [];
   const events = Array.isArray(strategy.events) ? strategy.events : [];
   const adminActions = Array.isArray(strategy.adminActions) ? strategy.adminActions : [];
+  const publication = report.publication || null;
+  const installedTools = Array.isArray(report.installedTools)
+    ? report.installedTools
+    : Array.isArray(report.shopify?.installedTools)
+      ? report.shopify.installedTools
+      : [];
+  const installedToolsLoaded = report.installedToolsLoaded || Array.isArray(report.shopify?.installedTools);
+  const shop = report.shopify?.shop || "";
+  const runtime = toolFactoryRuntimeSupport(report);
+  const canCreateTool = Boolean(shop && (requested.name || requested.category) && runtime.supported && replacement.canCreateNow !== false && !publication);
+  const toolAction = report.toolAction || null;
+  const actionCard = toolAction
+    ? `<article class="report-card full-span ${toolAction.status === "completed" ? "success-card" : "notice-card"}">
+        <h3>Accion del agente</h3>
+        <p>${escapeHtml(toolAction.message || "Agent Genia proceso la accion solicitada.")}</p>
+      </article>`
+    : "";
+  const publishedCard = publication
+    ? `<article class="report-card full-span success-card">
+        <h3>Herramienta creada</h3>
+        <p>Agent Genia ya publico o actualizo este MVP en Shopify como una pagina segura.</p>
+        <div class="pill-row">
+          <a class="pill link-pill" href="${escapeHtml(publication.url || "#")}" target="_blank" rel="noreferrer"><i data-lucide="external-link"></i>Ver herramienta</a>
+          <a class="pill link-pill" href="${escapeHtml(publication.adminUrl || "#")}" target="_blank" rel="noreferrer"><i data-lucide="settings"></i>Abrir en Shopify</a>
+        </div>
+      </article>`
+    : "";
 
   resultPanel.hidden = false;
   setTabLabels(tabLabelSets.toolFactory);
@@ -2189,7 +2236,7 @@ function renderToolFactoryReport(report) {
         <p>${escapeHtml(brief.decision || "Construir un MVP nativo antes de pagar otra app.")}</p>
         <div class="pill-row">
           <span class="pill"><i data-lucide="wrench"></i>${escapeHtml(toolLabel(report.toolUsed))}</span>
-          <span class="pill"><i data-lucide="shopping-bag"></i>${escapeHtml(report.shopify?.shop || "Shopify opcional")}</span>
+          <span class="pill"><i data-lucide="shopping-bag"></i>${escapeHtml(shop || "Shopify opcional")}</span>
           <span class="pill"><i data-lucide="target"></i>${escapeHtml(requested.desiredOutcome || "ahorrar subscription")}</span>
         </div>
       </article>
@@ -2197,10 +2244,22 @@ function renderToolFactoryReport(report) {
         <h3>Tesis de valor</h3>
         <p>${escapeHtml(brief.valueThesis || "Agent Genia crea la herramienta exacta que necesita el merchant.")}</p>
       </article>
+      <article class="report-card full-span">
+        <h3>Build vs buy</h3>
+        <p>${escapeHtml(replacement.buildOrBuyDecision || "Construir solo la parte que resuelve el trabajo real; pagar una app solo si el merchant necesita profundidad que Agent Genia no debe improvisar.")}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="route"></i>${escapeHtml(replacement.replaceabilityLevel || "definir alcance")}</span>
+          <span class="pill"><i data-lucide="cpu"></i>${escapeHtml(replacement.runtimeLabel || requested.runtimeLabel || "runtime por definir")}</span>
+          <span class="pill"><i data-lucide="rocket"></i>${replacement.canCreateNow ? "crear ahora" : "runtime avanzado"}</span>
+          ${replacement.existingTool ? `<span class="pill"><i data-lucide="layers"></i>${escapeHtml(`ya existe: ${replacement.existingTool.title || replacement.existingTool.category}`)}</span>` : ""}
+        </div>
+      </article>
       <article class="report-card full-span notice-card">
         <h3>Guardrail</h3>
         <p>${escapeHtml(brief.guardrail || "No prometemos paridad enterprise; construimos el 20% que resuelve el 80% de la necesidad.")}</p>
       </article>
+      ${actionCard}
+      ${publishedCard}
     </div>`;
 
   document.querySelector("#tools").innerHTML = `
@@ -2213,6 +2272,18 @@ function renderToolFactoryReport(report) {
       <article class="report-card full-span">
         <h3>Acciones del agente</h3>
         <ol>${adminActions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
+      </article>
+      <article class="report-card full-span">
+        <h3>Mapa de reemplazo</h3>
+        <dl class="calculation-list">
+          <div><dt>Primera version</dt><dd>${escapeHtml(replacement.firstVersion || "MVP por definir")}</dd></div>
+          <div><dt>Runtime</dt><dd>${escapeHtml(replacement.runtimeLabel || requested.runtimeLabel || "por definir")}</dd></div>
+          <div><dt>Ruta si funciona</dt><dd>${escapeHtml(replacement.upgradePath || "Convertirlo en herramienta reutilizable solo si se usa varias veces.")}</dd></div>
+        </dl>
+      </article>
+      <article class="report-card full-span">
+        <h3>Herramientas instaladas</h3>
+        ${renderInstalledShopifyTools({ tools: installedTools, loaded: installedToolsLoaded, loading: report.installedToolsLoading, error: report.installedToolsError || report.shopify?.installedToolsError })}
       </article>
     </div>`;
 
@@ -2237,6 +2308,10 @@ function renderToolFactoryReport(report) {
       <article class="report-card full-span">
         <h3>Criterios de aceptacion</h3>
         <ul>${(mvp.acceptanceCriteria || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>Spec ejecutable</h3>
+        ${renderToolSpecCard(toolSpec)}
       </article>
     </div>`;
 
@@ -2274,9 +2349,153 @@ function renderToolFactoryReport(report) {
         <h3>Siguientes pasos</h3>
         <ol>${nextSteps.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
       </article>
+      <article class="report-card full-span ${runtime.supported ? "" : "notice-card"}">
+        <h3>Herramienta en Shopify</h3>
+        <p>${escapeHtml(toolFactoryPublishMessage({ shop, runtime, publication, canCreateTool, replacement }))}</p>
+        <p class="publish-status" id="shopifyToolCreateStatus">${
+          publication
+            ? `Publicada: ${escapeHtml(publication.url || publication.handle || "")}`
+            : canCreateTool
+              ? "Para publicarla, escribe algo como: publica esta herramienta en mi Shopify."
+              : escapeHtml(toolFactoryPublishMessage({ shop, runtime, publication, canCreateTool, replacement }))
+        }</p>
+      </article>
     </div>`;
 
   lucide.createIcons();
+  if (shop && !installedToolsLoaded && !report.installedToolsLoading) {
+    void refreshInstalledShopifyTools(report);
+  }
+}
+
+function renderInstalledShopifyTools({ tools, loaded, loading, error }) {
+  if (error) return `<p>${escapeHtml(error)}</p>`;
+  if (loading || !loaded) return "<p>Leyendo herramientas Agent Genia instaladas en esta tienda...</p>";
+  if (!tools.length) return "<p>Todavia no hay herramientas Agent Genia registradas para esta tienda.</p>";
+  return `<dl class="calculation-list">
+    ${tools
+      .map(
+        (tool) => `<div>
+          <dt>${tool.url ? `<a class="link-pill" href="${escapeHtml(tool.url)}" target="_blank" rel="noreferrer">${escapeHtml(tool.title || tool.requestedTool?.name || "Herramienta")}</a>` : escapeHtml(tool.title || tool.requestedTool?.name || "Herramienta")}</dt>
+          <dd>
+            ${escapeHtml([tool.category, tool.mode || tool.publishMode, tool.status].filter(Boolean).join(" · "))}
+            ${renderInstalledToolActions(tool)}
+          </dd>
+        </div>`,
+      )
+      .join("")}
+  </dl>`;
+}
+
+function renderInstalledToolActions(tool) {
+  if (!tool?.id) return "";
+  const status = tool.status || "active";
+  const icon = status === "active" ? "play" : status === "paused" ? "pause" : "archive";
+  return `<span class="pill-row">
+    <span class="pill"><i data-lucide="${icon}"></i>${escapeHtml(status)}</span>
+  </span>`;
+}
+
+function renderToolSpecCard(toolSpec) {
+  if (!toolSpec?.version) return "<p>La spec se generara cuando el agente detecte la herramienta a construir.</p>";
+  const fields = Array.isArray(toolSpec.fields) ? toolSpec.fields : [];
+  const blocks = Array.isArray(toolSpec.blocks) ? toolSpec.blocks : [];
+  const rules = Array.isArray(toolSpec.automationRules) ? toolSpec.automationRules : [];
+  return `
+    <dl class="calculation-list">
+      <div><dt>Runtime</dt><dd>${escapeHtml(toolSpec.runtime || toolSpec.surface || "por definir")}</dd></div>
+      <div><dt>Accion principal</dt><dd>${escapeHtml(toolSpec.primaryAction?.label || "Enviar solicitud")}</dd></div>
+      <div><dt>Metrica de exito</dt><dd>${escapeHtml(toolSpec.successMetric || "uso repetido")}</dd></div>
+      <div><dt>Destino de datos</dt><dd>${escapeHtml(toolSpec.dataDestination || "por definir")}</dd></div>
+    </dl>
+    ${fields.length ? `<h4>Campos</h4><ul>${fields.map((field) => `<li>${escapeHtml(field.label || field.id)}${field.required ? " · requerido" : ""}</li>`).join("")}</ul>` : ""}
+    ${blocks.length ? `<h4>Bloques</h4><ul>${blocks.map((block) => `<li>${escapeHtml(`${block.type || block.id}: ${block.purpose || ""}`)}</li>`).join("")}</ul>` : ""}
+    ${rules.length ? `<h4>Reglas</h4><ul>${rules.map((rule) => `<li>${escapeHtml(rule)}</li>`).join("")}</ul>` : ""}
+  `;
+}
+
+async function refreshInstalledShopifyTools(report) {
+  const shop = report?.shopify?.shop || "";
+  if (!shop) return;
+  report.installedToolsLoading = true;
+  report.installedToolsError = "";
+  const activeTab = document.querySelector(".tab.active")?.dataset.tab || "brief";
+
+  try {
+    const response = await fetch(`./api/shopify/tools?shop=${encodeURIComponent(shop)}`, {
+      headers: shopifyToolHeaders({ accept: "application/json" }),
+      credentials: "include",
+    });
+    const body = await response.json();
+    if (!response.ok || !body.ok) {
+      throw new Error(body.message || "No se pudieron leer las herramientas instaladas.");
+    }
+    report.installedTools = Array.isArray(body.tools) ? body.tools : [];
+    report.installedToolsLoaded = true;
+  } catch (error) {
+    report.installedToolsLoaded = true;
+    report.installedToolsError = error instanceof Error ? error.message : "No se pudieron leer las herramientas instaladas.";
+  } finally {
+    report.installedToolsLoading = false;
+    if (state.latest === report) {
+      saveState(report);
+      renderToolFactoryReport(report);
+      activateTab(activeTab);
+    }
+  }
+}
+
+function toolFactoryRuntimeSupport(reportOrCategory) {
+  const report = typeof reportOrCategory === "object" && reportOrCategory ? reportOrCategory : null;
+  const publishMode = report?.appReplacement?.publishMode || report?.requestedTool?.publishMode || "";
+  const runtimeLabel = report?.appReplacement?.runtimeLabel || report?.requestedTool?.runtimeLabel || "runtime avanzado";
+  if (publishMode && publishMode !== "shopify_page_mvp") {
+    return {
+      supported: false,
+      publishMode,
+      message: `Esta herramienta necesita ${runtimeLabel}. Agent Genia puede planearla, pero no debe publicarla como Page simple.`,
+    };
+  }
+  if (publishMode === "shopify_page_mvp") {
+    return {
+      supported: true,
+      publishMode,
+      message: "Se puede publicar como una primera herramienta MVP usando una pagina segura de Shopify.",
+    };
+  }
+
+  const category = report?.requestedTool?.category || reportOrCategory;
+  const normalized = String(category || "herramienta ecommerce personalizada").toLowerCase();
+  if (["retencion y mensajes", "tracking y analytics", "ofertas, bundles y carrito"].includes(normalized)) {
+    return {
+      supported: false,
+      publishMode: "advanced_runtime",
+      message:
+        "Esta categoria toca mensajes, pixels, checkout o descuentos. Agent Genia debe construirla como extension/runtime avanzado antes de publicarla.",
+    };
+  }
+  return {
+    supported: true,
+    publishMode: "shopify_page_mvp",
+    message: "Se puede publicar como una primera herramienta MVP usando una pagina segura de Shopify.",
+  };
+}
+
+function toolFactoryPublishMessage({ shop, runtime, publication, replacement }) {
+  if (publication) return "La herramienta ya existe en Shopify. Puedes abrirla, revisarla y decidir si iterarla.";
+  if (!shop) return "Conecta una tienda Shopify para que Agent Genia pueda crear esta herramienta.";
+  if (replacement?.existingTool) {
+    return `Ya existe una herramienta parecida: ${replacement.existingTool.title || replacement.existingTool.category}. Para iterarla sin crear otra, pidele al agente que la actualice.`;
+  }
+  if (!runtime.supported) return runtime.message;
+  return "Esto crea una Page real en Shopify con la version minima de la herramienta: segura, reversible y medible.";
+}
+
+function shopifyToolHeaders(extra = {}) {
+  return {
+    ...(state.session?.access_token ? { authorization: `Bearer ${state.session.access_token}` } : {}),
+    ...extra,
+  };
 }
 
 function renderShopifyPageDraftReport(report) {
@@ -4458,6 +4677,8 @@ function buildToolFactoryMarkdown(report) {
   const requested = report.requestedTool || {};
   const brief = report.executiveBrief || {};
   const strategy = report.buildStrategy || {};
+  const replacement = report.appReplacement || {};
+  const toolSpec = report.toolSpec || {};
   const mvp = report.mvp || {};
   const savings = report.savings || {};
 
@@ -4467,6 +4688,8 @@ Fecha: ${report.createdAt || ""}
 Solicitud: ${report.naturalRequest || ""}
 Herramienta interna: ${toolLabel(report.toolUsed)}
 Tienda Shopify: ${report.shopify?.shop || "no conectada"}
+Publicacion: ${report.publication?.url || "no publicada"}
+Herramienta existente sugerida: ${replacement.existingTool?.title || "ninguna"}
 
 ## Decision
 
@@ -4483,6 +4706,37 @@ Guardrail: ${brief.guardrail || ""}
 - Usuario: ${requested.merchantUser || ""}
 - Job-to-be-done: ${requested.jobToBeDone || ""}
 - Resultado deseado: ${requested.desiredOutcome || ""}
+- Runtime: ${replacement.runtimeLabel || requested.runtimeLabel || ""}
+- Reemplazabilidad: ${replacement.replaceabilityLevel || ""}
+
+## Build vs buy
+
+${replacement.buildOrBuyDecision || ""}
+
+Primera version: ${replacement.firstVersion || ""}
+
+Ruta si funciona: ${replacement.upgradePath || ""}
+
+Herramientas Agent Genia existentes:
+${installedTools.length ? installedTools.map((tool) => `- ${tool.title || tool.requestedTool?.name || tool.id}: ${tool.category || ""} | ${tool.status || ""} | ${tool.url || ""}`).join("\n") : "- Ninguna registrada en el contexto del reporte."}
+
+## Spec ejecutable
+
+Version: ${toolSpec.version || ""}
+Surface: ${toolSpec.surface || ""}
+Runtime: ${toolSpec.runtime || ""}
+Accion principal: ${toolSpec.primaryAction?.label || ""}
+Metrica de exito: ${toolSpec.successMetric || ""}
+Destino de datos: ${toolSpec.dataDestination || ""}
+
+Campos:
+${(toolSpec.fields || []).map((field) => `- ${field.label || field.id}${field.required ? " (requerido)" : ""} | ${field.type || "text"}`).join("\n")}
+
+Bloques:
+${(toolSpec.blocks || []).map((block) => `- ${block.type || block.id}: ${block.purpose || ""}`).join("\n")}
+
+Reglas:
+${(toolSpec.automationRules || []).map((rule) => `- ${rule}`).join("\n")}
 
 ## Arquitectura
 
@@ -4531,6 +4785,13 @@ ${(report.risks || []).map((item) => `- ${item}`).join("\n")}
 ## Validacion
 
 ${(report.validationPlan || []).map((item) => `- ${item}`).join("\n")}
+
+${report.publication ? `## Herramienta creada
+
+- URL: ${report.publication.url || ""}
+- Admin: ${report.publication.adminUrl || ""}
+- Runtime: ${report.publication.mode || ""}
+` : ""}
 `;
 }
 
