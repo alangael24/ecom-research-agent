@@ -52,6 +52,7 @@ const tabLabelSets = {
   sourcing: ["Resumen", "Herramientas", "Proveedores", "Negociacion", "DDP", "Calidad"],
   brand: ["Resumen", "Competencia", "Oferta", "Crecimiento", "Web", "Siguiente"],
   brandWhitespace: ["Resumen", "Espacios", "Evidencia", "Validacion", "Riesgos", "Siguiente"],
+  toolFactory: ["Resumen", "Arquitectura", "MVP", "Datos", "Riesgos", "Siguiente"],
   shopify: ["Resumen", "Shopify", "Catalogo", "Acciones", "DDP", "Calidad"],
   profitability: ["Resumen", "Numeros", "Alertas", "Siguiente", "Supuestos", "Notas"],
   shipping: ["Resumen", "Tarifas", "Detalles", "Alertas", "Siguiente", "Notas"],
@@ -916,6 +917,11 @@ function renderTypedBackendReport(report) {
     document.body.classList.add("report-ready");
     resultPanel.hidden = false;
     renderBrandWhitespaceReport(report);
+  } else if (report.type === "tool_factory") {
+    state.latest = report;
+    document.body.classList.add("report-ready");
+    resultPanel.hidden = false;
+    renderToolFactoryReport(report);
   } else {
     return false;
   }
@@ -930,6 +936,7 @@ function typedReportToast(report) {
   if (report.type === "retail_to_online") return "Ruta online lista";
   if (report.type === "shopify_page_draft") return "Preview de pagina Shopify listo";
   if (report.type === "brand_whitespace") return "Whitespace de marca listo";
+  if (report.type === "tool_factory") return "Tool Factory listo";
   return "Reporte listo";
 }
 
@@ -1198,6 +1205,39 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     "angulo",
     "ángulo",
   ]);
+  const toolFactoryIntent =
+    hasAny(text, [
+      "app",
+      "apps",
+      "plugin",
+      "extension",
+      "extensión",
+      "herramienta",
+      "tool",
+      "widget",
+      "funcion",
+      "función",
+      "automatizacion",
+      "automatización",
+      "bloque",
+    ]) &&
+    (hasAny(text, [
+      "paga",
+      "pagada",
+      "mensualidad",
+      "subscription",
+      "suscripcion",
+      "suscripción",
+      "gratis",
+      "sin pagar",
+      "ahorrar",
+      "reemplazar",
+      "sustituir",
+      "alternativa",
+      "terceros",
+      "third party",
+    ]) ||
+      hasAny(text, ["crear", "hacer", "construir", "generar", "configurar", "necesito"]));
   const market = text.includes("mexico") || text.includes("méxico") ? "MX" : text.includes("latam") ? "LATAM" : "US";
   const destination = inferDestination(text, market);
   const budget = inferMoney(text, ["presupuesto", "budget", "tengo", "invertir"]);
@@ -1218,6 +1258,8 @@ function inferRequest(naturalRequest, businessStage = "starter") {
     depth: text.includes("profundo") || text.includes("completo") ? "profundo" : "rapido",
     goals: sourcingIntent
       ? ["interpret", "search", "negotiate", "ddp", "quality"]
+      : toolFactoryIntent
+        ? ["interpret", "shopify", "web", "quality"]
       : retailToOnlineIntent
         ? ["interpret", "retail", "costs", "content", "web"]
       : brandIntent
@@ -1227,6 +1269,8 @@ function inferRequest(naturalRequest, businessStage = "starter") {
         : ["interpret"],
     selectedInternalTool: sourcingIntent
       ? "alibaba-sourcing-agent"
+      : toolFactoryIntent
+        ? "agentgenia_tool_factory"
       : retailToOnlineIntent
         ? "retail-to-online-agent"
       : brandIntent && whitespaceIntent && !inspirationIntent
@@ -2070,6 +2114,125 @@ function renderRetailDatabaseCard(database = {}) {
     ${signals.length ? `<h4>Señales utiles</h4><ul>${signals.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
     ${uses.length ? `<h4>Como la usara el agente</h4><ul>${uses.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
   </article>`;
+}
+
+function renderToolFactoryReport(report) {
+  const requested = report.requestedTool || {};
+  const brief = report.executiveBrief || {};
+  const strategy = report.buildStrategy || {};
+  const mvp = report.mvp || {};
+  const savings = report.savings || {};
+  const risks = Array.isArray(report.risks) ? report.risks : [];
+  const validationPlan = Array.isArray(report.validationPlan) ? report.validationPlan : [];
+  const nextSteps = Array.isArray(report.nextSteps) ? report.nextSteps : [];
+  const primitives = Array.isArray(strategy.primitives) ? strategy.primitives : [];
+  const dataModel = Array.isArray(strategy.dataModel) ? strategy.dataModel : [];
+  const events = Array.isArray(strategy.events) ? strategy.events : [];
+  const adminActions = Array.isArray(strategy.adminActions) ? strategy.adminActions : [];
+
+  resultPanel.hidden = false;
+  setTabLabels(tabLabelSets.toolFactory);
+
+  document.querySelector("#brief").innerHTML = `
+    <div class="metric-row">
+      <article class="metric-card"><strong>${escapeHtml(requested.feasibility || "media")}</strong><p>viabilidad</p></article>
+      <article class="metric-card"><strong>${escapeHtml(requested.category || "herramienta")}</strong><p>categoria</p></article>
+      <article class="metric-card"><strong>${escapeHtml(savings.costAvoidedRange || "por estimar")}</strong><p>ahorro potencial</p></article>
+    </div>
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>${escapeHtml(requested.name || "Tool Factory")}</h3>
+        <p>${escapeHtml(brief.decision || "Construir un MVP nativo antes de pagar otra app.")}</p>
+        <div class="pill-row">
+          <span class="pill"><i data-lucide="wrench"></i>${escapeHtml(toolLabel(report.toolUsed))}</span>
+          <span class="pill"><i data-lucide="shopping-bag"></i>${escapeHtml(report.shopify?.shop || "Shopify opcional")}</span>
+          <span class="pill"><i data-lucide="target"></i>${escapeHtml(requested.desiredOutcome || "ahorrar subscription")}</span>
+        </div>
+      </article>
+      <article class="report-card full-span">
+        <h3>Tesis de valor</h3>
+        <p>${escapeHtml(brief.valueThesis || "Agent Genia crea la herramienta exacta que necesita el merchant.")}</p>
+      </article>
+      <article class="report-card full-span notice-card">
+        <h3>Guardrail</h3>
+        <p>${escapeHtml(brief.guardrail || "No prometemos paridad enterprise; construimos el 20% que resuelve el 80% de la necesidad.")}</p>
+      </article>
+    </div>`;
+
+  document.querySelector("#tools").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Arquitectura nativa</h3>
+        <p>${escapeHtml(strategy.appShell || "Agent Genia Shopify app como contenedor unico.")}</p>
+        <ul>${primitives.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>Acciones del agente</h3>
+        <ol>${adminActions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
+      </article>
+    </div>`;
+
+  document.querySelector("#suppliers").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>${escapeHtml(mvp.name || "MVP")}</h3>
+        <p>Primero se construye una version pequena, medible y reversible.</p>
+        <div class="compact-section">
+          <h4>Incluye</h4>
+          <ul>${(mvp.included || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        </div>
+        <div class="compact-section">
+          <h4>No incluye todavia</h4>
+          <ul>${(mvp.notIncluded || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        </div>
+      </article>
+      <article class="report-card full-span">
+        <h3>Build steps</h3>
+        <ol>${(mvp.buildSteps || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
+      </article>
+      <article class="report-card full-span">
+        <h3>Criterios de aceptacion</h3>
+        <ul>${(mvp.acceptanceCriteria || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#negotiation").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Datos que guarda</h3>
+        <ul>${dataModel.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>Eventos que mide</h3>
+        <ul>${events.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#ddp").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span notice-card">
+        <h3>Riesgos</h3>
+        <ul>${risks.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+      <article class="report-card full-span">
+        <h3>Cuando una app de terceros sigue ganando</h3>
+        <ul>${(savings.whenThirdPartyStillBetter || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </article>
+    </div>`;
+
+  document.querySelector("#quality").innerHTML = `
+    <div class="report-grid">
+      <article class="report-card full-span">
+        <h3>Plan de validacion</h3>
+        <ol>${validationPlan.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
+      </article>
+      <article class="report-card full-span">
+        <h3>Siguientes pasos</h3>
+        <ol>${nextSteps.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
+      </article>
+    </div>`;
+
+  lucide.createIcons();
 }
 
 function renderShopifyPageDraftReport(report) {
@@ -3647,6 +3810,9 @@ function buildMarkdown(report) {
   if (report.type === "retail_to_online") {
     return buildRetailToOnlineMarkdown(report);
   }
+  if (report.type === "tool_factory") {
+    return buildToolFactoryMarkdown(report);
+  }
   if (isBrandStrategyReport(report)) {
     return buildBrandMarkdown(report);
   }
@@ -3892,6 +4058,86 @@ ${(evidence.missingData || []).map((item) => `- ${item}`).join("\n")}
 ${(report.risks || []).map((item) => `- ${item}`).join("\n")}
 
 ## Plan de validacion
+
+${(report.validationPlan || []).map((item) => `- ${item}`).join("\n")}
+`;
+}
+
+function buildToolFactoryMarkdown(report) {
+  const requested = report.requestedTool || {};
+  const brief = report.executiveBrief || {};
+  const strategy = report.buildStrategy || {};
+  const mvp = report.mvp || {};
+  const savings = report.savings || {};
+
+  return `# Agent Genia Tool Factory
+
+Fecha: ${report.createdAt || ""}
+Solicitud: ${report.naturalRequest || ""}
+Herramienta interna: ${toolLabel(report.toolUsed)}
+Tienda Shopify: ${report.shopify?.shop || "no conectada"}
+
+## Decision
+
+${brief.decision || ""}
+
+Tesis: ${brief.valueThesis || ""}
+Viabilidad: ${brief.feasibility || requested.feasibility || ""}
+Guardrail: ${brief.guardrail || ""}
+
+## Herramienta solicitada
+
+- Nombre: ${requested.name || ""}
+- Categoria: ${requested.category || ""}
+- Usuario: ${requested.merchantUser || ""}
+- Job-to-be-done: ${requested.jobToBeDone || ""}
+- Resultado deseado: ${requested.desiredOutcome || ""}
+
+## Arquitectura
+
+App shell: ${strategy.appShell || ""}
+
+Primitivos:
+${(strategy.primitives || []).map((item) => `- ${item}`).join("\n")}
+
+Datos:
+${(strategy.dataModel || []).map((item) => `- ${item}`).join("\n")}
+
+Eventos:
+${(strategy.events || []).map((item) => `- ${item}`).join("\n")}
+
+Acciones:
+${(strategy.adminActions || []).map((item) => `- ${item}`).join("\n")}
+
+## MVP
+
+${mvp.name || ""}
+
+Incluye:
+${(mvp.included || []).map((item) => `- ${item}`).join("\n")}
+
+No incluye:
+${(mvp.notIncluded || []).map((item) => `- ${item}`).join("\n")}
+
+Build:
+${(mvp.buildSteps || []).map((item) => `- ${item}`).join("\n")}
+
+Criterios:
+${(mvp.acceptanceCriteria || []).map((item) => `- ${item}`).join("\n")}
+
+## Ahorro y limites
+
+Categoria reemplazada: ${savings.replacementCategory || ""}
+Ahorro estimado: ${savings.costAvoidedRange || ""}
+
+Cuando una app de terceros sigue ganando:
+${(savings.whenThirdPartyStillBetter || []).map((item) => `- ${item}`).join("\n")}
+
+## Riesgos
+
+${(report.risks || []).map((item) => `- ${item}`).join("\n")}
+
+## Validacion
 
 ${(report.validationPlan || []).map((item) => `- ${item}`).join("\n")}
 `;
@@ -4387,6 +4633,7 @@ function toolLabel(value) {
   if (value === "shopify-store-audit") return "Shopify audit";
   if (value === "brand-audit-agent") return "Brand audit";
   if (value === "brand_whitespace_tool") return "Brand whitespace";
+  if (value === "agentgenia_tool_factory") return "Tool Factory";
   if (value === "shopify_page_builder") return "Shopify page builder";
   return "Ecom research";
 }

@@ -9,6 +9,7 @@ The app can run in two modes:
 - Supabase production mode: users sign in with Supabase Auth, uploads are stored in Supabase Storage, and each research run is persisted in Postgres before/after the Codex harness or internal tools execute.
 - Retail-to-online mode: if the prompt describes a physical store/local business trying to sell online, Agent Genia routes to an internal plan for product understanding, unit economics, TikTok organic vs paid ads, competitor/content research, and the first web build. Users can upload a digital database from the same `+` button, including CSV, Excel, JSON, SQL, SQLite/DB, inventory, sales, customer, or product files.
 - Brand strategy helper: when the prompt asks for a brand name, colors, palette, identity, website, landing page, or a new brand from a problem/niche, the harness can return `brandPlan` and `websitePlan` with name options, selected colors, hero copy, page sections, visual direction, and availability/build checks.
+- Tool Factory mode: when a merchant asks for an app, widget, plugin, or paid-tool replacement, Agent Genia returns a native Shopify MVP blueprint using app extensions, theme blocks, pixels, functions, metafields/metaobjects, and Agent Genia configuration before recommending another subscription.
 
 The main page has two ecommerce paths without changing the cockpit structure:
 
@@ -121,10 +122,13 @@ The Envia integration is rate-only. The Cloudflare Function only calls the quote
 
 Internal tools currently handled directly by `/api/research`:
 
+- `agentgenia_tool_factory`: blueprint-first native Shopify mini-app/tool planner for replacing unnecessary paid app subscriptions.
 - `brand_whitespace_tool`: existing-brand whitespace hypotheses from declared brand context, attachments, and connected Shopify catalog data.
 - `shopify_page_builder`: creates an approved Shopify Page draft and lets the user publish it through `/api/shopify/pages`.
 - `shipping_rate_quote`: rate-only Envia shipping quotes when a shipping-only intent is detected.
 - `unit_economics_filter`: beginner-friendly profitability filter for non-brand-stage ideas.
+
+`agentgenia_tool_factory` is intentionally scoped as blueprint-first. It identifies the smallest native Shopify MVP that can replace the merchant's actual job-to-be-done, plus the cases where a third-party app is still safer because of deliverability, compliance, fraud, payments, carrier labels, or enterprise support.
 
 `brand_whitespace_tool` labels output as hypotheses. It does not perform live Meta Ads, Amazon review, or TikTok collection by itself; use the deeper competitive research harness/skills to confirm demand, saturation, and customer language.
 
