@@ -605,9 +605,10 @@ button {
   border: 1px solid rgba(15, 123, 104, 0.18);
   border-radius: 999px;
   color: var(--teal-dark);
+  gap: 3px;
   height: 40px;
-  padding: 0;
-  width: 40px;
+  padding: 0 8px;
+  width: auto;
 }
 
 .active-context-chip[data-active-stage="brand"] {
@@ -617,6 +618,12 @@ button {
 .active-context-chip svg {
   height: 20px;
   width: 20px;
+}
+
+.active-context-chip .context-clear-icon {
+  height: 14px;
+  opacity: 0.7;
+  width: 14px;
 }
 
 .context-store {
@@ -2348,12 +2355,18 @@ textarea:focus {
 
   .active-context-chip {
     height: 34px;
-    width: 34px;
+    padding: 0 7px;
+    width: auto;
   }
 
   .active-context-chip svg {
     height: 18px;
     width: 18px;
+  }
+
+  .active-context-chip .context-clear-icon {
+    height: 12px;
+    width: 12px;
   }
 
   .attachment-tray {

@@ -339,6 +339,9 @@ async function assertFrontendDoesNotSimulateHarnessReports() {
   assert.match(app, /isBackendHarnessReport\(report\) \? null : report\?\.customizationPlan/, "no local customization fallback for harness");
   assert.match(app, /backendMode \? \[\] : report\.supplierProfiles/, "no local supplier fallback for harness");
   assert.match(app, /missingNegotiationPlan\(\)/, "missing harness negotiation is explicit");
+  assert.match(app, /function clearContextSelection\(\)/, "active context can be cleared");
+  assert.match(app, /const selectedStore = businessStage === "shopify" \? selectedCommerceStore\(\) : null;/, "store context only sent in shopify mode");
+  assert.match(app, /const brand = businessStage === "brand"/, "brand context only sent in brand mode");
 }
 
 async function assertHarnessSchemaStrictShape() {

@@ -308,7 +308,7 @@ function setupStageControls() {
   });
   activeContextChip?.addEventListener("click", (event) => {
     event.stopPropagation();
-    toggleToolMenu(true);
+    clearContextSelection();
   });
   uploadToolButton?.addEventListener("click", () => {
     closeToolMenu();
@@ -347,7 +347,19 @@ function closeToolMenu() {
 
 function selectToolOption(stage) {
   closeToolMenu();
-  selectBusinessStage(stage);
+  if (stage === "starter" || selectedBusinessStage() === stage) {
+    clearContextSelection();
+  } else {
+    selectBusinessStage(stage);
+  }
+  form.naturalRequest.focus();
+}
+
+function clearContextSelection() {
+  selectBusinessStage("starter");
+  state.pendingShopifyShop = "";
+  state.pendingCommerceStore = "";
+  showToast("Contexto eliminado");
   form.naturalRequest.focus();
 }
 
@@ -461,10 +473,10 @@ function updateActiveContextChip(stage) {
   }
 
   activeContextChip.hidden = false;
-  activeContextChip.title = config.label;
-  activeContextChip.setAttribute("aria-label", `Contexto activo: ${config.label}`);
+  activeContextChip.title = `Quitar contexto: ${config.label}`;
+  activeContextChip.setAttribute("aria-label", `Quitar contexto activo: ${config.label}`);
   activeContextChip.dataset.activeStage = stage;
-  activeContextChip.innerHTML = `<i data-lucide="${config.icon}"></i>`;
+  activeContextChip.innerHTML = `<i data-lucide="${config.icon}"></i><i class="context-clear-icon" data-lucide="x"></i>`;
   lucide.createIcons();
 }
 
@@ -1205,7 +1217,7 @@ function readForm() {
   const businessStage = selectedBusinessStage();
   const inferred = inferRequest(naturalRequest, businessStage);
   const inferredBrand = businessStage === "brand" ? inferBrandContext(naturalRequest) : {};
-  const selectedStore = selectedCommerceStore();
+  const selectedStore = businessStage === "shopify" ? selectedCommerceStore() : null;
   const commerce = selectedStore
     ? {
         platform: selectedStore.platform,
@@ -1221,6 +1233,19 @@ function readForm() {
         label: "",
         focus: shopifyFocusInput?.value.trim() || inferShopifyFocus(naturalRequest),
       };
+  const brand = businessStage === "brand"
+    ? {
+        name: brandNameInput?.value.trim() || inferredBrand.name || "",
+        url: normalizeBrandUrl(brandUrlInput?.value.trim() || inferredBrand.url || ""),
+        channels: brandChannelsInput?.value.trim() || inferredBrand.channels || "",
+        goal: brandGoalInput?.value.trim() || inferredBrand.goal || "",
+      }
+    : {
+        name: "",
+        url: "",
+        channels: "",
+        goal: "",
+      };
   return {
     businessStage,
     naturalRequest,
@@ -1228,14 +1253,9 @@ function readForm() {
     commerce,
     shopify: {
       shop: commerce.platform === "shopify" ? commerce.storeId : "",
-      focus: commerce.focus,
+      focus: businessStage === "shopify" ? commerce.focus : "",
     },
-    brand: {
-      name: brandNameInput?.value.trim() || inferredBrand.name || "",
-      url: normalizeBrandUrl(brandUrlInput?.value.trim() || inferredBrand.url || ""),
-      channels: brandChannelsInput?.value.trim() || inferredBrand.channels || "",
-      goal: brandGoalInput?.value.trim() || inferredBrand.goal || "",
-    },
+    brand,
     attachments: serializeAttachments(),
     accessKey: form.accessKey.value.trim(),
   };
