@@ -7,6 +7,10 @@ import {
   safeFileName,
   supabaseRest,
 } from "../_shared/supabase.js";
+import {
+  onRequestPatch as updateShopifyToolFromRequest,
+  onRequestPost as createShopifyToolFromRequest,
+} from "./shopify/tools.js";
 
 const DEFAULT_TIMEOUT_MS = 900000;
 const ATTACHMENT_BUCKET = "research-attachments";
@@ -260,6 +264,7 @@ export async function onRequestPost(context) {
 
     if (shouldUseToolFactory(agentPayload)) {
       const report = runToolFactory(agentPayload);
+      await maybeExecuteToolFactoryAction({ request, env, payload: agentPayload, report });
       const diagnostics = {
         tool: "agentgenia_tool_factory",
         mode: "internal_tool",
@@ -718,11 +723,13 @@ function shouldUseToolFactory(payload) {
     /paga|pagada|mensualidad|subscription|suscripci[oó]n|gratis|sin pagar|ahorrar|reemplaz|sustituir|alternativa|evitar pagar|third[- ]party|terceros|otra app/.test(text);
   const buildIntent =
     /crear|hacer|construir|generar|instalar|configurar|necesito|quiero|puede hacer|que haga/.test(text);
+  const lifecycleIntent =
+    /actualiz|mejor|edit|itera|modific|cambi|refresc|paus|archiv|desactiv|apaga|apagar|reactiv|activar|enciende|elimin|borr/.test(text);
   const shopifyContext =
     payload.businessStage === "shopify" ||
     payload.businessStage === "brand" ||
     /shopify|tienda|ecommerce|e-?commerce|merchant|store/.test(text);
-  return shopifyContext && appNeed && (replacementIntent || buildIntent);
+  return shopifyContext && appNeed && (replacementIntent || buildIntent || lifecycleIntent);
 }
 
 function runToolFactory(payload) {
@@ -789,6 +796,144 @@ function runToolFactory(payload) {
       "Solo convertirlo en extension/app mas profunda si el merchant lo usa repetidamente.",
     ],
   };
+}
+
+async function maybeExecuteToolFactoryAction({ request, env, payload, report }) {
+  const shop = payload.shopify?.shop || report.shopify?.shop || "";
+  const replacement = report.appReplacement || {};
+  const existingTool = replacement.existingTool || null;
+  const text = payloadText(payload).toLowerCase();
+  const statusIntent = existingTool?.id ? inferExistingToolStatusIntent(text) : "";
+  const shouldUpdateExisting = Boolean(shop && existingTool?.id && wantsExistingToolUpdate(text));
+  const shouldChangeStatus = Boolean(shop && existingTool?.id && statusIntent && !shouldUpdateExisting);
+  const shouldPublishNew = Boolean(shop && !existingTool && replacement.canCreateNow && wantsToolPublication(text));
+
+  if (!shouldUpdateExisting && !shouldChangeStatus && !shouldPublishNew) return null;
+
+  const actionType = shouldUpdateExisting ? "update_existing_tool" : shouldChangeStatus ? "change_tool_status" : "create_tool";
+  const method = shouldPublishNew ? "POST" : "PATCH";
+  const body = shouldUpdateExisting
+    ? { shop, id: existingTool.id, status: "active", report }
+    : shouldChangeStatus
+      ? { shop, id: existingTool.id, status: statusIntent }
+      : { shop, report };
+
+  try {
+    const actionRequest = buildInternalShopifyToolRequest(request, method, body);
+    const response = shouldPublishNew
+      ? await createShopifyToolFromRequest({ request: actionRequest, env })
+      : await updateShopifyToolFromRequest({ request: actionRequest, env });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.ok || !result.tool) {
+      const message = result.message || "No se pudo ejecutar la accion en Shopify.";
+      applyToolFactoryActionResult(report, {
+        type: actionType,
+        status: "failed",
+        message: `No pude ${toolFactoryActionVerb(actionType)} la herramienta en Shopify: ${message}`,
+      });
+      return report.toolAction;
+    }
+
+    applyToolFactoryActionResult(report, {
+      type: actionType,
+      status: "completed",
+      tool: result.tool,
+      message:
+        actionType === "update_existing_tool"
+          ? `Listo: actualice la herramienta existente "${result.tool.title || existingTool.title || "Agent Genia"}" en Shopify.`
+          : actionType === "change_tool_status"
+            ? `Listo: deje "${result.tool.title || existingTool.title || "la herramienta"}" en estado ${result.tool.status}.`
+            : `Listo: publique "${result.tool.title || "la herramienta"}" en Shopify.`,
+    });
+    return report.toolAction;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo ejecutar la accion en Shopify.";
+    applyToolFactoryActionResult(report, {
+      type: actionType,
+      status: "failed",
+      message: `No pude ${toolFactoryActionVerb(actionType)} la herramienta en Shopify: ${message}`,
+    });
+    return report.toolAction;
+  }
+}
+
+function buildInternalShopifyToolRequest(originalRequest, method, body) {
+  const headers = new Headers({ "content-type": "application/json" });
+  const authorization = originalRequest.headers.get("authorization");
+  const cookie = originalRequest.headers.get("cookie");
+  const appPassword = originalRequest.headers.get("x-app-password");
+  if (authorization) headers.set("authorization", authorization);
+  if (cookie) headers.set("cookie", cookie);
+  if (appPassword) headers.set("x-app-password", appPassword);
+  return new Request(new URL("/api/shopify/tools", originalRequest.url), {
+    method,
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
+function applyToolFactoryActionResult(report, action) {
+  report.toolAction = {
+    type: action.type,
+    status: action.status,
+    message: action.message,
+  };
+
+  if (action.status === "completed" && action.tool) {
+    if (action.type !== "change_tool_status") report.publication = action.tool;
+    report.shopify = {
+      ...(report.shopify || {}),
+      installedTools: mergeToolFactoryTools(report.shopify?.installedTools, action.tool),
+    };
+    report.appReplacement = {
+      ...(report.appReplacement || {}),
+      canCreateNow: false,
+      existingTool: action.tool,
+      replaceabilityLevel: "iterate_existing",
+    };
+    report.executiveBrief = {
+      ...(report.executiveBrief || {}),
+      decision: action.message,
+    };
+    report.nextSteps = [
+      action.type === "change_tool_status"
+        ? "Para hacer otro cambio, pidelo en lenguaje natural: actualizar, reactivar, pausar, archivar o publicar."
+        : "Revisar la pagina publicada en Shopify y validar que el texto, CTA y formulario sean correctos.",
+      ...(Array.isArray(report.nextSteps) ? report.nextSteps : []),
+    ].slice(0, 8);
+  } else {
+    report.nextSteps = [
+      action.message,
+      ...(Array.isArray(report.nextSteps) ? report.nextSteps : []),
+    ].slice(0, 8);
+  }
+}
+
+function mergeToolFactoryTools(existingTools, tool) {
+  const tools = Array.isArray(existingTools) ? existingTools : [];
+  if (!tool?.id) return tools;
+  return [tool, ...tools.filter((item) => item.id !== tool.id)];
+}
+
+function wantsExistingToolUpdate(text) {
+  return /actualiz|mejor|edit|itera|modific|cambi|refresc|arregl/.test(text);
+}
+
+function wantsToolPublication(text) {
+  return /public[aá]|instal|sube|subir|aplica|cr[eé]ala|crear[^.]{0,80}(shopify|tienda)|hazlo[^.]{0,80}(shopify|tienda)|hacerlo[^.]{0,80}(shopify|tienda)/.test(text);
+}
+
+function inferExistingToolStatusIntent(text) {
+  if (/archiv|elimin|borr|quitar/.test(text)) return "archived";
+  if (/paus|desactiv|apaga|apagar|deten|suspende/.test(text)) return "paused";
+  if (/reactiv|activa|activar|enciende|prende/.test(text)) return "active";
+  return "";
+}
+
+function toolFactoryActionVerb(type) {
+  if (type === "update_existing_tool") return "actualizar";
+  if (type === "change_tool_status") return "cambiar el estado de";
+  return "publicar";
 }
 
 function inferToolFactoryProfile(text, payload) {

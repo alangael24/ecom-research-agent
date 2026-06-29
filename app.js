@@ -976,15 +976,6 @@ function handleDocumentClick(event) {
     publishShopifyPage(publishButton);
     return;
   }
-  const createToolButton = target?.closest("[data-create-shopify-tool]");
-  if (createToolButton) {
-    createShopifyTool(createToolButton);
-    return;
-  }
-  const statusButton = target?.closest("[data-tool-status-action]");
-  if (statusButton) {
-    updateShopifyToolStatus(statusButton);
-  }
 }
 
 function renderAuthState() {
@@ -2168,10 +2159,17 @@ function renderToolFactoryReport(report) {
   const shop = report.shopify?.shop || "";
   const runtime = toolFactoryRuntimeSupport(report);
   const canCreateTool = Boolean(shop && (requested.name || requested.category) && runtime.supported && replacement.canCreateNow !== false && !publication);
+  const toolAction = report.toolAction || null;
+  const actionCard = toolAction
+    ? `<article class="report-card full-span ${toolAction.status === "completed" ? "success-card" : "notice-card"}">
+        <h3>Accion del agente</h3>
+        <p>${escapeHtml(toolAction.message || "Agent Genia proceso la accion solicitada.")}</p>
+      </article>`
+    : "";
   const publishedCard = publication
     ? `<article class="report-card full-span success-card">
         <h3>Herramienta creada</h3>
-        <p>Agent Genia ya publico este MVP en Shopify como una pagina segura.</p>
+        <p>Agent Genia ya publico o actualizo este MVP en Shopify como una pagina segura.</p>
         <div class="pill-row">
           <a class="pill link-pill" href="${escapeHtml(publication.url || "#")}" target="_blank" rel="noreferrer"><i data-lucide="external-link"></i>Ver herramienta</a>
           <a class="pill link-pill" href="${escapeHtml(publication.adminUrl || "#")}" target="_blank" rel="noreferrer"><i data-lucide="settings"></i>Abrir en Shopify</a>
@@ -2216,6 +2214,7 @@ function renderToolFactoryReport(report) {
         <h3>Guardrail</h3>
         <p>${escapeHtml(brief.guardrail || "No prometemos paridad enterprise; construimos el 20% que resuelve el 80% de la necesidad.")}</p>
       </article>
+      ${actionCard}
       ${publishedCard}
     </div>`;
 
@@ -2307,17 +2306,13 @@ function renderToolFactoryReport(report) {
         <ol>${nextSteps.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>
       </article>
       <article class="report-card full-span ${runtime.supported ? "" : "notice-card"}">
-        <h3>Crear herramienta en Shopify</h3>
+        <h3>Herramienta en Shopify</h3>
         <p>${escapeHtml(toolFactoryPublishMessage({ shop, runtime, publication, canCreateTool, replacement }))}</p>
-        <button class="primary-button" type="button" data-create-shopify-tool ${canCreateTool ? "" : "disabled"}>
-          <i data-lucide="${publication ? "check-circle" : runtime.supported ? "upload-cloud" : "shield-alert"}"></i>
-          ${publication ? "Herramienta creada" : runtime.supported ? "Crear herramienta en Shopify" : "Requiere runtime avanzado"}
-        </button>
         <p class="publish-status" id="shopifyToolCreateStatus">${
           publication
             ? `Publicada: ${escapeHtml(publication.url || publication.handle || "")}`
             : canCreateTool
-              ? "Lista para publicar como MVP seguro."
+              ? "Para publicarla, escribe algo como: publica esta herramienta en mi Shopify."
               : escapeHtml(toolFactoryPublishMessage({ shop, runtime, publication, canCreateTool, replacement }))
         }</p>
       </article>
@@ -2349,13 +2344,11 @@ function renderInstalledShopifyTools({ tools, loaded, loading, error }) {
 }
 
 function renderInstalledToolActions(tool) {
-  if (!tool?.id || !tool?.shop) return "";
+  if (!tool?.id) return "";
   const status = tool.status || "active";
-  const nextPrimary = status === "active" ? { status: "paused", label: "Pausar", icon: "pause" } : { status: "active", label: "Activar", icon: "play" };
-  const archive = status === "archived" ? "" : `<button class="pill link-pill" type="button" data-tool-status-action data-tool-id="${escapeHtml(tool.id)}" data-shop="${escapeHtml(tool.shop)}" data-status="archived"><i data-lucide="archive"></i>Archivar</button>`;
+  const icon = status === "active" ? "play" : status === "paused" ? "pause" : "archive";
   return `<span class="pill-row">
-    <button class="pill link-pill" type="button" data-tool-status-action data-tool-id="${escapeHtml(tool.id)}" data-shop="${escapeHtml(tool.shop)}" data-status="${nextPrimary.status}"><i data-lucide="${nextPrimary.icon}"></i>${nextPrimary.label}</button>
-    ${archive}
+    <span class="pill"><i data-lucide="${icon}"></i>${escapeHtml(status)}</span>
   </span>`;
 }
 
@@ -2448,150 +2441,16 @@ function toolFactoryPublishMessage({ shop, runtime, publication, replacement }) 
   if (publication) return "La herramienta ya existe en Shopify. Puedes abrirla, revisarla y decidir si iterarla.";
   if (!shop) return "Conecta una tienda Shopify para que Agent Genia pueda crear esta herramienta.";
   if (replacement?.existingTool) {
-    return `Ya existe una herramienta parecida: ${replacement.existingTool.title || replacement.existingTool.category}. Primero conviene iterarla, activarla/pausarla o archivarla antes de crear otra.`;
+    return `Ya existe una herramienta parecida: ${replacement.existingTool.title || replacement.existingTool.category}. Para iterarla sin crear otra, pidele al agente que la actualice.`;
   }
   if (!runtime.supported) return runtime.message;
   return "Esto crea una Page real en Shopify con la version minima de la herramienta: segura, reversible y medible.";
-}
-
-function mergeInstalledShopifyTools(existingTools, newTool) {
-  const tools = Array.isArray(existingTools) ? existingTools : [];
-  if (!newTool?.id) return tools;
-  return [newTool, ...tools.filter((tool) => tool.id !== newTool.id)];
-}
-
-async function updateShopifyToolStatus(button) {
-  const report = state.latest;
-  const shop = button.dataset.shop || report?.shopify?.shop || "";
-  const id = button.dataset.toolId || "";
-  const status = button.dataset.status || "";
-  if (!report || report.type !== "tool_factory" || !shop || !id || !status) return;
-
-  const previousLabel = button.textContent || "";
-  button.disabled = true;
-  button.innerHTML = '<i data-lucide="loader-circle"></i> Guardando...';
-  lucide.createIcons();
-
-  try {
-    const response = await fetch("./api/shopify/tools", {
-      method: "PATCH",
-      headers: shopifyToolHeaders({ "content-type": "application/json" }),
-      credentials: "include",
-      body: JSON.stringify({ shop, id, status }),
-    });
-    const body = await response.json();
-    if (!response.ok || !body.ok) {
-      throw new Error(body.message || "No se pudo actualizar la herramienta.");
-    }
-    report.installedTools = mergeInstalledShopifyTools(report.installedTools, body.tool);
-    if (report.publication?.id === body.tool.id) report.publication = body.tool;
-    state.latest = report;
-    saveState(report);
-    renderToolFactoryReport(report);
-    activateTab("tools");
-    showToast(`Herramienta ${toolStatusLabel(body.tool.status)}`);
-  } catch (error) {
-    button.disabled = false;
-    button.textContent = previousLabel;
-    showToast(error instanceof Error ? error.message : "No se pudo actualizar la herramienta.");
-  }
-}
-
-function toolStatusLabel(status) {
-  if (status === "active") return "activada";
-  if (status === "paused") return "pausada";
-  if (status === "archived") return "archivada";
-  return "actualizada";
-}
-
-async function createShopifyTool(button) {
-  const report = state.latest;
-  if (!report || report.type !== "tool_factory") return;
-  if (report.publication) {
-    showToast("Esta herramienta ya fue creada");
-    return;
-  }
-
-  const status = document.querySelector("#shopifyToolCreateStatus");
-  const shop = report.shopify?.shop || "";
-  const runtime = toolFactoryRuntimeSupport(report);
-  if (!shop) {
-    showToast("Conecta Shopify antes de crear la herramienta");
-    return;
-  }
-  if (!runtime.supported) {
-    showToast(runtime.message);
-    return;
-  }
-
-  button.disabled = true;
-  button.innerHTML = '<i data-lucide="loader-circle"></i> Creando...';
-  if (status) status.textContent = "Creando herramienta en Shopify...";
-  lucide.createIcons();
-
-  try {
-    const response = await fetch("./api/shopify/tools", {
-      method: "POST",
-      headers: shopifyToolHeaders({ "content-type": "application/json" }),
-      credentials: "include",
-      body: JSON.stringify({
-        shop,
-        report: pickToolFactoryPayload(report),
-      }),
-    });
-    const body = await response.json();
-    if (!response.ok || !body.ok) {
-      throw new Error(body.message || "No se pudo crear la herramienta en Shopify.");
-    }
-
-    report.publication = body.tool;
-    report.installedTools = mergeInstalledShopifyTools(report.installedTools, body.tool);
-    report.installedToolsLoaded = true;
-    report.installedToolsError = body.registryWarning || "";
-    state.latest = report;
-    saveState(report);
-    renderToolFactoryReport(report);
-    activateTab("quality");
-    showToast("Herramienta creada en Shopify");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo crear la herramienta en Shopify.";
-    if (status) status.textContent = message;
-    button.disabled = false;
-    button.innerHTML = '<i data-lucide="upload-cloud"></i> Crear herramienta en Shopify';
-    lucide.createIcons();
-    showToast(message);
-  }
 }
 
 function shopifyToolHeaders(extra = {}) {
   return {
     ...(state.session?.access_token ? { authorization: `Bearer ${state.session.access_token}` } : {}),
     ...extra,
-  };
-}
-
-function pickToolFactoryPayload(report) {
-  return {
-    type: "tool_factory",
-    toolUsed: report.toolUsed,
-    selectedInternalTool: report.selectedInternalTool,
-    naturalRequest: report.naturalRequest,
-    market: report.market,
-    createdAt: report.createdAt,
-    shopify: {
-      shop: report.shopify?.shop || "",
-      focus: report.shopify?.focus || "",
-    },
-    requestedTool: report.requestedTool || {},
-    executiveBrief: report.executiveBrief || {},
-    buildStrategy: report.buildStrategy || {},
-    appReplacement: report.appReplacement || {},
-    toolSpec: report.toolSpec || {},
-    mvp: report.mvp || {},
-    savings: report.savings || {},
-    risks: Array.isArray(report.risks) ? report.risks : [],
-    validationPlan: Array.isArray(report.validationPlan) ? report.validationPlan : [],
-    nextSteps: Array.isArray(report.nextSteps) ? report.nextSteps : [],
   };
 }
 

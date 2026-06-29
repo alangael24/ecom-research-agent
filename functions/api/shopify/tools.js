@@ -8,6 +8,7 @@ import {
   json,
   normalizeShopifyDomain,
   requireShopifyConfig,
+  updateShopifyPage,
 } from "../../_lib/shopify.js";
 
 const MAX_PAYLOAD_LENGTH = 200000;
@@ -200,9 +201,19 @@ export async function onRequestPatch(context) {
   if (!id) {
     return json({ ok: false, code: "invalid_tool", message: "Missing tool id." }, 400);
   }
-  const status = cleanText(payload.status, "", 30).toLowerCase();
-  if (!TOOL_STATUSES.has(status)) {
+  const hasReportUpdate = payload.report && typeof payload.report === "object";
+  const status = cleanText(payload.status || (hasReportUpdate ? "active" : ""), "", 30).toLowerCase();
+  if (!hasReportUpdate && !TOOL_STATUSES.has(status)) {
     return json({ ok: false, code: "invalid_status", message: "Use active, paused, or archived." }, 400);
+  }
+  if (status && !TOOL_STATUSES.has(status)) {
+    return json({ ok: false, code: "invalid_status", message: "Use active, paused, or archived." }, 400);
+  }
+  if (hasReportUpdate) {
+    const validationError = validateToolReportPayload(payload.report);
+    if (validationError) {
+      return json({ ok: false, code: "invalid_payload", message: validationError }, 400);
+    }
   }
 
   const store = await getConnectedStore(env, shop);
@@ -221,6 +232,69 @@ export async function onRequestPatch(context) {
   const record = await env.SHOPIFY_STORES.get(key, { type: "json" });
   if (!record) {
     return json({ ok: false, code: "tool_not_found", message: "No se encontro esta herramienta." }, 404);
+  }
+
+  if (hasReportUpdate) {
+    const report = payload.report;
+    const runtime = toolRuntimeSupport(report);
+    if (!runtime.supported) {
+      return json(
+        {
+          ok: false,
+          code: "tool_runtime_not_supported",
+          message: runtime.message,
+          nextRuntime: runtime.nextRuntime,
+        },
+        422,
+      );
+    }
+
+    const pageId = shopifyPageGid(record.shopifyPageId || record.id);
+    if (!pageId) {
+      return json({ ok: false, code: "missing_shopify_page", message: "Esta herramienta no tiene una pagina de Shopify actualizable." }, 409);
+    }
+
+    const pageDraft = buildToolPageDraft(report);
+    if (record.handle) pageDraft.handle = normalizeHandle(record.handle);
+
+    try {
+      const page = await updateShopifyPage({
+        shop,
+        accessToken: store.accessToken,
+        apiVersion: getApiVersion(env),
+        id: pageId,
+        page: pageDraft,
+      });
+      const publicUrl = buildPublicPageUrl(store, shop, page.handle);
+      const adminId = numericShopifyId(page.id);
+      const adminUrl = adminId ? `https://${shop}/admin/pages/${adminId}` : record.adminUrl || `https://${shop}/admin/pages`;
+      const updatedRecord = buildUpdatedToolRecord({
+        record,
+        report,
+        page,
+        pageDraft,
+        runtime,
+        publicUrl,
+        adminUrl,
+        status: status || "active",
+        statusReason: cleanText(payload.reason, "", 180),
+      });
+      await saveToolRecord(env, updatedRecord);
+      return json({ ok: true, tool: publicToolRecord(updatedRecord), updatedPage: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo actualizar la herramienta en Shopify.";
+      const needsScope = /scope|permission|forbidden|access denied|unauthorized/i.test(message) || error.status === 401 || error.status === 403;
+      return json(
+        {
+          ok: false,
+          code: needsScope ? "shopify_scope_required" : "shopify_tool_update_failed",
+          message: needsScope
+            ? "Shopify no permitio actualizar la pagina. Reinstala la app para aceptar el permiso write_content."
+            : message,
+        },
+        needsScope ? 403 : error.status || 502,
+      );
+    }
   }
 
   const updatedRecord = {
@@ -321,6 +395,30 @@ function buildToolRecord({ shop, report, page, pageDraft, runtime, publicUrl, ad
   };
 }
 
+function buildUpdatedToolRecord({ record, report, page, pageDraft, runtime, publicUrl, adminUrl, status, statusReason }) {
+  const nextRecord = buildToolRecord({
+    shop: record.shop,
+    report,
+    page,
+    pageDraft,
+    runtime,
+    publicUrl,
+    adminUrl,
+  });
+  const now = new Date().toISOString();
+  return {
+    ...record,
+    ...nextRecord,
+    id: record.id,
+    shop: record.shop,
+    status,
+    statusReason,
+    createdAt: record.createdAt || nextRecord.createdAt,
+    updatedAt: now,
+    lastSyncedAt: now,
+  };
+}
+
 function publicToolRecord(record) {
   return {
     id: record.id,
@@ -373,6 +471,23 @@ function validateToolPayload(payload) {
   if (!report || typeof report !== "object") return "Missing tool report.";
   if (report.type !== "tool_factory") return "Only Tool Factory reports can create Shopify tools.";
 
+  const requested = report.requestedTool || {};
+  if (!textField(requested.name, 120) && !textField(requested.category, 120)) {
+    return "Missing tool name or category.";
+  }
+  return "";
+}
+
+function validateToolReportPayload(report) {
+  let payloadLength = 0;
+  try {
+    payloadLength = JSON.stringify(report).length;
+  } catch {
+    return "Tool report is not serializable.";
+  }
+  if (payloadLength > MAX_PAYLOAD_LENGTH) return "Tool report is too large.";
+  if (!report || typeof report !== "object") return "Missing tool report.";
+  if (report.type !== "tool_factory") return "Only Tool Factory reports can update Shopify tools.";
   const requested = report.requestedTool || {};
   if (!textField(requested.name, 120) && !textField(requested.category, 120)) {
     return "Missing tool name or category.";
@@ -810,4 +925,11 @@ function buildPublicPageUrl(store, shop, handle) {
 function numericShopifyId(value) {
   const id = String(value || "").split("/").pop();
   return /^\d+$/.test(id) ? id : "";
+}
+
+function shopifyPageGid(value) {
+  const raw = String(value || "");
+  if (raw.startsWith("gid://shopify/Page/")) return raw;
+  const id = numericShopifyId(raw);
+  return id ? `gid://shopify/Page/${id}` : "";
 }
