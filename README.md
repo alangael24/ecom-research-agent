@@ -260,6 +260,7 @@ Deploy:
 rm -rf dist
 mkdir -p dist
 cp index.html app.js styles.css .nojekyll _headers _redirects _routes.json dist/
+cp -R outcome dist/outcome
 pnpm dlx wrangler pages deploy dist --project-name ecom-research-agent
 ```
 
